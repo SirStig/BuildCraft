@@ -15,10 +15,13 @@ bin
 out
 
 #gradle
-build
-.gradle
-modules
-libs
+build/
+.gradle/
+libs/
+
+#moddevgradle / neoforge run dirs
+run/
+runs/
 
 #runtime
 run

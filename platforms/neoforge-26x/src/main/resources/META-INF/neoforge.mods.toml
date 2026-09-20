@@ -1,0 +1,30 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MPL-2.0"
+issueTrackerURL = "https://github.com/BuildCraft/BuildCraft/issues"
+
+[[mods]]
+modId = "buildcraft"
+version = "${version}"
+displayName = "BuildCraft"
+description = '''
+Extending Minecraft with pipes, auto-crafting, quarries, engines and much more!
+'''
+authors = "SpaceToad, BuildCraft Team"
+credits = "Created by SpaceToad"
+logoFile = "buildcraft/logo.png"
+displayURL = "https://www.mod-buildcraft.com/"
+
+[[dependencies.buildcraft]]
+modId = "neoforge"
+type = "required"
+versionRange = "[${neoforge_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.buildcraft]]
+modId = "minecraft"
+type = "required"
+versionRange = "[${minecraft_version},)"
+ordering = "NONE"
+side = "BOTH"

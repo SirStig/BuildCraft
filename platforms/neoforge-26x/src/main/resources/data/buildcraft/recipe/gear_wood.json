@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_gears",
+  "pattern": [
+    " o ",
+    "o o",
+    " o "
+  ],
+  "key": {
+    "o": "#c:rods/wooden"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:gear_wood"
+  }
+}

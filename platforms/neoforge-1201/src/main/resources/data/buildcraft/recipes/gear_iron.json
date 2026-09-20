@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_gears",
+  "pattern": [
+    " o ",
+    "oio",
+    " o "
+  ],
+  "key": {
+    "o": {
+      "tag": "forge:ingots/iron"
+    },
+    "i": {
+      "tag": "forge:gears/stone"
+    }
+  },
+  "result": {
+    "item": "buildcraft:gear_iron",
+    "count": 1
+  }
+}
