@@ -8,6 +8,9 @@ package buildcraft;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLLoader;
+
+import buildcraft.api.core.BCDebugging;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +32,9 @@ public final class BuildCraft {
     public static final Logger LOGGER = LoggerFactory.getLogger("BuildCraft");
 
     public BuildCraft() {
+        // Must happen before anything reads a debug option, since those are resolved once.
+        BCDebugging.setDevEnvironment(!FMLLoader.isProduction());
+
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         LOGGER.info("BuildCraft starting up (Minecraft 1.20.1).");
 

@@ -21,6 +21,15 @@ dependencies {
     api(project(":expression"))
     api(libs.jetbrains.annotations)
 
+    // Provided by Minecraft at runtime.
+    compileOnly(libs.guava)
+    compileOnly(libs.gson)
+    compileOnly(libs.commons.lang3)
+    compileOnly(libs.fastutil)
+    compileOnly(libs.log4j.api)
+
+    testImplementation(libs.fastutil)
+    testImplementation(libs.log4j.api)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

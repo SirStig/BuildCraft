@@ -34,12 +34,24 @@ java-mc26x = "25"
 # --- Libraries ------------------------------------------------------------
 jetbrains-annotations = "26.0.2"
 junit = "5.11.4"
+# Shipped by Minecraft at runtime; declared compileOnly so the shared module can use
+# them without pinning a second copy into the mod jar.
+guava = "33.4.0-jre"
+gson = "2.11.0"
+commons-lang3 = "3.17.0"
+fastutil = "8.5.15"
+log4j = "2.22.1"
 
 [libraries]
 jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+guava = { module = "com.google.guava:guava", version.ref = "guava" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commons-lang3" }
+fastutil = { module = "it.unimi.dsi:fastutil", version.ref = "fastutil" }
+log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
 
 [plugins]
 moddev = { id = "net.neoforged.moddev", version.ref = "moddevgradle" }

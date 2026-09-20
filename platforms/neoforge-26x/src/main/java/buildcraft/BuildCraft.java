@@ -8,6 +8,9 @@ package buildcraft;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.loading.FMLLoader;
+
+import buildcraft.api.core.BCDebugging;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +31,9 @@ public final class BuildCraft {
     public static final Logger LOGGER = LoggerFactory.getLogger("BuildCraft");
 
     public BuildCraft(IEventBus modBus, ModContainer container) {
+        // Must happen before anything reads a debug option, since those are resolved once.
+        BCDebugging.setDevEnvironment(!FMLLoader.getCurrent().isProduction());
+
         LOGGER.info("BuildCraft {} starting up.", container.getModInfo().getVersion());
 
         BCRegistries.register(modBus);
