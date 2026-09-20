@@ -27,9 +27,11 @@ dependencies {
     compileOnly(libs.commons.lang3)
     compileOnly(libs.fastutil)
     compileOnly(libs.log4j.api)
+    compileOnly(libs.netty.buffer)
 
     testImplementation(libs.fastutil)
     testImplementation(libs.log4j.api)
+    testImplementation(libs.netty.buffer)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

@@ -1,7 +1,7 @@
 # Porting BuildCraft to NeoForge
 
 BuildCraft 8.0.1 targets Minecraft 1.12.2 and Forge 14.23. This branch is porting it to
-NeoForge on two targets:
+NeoForge as **BuildCraft 10** (version `10.0.0-alpha`), on two targets:
 
 | Target | Gradle project | Loader artifact | Java | Status |
 | --- | --- | --- | --- | --- |
@@ -63,8 +63,11 @@ Ported (compiling, tested):
 - `modules/shared` — 31 files: `buildcraft.lib.misc`, `buildcraft.lib.misc.data`,
   `buildcraft.lib.script`, plus `BCLog`, `BCDebugging` and `IConvertable` from the API.
   4 tests pass.
-- Both platforms — mod entrypoint, the five gears, the creative tab, `VecUtil`,
-  `RotationUtil` (26.x only so far).
+- `buildcraft.api.mj` — the MJ power API. The five interfaces, `MjAPI`'s constants and
+  `MjBattery`'s arithmetic are shared; capabilities and the effect manager are per-platform.
+  8 tests pass.
+- Both platforms — mod entrypoint, the five gears, the creative tab, `MjCapabilities`,
+  `IMjEffectManager`/`MjEffects`. `VecUtil` and `RotationUtil` are 26.x only so far.
 
 Remaining, in the order they should be tackled — each module needs the one above it:
 
@@ -105,6 +108,7 @@ question this table does not.
 | `net.minecraft.block.state.IBlockState` | `net.minecraft.world.level.block.state.BlockState` |
 | `net.minecraft.tileentity.TileEntity` | `net.minecraft.world.level.block.entity.BlockEntity` |
 | `net.minecraft.item.ItemStack` | `net.minecraft.world.item.ItemStack` |
+| `net.minecraft.util.ResourceLocation` | `net.minecraft.resources.ResourceLocation` on 1.20.1, **`net.minecraft.resources.Identifier` on 26.x** |
 | `javax.vecmath.*` | `org.joml.*` |
 | `gnu.trove.*` | `it.unimi.dsi.fastutil.*` |
 
@@ -133,8 +137,11 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    stored on a stack needs a `DataComponentType`. Block entities still use NBT.
 4. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
    `CustomPacketPayload` with a `StreamCodec` and explicit registration.
-5. **Capabilities.** Forge capabilities become NeoForge's `BlockCapability`/`ItemCapability`,
-   registered per block entity type rather than attached by event.
+5. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
+   1.16, so on 1.20.1 each capability is fetched with a `CapabilityToken` and declared in
+   `RegisterCapabilitiesEvent`. 26.x replaces the whole system with `BlockCapability`, keyed by
+   an `Identifier` and registered per block entity type — there is no attach-by-event path at
+   all, so anything that used `ICapabilityProvider` needs restructuring, not renaming.
 6. **Rendering.** `TESR` → `BlockEntityRenderer`, and the whole `PoseStack`/`RenderType`
    pipeline replaces raw GL. `GlUtil` and most of `buildcraft.lib.client` are rewrites, not
    ports.
@@ -160,6 +167,8 @@ These are the traps when porting a file to both at once.
 | Item registry | `DeferredRegister.createItems(id)` | `DeferredRegister.create(ForgeRegistries.ITEMS, id)` |
 | Mod constructor | `(IEventBus, ModContainer)` | no-arg, then `FMLJavaModLoadingContext.get()` |
 | Dev detection | `FMLLoader.getCurrent().isProduction()` | `FMLLoader.isProduction()` (static) |
+| Capabilities | `BlockCapability.createSided(Identifier, Class)` | `CapabilityManager.get(new CapabilityToken<>(){})` + `RegisterCapabilitiesEvent` |
+| Resource ids | `Identifier` | `ResourceLocation` |
 | `pack_format` | 97 | 15 |
 | Gradle plugin | `net.neoforged.moddev` | `net.neoforged.moddev.legacyforge` |
 
@@ -178,5 +187,9 @@ For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 - Port by compiling, not by grepping imports. "No `net.minecraft` import" does not mean "no
   Minecraft dependency" — a same-package reference does not appear as an import.
   `buildcraft.lib.path.task` looks clean but `EnumTraversalExpense` beside it needs `Level`.
+- When a class is *mostly* version-independent, split it rather than duplicating it whole.
+  `MjBattery` is the pattern: all the arithmetic is shared, and the one method that needed a
+  `Level` (shedding excess power as a particle effect) became `shedExcessPower()`, returning
+  the amount lost for a thin per-platform caller to render.
 - When a data structure is rewritten, add a round-trip test. `BitSetTester` exists because
   the Trove → fastutil swap changed how the backing array is read.

@@ -1,8 +1,8 @@
 ## Welcome to BuildCraft on GitHub
 
 > **This branch is a work-in-progress NeoForge port.**
-> BuildCraft 8.0.x targets Minecraft 1.12.2; this branch is porting it to NeoForge on
-> Minecraft 26.x (primary) and 1.20.1 (compatibility). The 1.12.2 source tree under
+> BuildCraft 8.0.x targets Minecraft 1.12.2; this branch is porting it to NeoForge as
+> **BuildCraft 10**, on Minecraft 26.x (primary) and 1.20.1 (compatibility). The 1.12.2 source tree under
 > `common/` is kept as the reference being ported from and is not compiled.
 > See **[PORTING.md](PORTING.md)** for the current status, the build commands, and the
 > API migration reference.

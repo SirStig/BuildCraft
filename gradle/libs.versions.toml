@@ -41,6 +41,7 @@ gson = "2.11.0"
 commons-lang3 = "3.17.0"
 fastutil = "8.5.15"
 log4j = "2.22.1"
+netty = "4.1.118.Final"
 
 [libraries]
 jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
@@ -52,6 +53,7 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commons-lang3" }
 fastutil = { module = "it.unimi.dsi:fastutil", version.ref = "fastutil" }
 log4j-api = { module = "org.apache.logging.log4j:log4j-api", version.ref = "log4j" }
+netty-buffer = { module = "io.netty:netty-buffer", version.ref = "netty" }
 
 [plugins]
 moddev = { id = "net.neoforged.moddev", version.ref = "moddevgradle" }

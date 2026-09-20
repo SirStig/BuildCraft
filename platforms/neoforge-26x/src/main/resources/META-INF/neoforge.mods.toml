@@ -6,7 +6,7 @@ issueTrackerURL = "https://github.com/BuildCraft/BuildCraft/issues"
 [[mods]]
 modId = "buildcraft"
 version = "${version}"
-displayName = "BuildCraft"
+displayName = "BuildCraft 10"
 description = '''
 Extending Minecraft with pipes, auto-crafting, quarries, engines and much more!
 '''
