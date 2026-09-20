@@ -1,5 +1,12 @@
 ## Welcome to BuildCraft on GitHub
 
+> **This branch is a work-in-progress NeoForge port.**
+> BuildCraft 8.0.x targets Minecraft 1.12.2; this branch is porting it to NeoForge on
+> Minecraft 26.x (primary) and 1.20.1 (compatibility). The 1.12.2 source tree under
+> `common/` is kept as the reference being ported from and is not compiled.
+> See **[PORTING.md](PORTING.md)** for the current status, the build commands, and the
+> API migration reference.
+
 ### Reporting an issue
 
 Please open an issue for a bug report only if:
@@ -41,17 +48,23 @@ PR implementing new features or changing large portions of code are helpful. But
 * Render issue (Quarry causes flickering) - Try without OptiFine first! This is a known issue with some versions of OptiFine.
 
 ### Compiling and packaging BuildCraft
-1. Ensure that `Java` (found [here](http://www.oracle.com/technetwork/java/javase/downloads/jdk8-downloads-2133151.html)), `Git` (found [here](http://git-scm.com/)) are installed correctly on your system.
- * Optional: Install `Gradle` (found [here](http://www.gradle.org/downloads)). You probably want to install version 4.3.1.
-2. Create a base directory for the build
-3. Clone the BuildCraft repository into 'baseDir/BuildCraft/'
-4. Clone (and update) the submodules into 'baseDir/BuildCraft with 'git submodule init' and 'git submodule update'
-5. Navigate to basedir/BuildCraft in a shell and run one of two commands:
-    * `./gradlew setupCIWorkspace build` to just build a current jar (this may take a while).
-    * `./gradlew setupDecompWorkspace` to setup a complete development environment.
-    * With `Gradle` installed: use `gradle` instead of `./gradlew`
-    * On Windows: use `gradlew.bat` instead of `./gradlew`
-6. The compiles and obfuscated module jars will be in 'baseDir/BuildCraft/build/libs/&lt;build number&gt;/modules'
+
+These instructions are for the NeoForge port on this branch. For the 1.12.2 build, see the
+`8.0.x-1.12.2` branch.
+
+1. Install `Git` (found [here](https://git-scm.com/)) and a JDK. Minecraft 26.x needs
+   **Java 25**; Gradle will download a matching toolchain if you do not have one. Do not use
+   Gradle 8.x — it cannot drive a Java 25 toolchain, and the wrapper here is already 9.x.
+2. Clone the BuildCraft repository.
+3. Fetch the submodules: `git submodule update --init`.
+4. From the repository root, run one of:
+    * `./gradlew build` to build every target.
+    * `./gradlew :neoforge-26x:build` for Minecraft 26.3 (the default), or add
+      `-Pbc.mc26=26.1` / `-Pbc.mc26=26.2` to pick another 26.x release.
+    * `./gradlew :neoforge-1201:build` for Minecraft 1.20.1.
+    * `./gradlew :neoforge-26x:runClient` to launch the game with the mod loaded.
+    * On Windows: use `gradlew.bat` instead of `./gradlew`.
+5. The mod jars are in `platforms/<target>/build/libs/`.
 
 Your directory structure should look like this before running gradle:
 ***
