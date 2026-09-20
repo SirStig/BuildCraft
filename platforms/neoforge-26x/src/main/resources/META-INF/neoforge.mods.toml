@@ -12,7 +12,7 @@ Extending Minecraft with pipes, auto-crafting, quarries, engines and much more!
 '''
 authors = "SpaceToad, BuildCraft Team"
 credits = "Created by SpaceToad"
-logoFile = "buildcraft/logo.png"
+bannerFile = "buildcraft/logo.png"
 displayURL = "https://www.mod-buildcraft.com/"
 
 [[dependencies.buildcraft]]

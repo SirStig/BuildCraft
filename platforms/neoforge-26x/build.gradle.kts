@@ -11,6 +11,10 @@ plugins {
     alias(libs.plugins.moddev)
 }
 
+// The mod model below reads the shared modules' source sets, so they must be configured first.
+evaluationDependsOn(":expression")
+evaluationDependsOn(":shared")
+
 val mc26: String = (project.findProperty("bc.mc26") as String? ?: "26.3").trim()
 
 val neoVersion: String = when (mc26) {
@@ -49,6 +53,11 @@ neoForge {
     mods {
         create("buildcraft") {
             sourceSet(sourceSets.main.get())
+            // The version-independent modules are part of the mod, not external libraries. Declaring their
+            // source sets here is what puts them on the dev run's mod classpath -- a dev run loads
+            // build/classes directly rather than the jar, so bundling them into the jar is not enough.
+            sourceSet(project(":expression").sourceSets.main.get())
+            sourceSet(project(":shared").sourceSets.main.get())
         }
     }
 }

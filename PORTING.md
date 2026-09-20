@@ -67,7 +67,12 @@ Ported (compiling, tested):
   `MjBattery`'s arithmetic are shared; capabilities and the effect manager are per-platform.
   8 tests pass.
 - Both platforms — mod entrypoint, the five gears, the creative tab, `MjCapabilities`,
-  `IMjEffectManager`/`MjEffects`. `VecUtil` and `RotationUtil` are 26.x only so far.
+  `IMjEffectManager`/`MjEffects`.
+- 26.x only, so far — `BCRegistry` (the registration layer), `TileBC` and `BlockBCTile` (the
+  block entity and block bases), `VecUtil`, `RotationUtil`, and the power consumer tester,
+  which is the first machine to go all the way through: block, block entity, ticker, MJ
+  capability, model, loot table and tag. **Verified by booting a NeoForge 26.3 server**, not
+  just by compiling.
 
 Remaining, in the order they should be tackled — each module needs the one above it:
 
@@ -121,6 +126,10 @@ question this table does not.
 | `EnumFacing.getFacingFromAxis(dir, axis)` | `Direction.fromAxisAndDirection(axis, dir)` |
 | `EnumFacing.getDirectionVec()` | `Direction.getUnitVec3i()` |
 | `new BlockPos(double, double, double)` | `BlockPos.containing(double, double, double)` (floors) |
+| `world.isRemote` / `level.isClientSide` (field) | `level.isClientSide()` — the field is private on 26.x |
+| `TileEntity.readFromNBT` / `writeToNBT` | `BlockEntity.loadAdditional` / `saveAdditional` |
+| `ITickable.update()` | a `BlockEntityTicker` returned from `EntityBlock.getTicker` |
+| `Block.hasTileEntity` / `createTileEntity` | implement `EntityBlock.newBlockEntity` |
 
 `BlockPos` no longer has a double constructor at all, so anything that rounded a different
 way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
@@ -134,7 +143,10 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    `DeferredRegister` on the mod event bus. On 26.x the registry object carries its own id,
    so items no longer need an unlocalised-name string threaded through the constructor.
 3. **NBT → data components** (1.20.5). Item NBT does not exist on 26.x; anything BuildCraft
-   stored on a stack needs a `DataComponentType`. Block entities still use NBT.
+   stored on a stack needs a `DataComponentType`. Block entities still use NBT, but on 26.x they
+   read and write it through `ValueInput`/`ValueOutput` (`getLongOr(name, default)`,
+   `putLong(name, value)`) rather than `CompoundTag`, so the hooks are `loadAdditional` and
+   `saveAdditional`. 1.20.1 still uses `CompoundTag`.
 4. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
    `CustomPacketPayload` with a `StreamCodec` and explicit registration.
 5. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
@@ -169,12 +181,39 @@ These are the traps when porting a file to both at once.
 | Dev detection | `FMLLoader.getCurrent().isProduction()` | `FMLLoader.isProduction()` (static) |
 | Capabilities | `BlockCapability.createSided(Identifier, Class)` | `CapabilityManager.get(new CapabilityToken<>(){})` + `RegisterCapabilitiesEvent` |
 | Resource ids | `Identifier` | `ResourceLocation` |
+| Block entity NBT | `ValueInput` / `ValueOutput` | `CompoundTag` |
+| Block entity type | `new BlockEntityType<>(supplier, blocks...)` | `BlockEntityType.Builder.of(...).build(null)` |
+| Block `codec()` | not required (removed) | required (`simpleCodec`) |
+| Mod banner | `bannerFile` / `iconFile` | `logoFile` |
 | `pack_format` | 97 | 15 |
 | Gradle plugin | `net.neoforged.moddev` | `net.neoforged.moddev.legacyforge` |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs
 `legacyForge { enable { neoForgeVersion = "1.20.1-47.1.106" } }`.
+
+## Build and packaging gotchas
+
+Each of these cost a failed server boot, so they are worth knowing up front.
+
+- **The shared modules must be declared as part of the mod**, not just as Gradle dependencies.
+  A dev run loads `build/classes` directly rather than the built jar, so bundling `:expression`
+  and `:shared` into the jar is not enough — without
+  `mods { create("buildcraft") { sourceSet(project(":shared").sourceSets.main.get()) } }`
+  the game starts and then dies with `NoClassDefFoundError` on the first shared class touched.
+- **`pack.mcmeta` is optional for a mod, and on 26.x it is easier to leave out.** A mod's
+  resources are loaded as both a resource pack and a data pack, and those have different format
+  numbers (97 and 121 on 26.3), so one file cannot declare the right one for both. 26.x also
+  rejects any `pack_format` above 81 unless `min_format` and `max_format` are present
+  (`min_format` is an int, `max_format` is a `[major, minor]` pair). NeoForge infers correct
+  metadata per pack type when the file is absent. 1.20.1 still wants a plain `pack_format = 15`.
+- **`logoFile` is deprecated in `neoforge.mods.toml`** and fails mod loading validation on 26.x.
+  Use `bannerFile` for a wide image or `iconFile` for a square one. 1.20.1's `mods.toml` still
+  uses `logoFile`.
+- **Blocks need a loot table or they drop nothing.** 1.12.2 dropped the block itself by default.
+  The directory is `data/<ns>/loot_table/blocks/` — note `loot_table` is singular as of 1.21,
+  and `tags/block/` likewise.
+- **`requiresCorrectToolForDrops()` needs a mining tag**, or the block is unbreakable-for-drops.
 
 ## Conventions
 
