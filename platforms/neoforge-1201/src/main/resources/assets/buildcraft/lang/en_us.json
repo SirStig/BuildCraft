@@ -1,4 +1,10 @@
 {
+  "block.buildcraft.decorated_blueprint": "Blueprint (Decoration)",
+  "block.buildcraft.decorated_destroy": "Destroy (Decoration)",
+  "block.buildcraft.decorated_laser_back": "Laser (Decoration)",
+  "block.buildcraft.decorated_leather": "Leather (Decoration)",
+  "block.buildcraft.decorated_paper": "Paper (Decoration)",
+  "block.buildcraft.decorated_template": "Template (Decoration)",
   "block.buildcraft.marker_path": "Path Mark",
   "block.buildcraft.marker_volume": "Land Mark",
   "block.buildcraft.power_tester": "Power Consumer Tester",
@@ -8,6 +14,7 @@
   "item.buildcraft.gear_iron": "Iron Gear",
   "item.buildcraft.gear_stone": "Stone Gear",
   "item.buildcraft.gear_wood": "Wood Gear",
+  "item.buildcraft.goggles": "Goggles",
   "item.buildcraft.marker_connector": "Marker Connector",
   "item.buildcraft.wrench": "Wrench",
   "itemGroup.buildcraft.main": "BuildCraft"

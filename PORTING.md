@@ -475,6 +475,57 @@ Ported (compiling, tested):
     in a running game yet. Worth doing before relying on this for anything downstream (a `builders` machine
     that reads a `VolumeConnection`'s box, for instance).
 
+- **`core.block.BlockDecoration` and `core.item.ItemGoggles`.** Both graduate out of the
+  `buildcraft.core.{item,block,tile,gen}` survey above (their entries there are left as written, since they
+  correctly describe why each needed a real design pass rather than a mechanical port).
+  - **`BlockDecoration`** is six real blocks (`decorated_destroy`, `decorated_blueprint`, `decorated_template`,
+    `decorated_paper`, `decorated_leather`, `decorated_laser_back`) in place of 1.12.2's single block with a
+    six-value `EnumDecoratedBlock` blockstate property -- the same metadata-subtype split
+    `BlockSpringWater`/`DyedBlockVariants` already established, but with *no* surviving per-variant behaviour
+    at all this time: `getSubBlocks`/`damageDropped` only ever enumerated/reported metadata, and
+    `getLightValue(state, world, pos)` -- the one real behaviour `EnumDecoratedBlock.lightValue` carried --
+    moves to `BlockBehaviour.Properties#lightLevel(ToIntFunction<BlockState>)`, confirmed via `javap` to exist
+    identically on both targets and supplied per instance from `BCCoreRegistries` rather than read back off
+    blockstate. That leaves `BlockDecoration` itself an empty `Block` subclass, kept as a real named type (not
+    six bare `Block` instances) purely so other code has something to `instanceof` against, the same reasoning
+    `BlockSpringWater` already used. Textures are the real 1.12.2 assets pulled from
+    `buildcraft_resources/assets/buildcraftcore/textures/blocks/` (`blueprint/blue`, `blueprint/black`,
+    `misc/texture_red_dark`, `misc/paper`, `misc/leather`) except `laser_back`, whose 1.12.2 model pointed at
+    `buildcraftsilicon:blocks/laser/bottom` -- `buildcraft.silicon` isn't ported yet, so that one texture is
+    copied over from the still-unported module's own resource tree rather than invented. Properties
+    (`MapColor.METAL`, `strength(5.0F, 10.0F)`, `SoundType.METAL`) match what `BlockBCBase_Neptune`'s
+    constructor actually gave every 1.12.2 BuildCraft block by default (`Material.IRON`, hardness 5, resistance
+    10, `SoundType.METAL`) -- `BlockDecoration` never overrode any of them -- rather than reusing
+    `BlockPowerConsumerTester`'s already-ported `(5.0F, 6.0F)`, which turns out to not match that same default
+    either, a preexisting minor inconsistency left alone rather than "fixed" here.
+  - **`ItemGoggles` is the first place the two targets have needed genuinely different code for the same
+    feature**, not just renamed API calls -- see the new divergence-table row below and each platform's own
+    class javadoc for the full account. In short: 1.12.2 wrapped `ItemArmor` in Forge's `ISpecialArmor` to force
+    zero defense and skip durability damage. On 26.x, `javap` confirms `ArmorItem` doesn't exist as a class at
+    all any more -- equipping is purely the `Equippable` data component (real decompiled source read from the
+    merged jar), which carries no defense value of its own, so `ItemGoggles` is just a plain `Item` with an
+    `Equippable.builder(EquipmentSlot.HEAD)` component and no `ItemAttributeModifiers` component added on top
+    (the same shape vanilla's own `Items.CARVED_PUMPKIN` uses for a zero-defense head-slot item -- read
+    straight from `Items.java` in the bundled decompiled source, not invented); `damageOnHurt` is set `false`
+    on the component to mirror the original's explicit no-op, though it was already moot, since the item never
+    gets a `DataComponents.MAX_DAMAGE` component and `LivingEntity#hurtArmor` only calls `hurtAndBreak` when
+    `isDamageableItem()` is true. On 1.20.1, `javap` confirms the opposite: `ArmorItem`/`ArmorMaterial` are
+    still real (`ISpecialArmor` is the one now confirmed gone -- "class not found"), with `ArmorMaterial`
+    demoted from an enum to a plain interface `ArmorItem`'s constructor reads directly to build its
+    `Attributes.ARMOR`/`ARMOR_TOUGHNESS`/`KNOCKBACK_RESISTANCE` modifiers -- so `ItemGoggles` implements that
+    interface itself with every numeric value zeroed, in place of reusing `ArmorMaterials.CHAIN`. Durability 0
+    leaves `Item#isDamageableItem()` (`maxDamage > 0`) false, which is what `ItemStack#hurtAndBreak` actually
+    checks before doing anything -- the same "never damageable" end state as 26.x, reached by a different
+    mechanism. The enchantment value (12, matching `ArmorMaterials.CHAIN`) is kept on 1.20.1 even though every
+    defense number is zeroed, since 1.12.2 never overrode `getItemEnchantability` and so inherited chainmail's
+    default -- the one incidental property worth preserving alongside the intentionally-zeroed ones.
+  - Both registered in `BCCoreRegistries` (`decorated_destroy` through `decorated_laser_back`, and `goggles`)
+    with textures/models/blockstates/loot tables/lang pulled or written following `BlockSpringWater`/
+    `BlockPowerConsumerTester`'s established pattern; `goggles` needs only an inventory-icon item model, since
+    no rendering pipeline exists yet to draw a worn item either way (consistent with every other rendering
+    deferral elsewhere in this file). Verified with forced rebuilds, the full test suite, and real
+    dedicated-server boots on both targets -- no registration or component-wiring error surfaced on either.
+
 - `buildcraft.lib.misc.data.{Box,BoxIterable,BoxIterator}` and `.ProfilerBC` -- deferred as a
   group. `Box` (328 lines) needs `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering,
   not ported) and `MessageUtil` (blocked, needs the old `IMessage` networking stack); it also
@@ -1036,6 +1087,7 @@ These are the traps when porting a file to both at once.
 | `CompoundTag` key set | `keySet()` | `getAllKeys()` |
 | `FluidStack` existence | still exists (`net.neoforged.neoforge.fluids.FluidStack`), as a plain value type -- just not what a handler moves any more | `net.minecraftforge.fluids.FluidStack`, unchanged in shape from 1.12.2 |
 | Block-entity genuine-removal hook | `Block#onRemove` is gone (confirmed via `javap` against `BlockBehaviour`); `BlockEntity#preRemoveSideEffects(BlockPos, BlockState)` fires directly on the tile, only for a genuine block change, never a chunk unload | `BlockBehaviour#onRemove(state, level, pos, newState, movedByPiston)`, unchanged in shape from 1.12.2 |
+| Wearable/armor items | `ArmorItem` doesn't exist (confirmed via `javap`); a helmet is a plain `Item` carrying a `DataComponents.EQUIPPABLE` (`Equippable`) component, which has no defense field at all -- defense needs a separate, opt-in `ItemAttributeModifiers` component that `ItemGoggles` simply never adds | `ArmorItem`/`ArmorMaterial` still exist; `ArmorMaterial` is a plain interface (`getDefenseForType`/`getDurabilityForType`/...) `ArmorItem`'s constructor reads to build its `Attributes.ARMOR` modifiers -- Forge's old `ISpecialArmor` side interface is gone (confirmed via `javap`: class not found), so a zero-defense item implements `ArmorMaterial` itself with every value zeroed instead of overriding a side hook |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

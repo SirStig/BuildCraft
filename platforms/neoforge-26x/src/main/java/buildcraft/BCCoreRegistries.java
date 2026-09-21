@@ -26,12 +26,15 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import buildcraft.api.enums.EnumDecoratedBlock;
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.tiles.TilesAPI;
+import buildcraft.core.block.BlockDecoration;
 import buildcraft.core.block.BlockMarkerPath;
 import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
 import buildcraft.core.block.BlockSpringWater;
+import buildcraft.core.item.ItemGoggles;
 import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.marker.PathCache;
@@ -69,6 +72,7 @@ public final class BCCoreRegistries {
     public static final DeferredItem<ItemWrench> WRENCH = REGISTRY.addItem("wrench", ItemWrench::new);
     public static final DeferredItem<ItemMarkerConnector> MARKER_CONNECTOR =
         REGISTRY.addItem("marker_connector", ItemMarkerConnector::new);
+    public static final DeferredItem<ItemGoggles> GOGGLES = REGISTRY.addItem("goggles", ItemGoggles::new);
 
     // --- Markers ------------------------------------------------------------------
     private static final UnaryOperator<BlockBehaviour.Properties> MARKER_PROPERTIES = properties -> properties
@@ -113,6 +117,34 @@ public final class BCCoreRegistries {
                 .strength(-1.0F, 6000000.0F)
                 .sound(SoundType.STONE)
                 .noLootTable());
+
+    /**
+     * The six variants of 1.12.2's single metadata-subtyped {@code BlockDecoration} -- see
+     * {@link BlockDecoration}'s own javadoc for why each is its own block/properties pair instead of one block
+     * with a blockstate property. Light level is the one piece of real per-variant behaviour the old blockstate
+     * property carried, so it is read straight from {@link EnumDecoratedBlock#lightValue} rather than
+     * re-declared here.
+     */
+    private static UnaryOperator<BlockBehaviour.Properties> decoratedProperties(EnumDecoratedBlock variant) {
+        return properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .lightLevel(state -> variant.lightValue);
+    }
+
+    public static final DeferredBlock<BlockDecoration> DECORATED_DESTROY = REGISTRY.addBlockAndItem(
+        "decorated_destroy", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.DESTROY));
+    public static final DeferredBlock<BlockDecoration> DECORATED_BLUEPRINT = REGISTRY.addBlockAndItem(
+        "decorated_blueprint", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.BLUEPRINT));
+    public static final DeferredBlock<BlockDecoration> DECORATED_TEMPLATE = REGISTRY.addBlockAndItem(
+        "decorated_template", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.TEMPLATE));
+    public static final DeferredBlock<BlockDecoration> DECORATED_PAPER = REGISTRY.addBlockAndItem(
+        "decorated_paper", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.PAPER));
+    public static final DeferredBlock<BlockDecoration> DECORATED_LEATHER = REGISTRY.addBlockAndItem(
+        "decorated_leather", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.LEATHER));
+    public static final DeferredBlock<BlockDecoration> DECORATED_LASER_BACK = REGISTRY.addBlockAndItem(
+        "decorated_laser_back", BlockDecoration::new, decoratedProperties(EnumDecoratedBlock.LASER_BACK));
 
     /**
      * BuildCraft's creative tab. The 1.12.2 build had one tab per module via {@code CreativeTabManager}; modern

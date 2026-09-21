@@ -21,10 +21,13 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.api.enums.EnumDecoratedBlock;
+import buildcraft.core.block.BlockDecoration;
 import buildcraft.core.block.BlockMarkerPath;
 import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
 import buildcraft.core.block.BlockSpringWater;
+import buildcraft.core.item.ItemGoggles;
 import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.marker.PathCache;
@@ -63,6 +66,8 @@ public final class BCCoreRegistries {
         REGISTRY.addItem("wrench", () -> new ItemWrench(new Item.Properties()));
     public static final RegistryObject<ItemMarkerConnector> MARKER_CONNECTOR =
         REGISTRY.addItem("marker_connector", () -> new ItemMarkerConnector(new Item.Properties()));
+    public static final RegistryObject<ItemGoggles> GOGGLES =
+        REGISTRY.addItem("goggles", () -> new ItemGoggles(new Item.Properties()));
 
     // --- Markers ------------------------------------------------------------------
     private static BlockBehaviour.Properties markerProperties() {
@@ -109,6 +114,34 @@ public final class BCCoreRegistries {
                 .strength(-1.0F, 6000000.0F)
                 .sound(SoundType.STONE)
                 .noLootTable()));
+
+    /**
+     * The six variants of 1.12.2's single metadata-subtyped {@code BlockDecoration} -- see
+     * {@link BlockDecoration}'s own javadoc for why each is its own block/properties pair instead of one block
+     * with a blockstate property. Light level is the one piece of real per-variant behaviour the old blockstate
+     * property carried, so it is read straight from {@link EnumDecoratedBlock#lightValue} rather than
+     * re-declared here.
+     */
+    private static BlockBehaviour.Properties decoratedProperties(EnumDecoratedBlock variant) {
+        return BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .lightLevel(state -> variant.lightValue);
+    }
+
+    public static final RegistryObject<BlockDecoration> DECORATED_DESTROY = REGISTRY.addBlockAndItem(
+        "decorated_destroy", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.DESTROY)));
+    public static final RegistryObject<BlockDecoration> DECORATED_BLUEPRINT = REGISTRY.addBlockAndItem(
+        "decorated_blueprint", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.BLUEPRINT)));
+    public static final RegistryObject<BlockDecoration> DECORATED_TEMPLATE = REGISTRY.addBlockAndItem(
+        "decorated_template", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.TEMPLATE)));
+    public static final RegistryObject<BlockDecoration> DECORATED_PAPER = REGISTRY.addBlockAndItem(
+        "decorated_paper", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.PAPER)));
+    public static final RegistryObject<BlockDecoration> DECORATED_LEATHER = REGISTRY.addBlockAndItem(
+        "decorated_leather", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.LEATHER)));
+    public static final RegistryObject<BlockDecoration> DECORATED_LASER_BACK = REGISTRY.addBlockAndItem(
+        "decorated_laser_back", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.LASER_BACK)));
 
     /** BuildCraft's creative tab. {@link BCRegistry} keeps registration order, as the 1.12.2 tabs did. */
     public static final RegistryObject<CreativeModeTab> TAB_MAIN =
