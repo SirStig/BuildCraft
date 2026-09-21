@@ -36,6 +36,7 @@ PREFIXES = ["BuildCraftAPI/api/", "common/", "tests/",
 RELOCATED = {
     "buildcraft/lib/tile/item/IAutoCraft.java": "common/buildcraft/lib/tile/craft/IAutoCraft.java",
     "buildcraft/core/item/ItemWrench.java": "common/buildcraft/core/item/ItemWrench_Neptune.java",
+    "buildcraft/core/block/BlockSpringWater.java": "common/buildcraft/core/block/BlockSpring.java",
 }
 
 def upstream_for(path: pathlib.Path):

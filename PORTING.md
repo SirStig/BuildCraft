@@ -122,6 +122,13 @@ Ported (compiling, tested):
   parameters, and per-fluid bucket sounds move from `Fluid#getEmptySound`/`getFillSound` to
   `Fluid#getFluidType()#getSound(FluidStack, SoundAction)`, Forge's generic fluid-property
   system already shared by both targets.
+  `core.block.BlockSpringWater` (renamed from `BlockSpring`, water half only) is the first
+  worked example of splitting a 1.12.2 metadata-subtyped block into one real `Block` per
+  variant -- see its own class javadoc, and the `buildcraft.core` survey below for why the oil
+  half and `ItemBlockSpring`'s original two-variant `BlockItem` don't follow the same way yet.
+  Registered (`spring_water`, reusing vanilla's own `bedrock` model/texture, matching 1.12.2's
+  own choice there) but not yet spawned anywhere -- `core.gen.SpringPopulate`, the world-gen
+  hook that placed it, needs its own design; see the survey entry.
 - **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
@@ -241,25 +248,34 @@ Ported (compiling, tested):
   `Profiler`->`ProfilerFiller` split) with no consumer either; low value to port ahead of the
   rendering pass it belongs with.
 
-- **Survey of the rest of `buildcraft.core.{item,block,tile,gen}`** (22 of 24 files, `ItemWrench`
-  and `TilePowerConsumerTester`/`BlockPowerConsumerTester` aside). Unlike `buildcraft.lib`'s
-  utility layer, almost none of this is mechanical -- each file needs either a real
-  architectural decision this port hasn't made yet, or an unported subsystem. Recorded here so
-  the next pass doesn't have to re-derive it:
-  - `BlockDecoration`/`ItemBlockDecorated` and `BlockSpring`/`ItemBlockSpring` are both
-    single-`Block`-with-metadata-subtypes (`EnumDecoratedBlock`, 6 values; `EnumSpring`, 2
-    values) -- item #1 on PORTING.md's own structural-changes list, "block metadata is gone".
-    Each needs splitting into one real `Block`/`BlockItem` per enum value (the same shape
-    `DyedBlockVariants` already uses for colour families), not a per-file port. Neither has a
-    reader anywhere in the currently-ported tree to design against yet.
+- **Survey of the rest of `buildcraft.core.{item,block,tile,gen}`** (20 of 24 files, `ItemWrench`,
+  `BlockSpringWater` and `TilePowerConsumerTester`/`BlockPowerConsumerTester` aside). Unlike
+  `buildcraft.lib`'s utility layer, almost none of this is mechanical -- each file needs either a
+  real architectural decision this port hasn't made yet, or an unported subsystem. Recorded here
+  so the next pass doesn't have to re-derive it:
+  - `BlockDecoration`/`ItemBlockDecorated` is single-`Block`-with-metadata-subtypes
+    (`EnumDecoratedBlock`, 6 values) -- item #1 on PORTING.md's own structural-changes list,
+    "block metadata is gone". Needs splitting into one real `Block`/`BlockItem` per enum value,
+    the same shape `BlockSpringWater` now demonstrates for `EnumSpring`'s water half (see the
+    entry above) and `DyedBlockVariants` already uses for colour families -- not a per-file
+    port. Has no reader anywhere in the currently-ported tree to design the split against yet
+    (unlike spring water, nothing pulls it in even indirectly).
   - `core.gen.SpringPopulate` (water/oil spring world generation) is built on
     `PopulateChunkEvent`/`TerrainGen`, Forge's old chunk-populate hook. There is no equivalent
     event on either target -- world generation is entirely datapack/`Feature`-driven now
     (`Feature<NoneFeatureConfiguration>` registered through `BiomeModifications` or a
-    `ConfiguredFeature`/`PlacedFeature` JSON pair). A real feature to write, not a rename.
+    `ConfiguredFeature`/`PlacedFeature` JSON pair). A real feature to write, not a rename. Until
+    this lands, `BlockSpringWater` (ported) has no way to spawn naturally -- same "foundation
+    ported, not yet wired to its trigger" situation as `DeltaManager`/`lib.cache` and `TileBC`.
   - `core.tile.ITileOilSpring` is a two-method marker interface with nothing wrong with it, but
     its only implementor is `buildcraft.energy.tile.TileSpringOil`, entirely unported; nothing
-    to port it *for* yet.
+    to port it *for* yet. `BlockSpringOil` (the other `EnumSpring` half) waits alongside it: its
+    block entity is only sometimes present, decided by whether `buildcraft.energy` has
+    registered one at all -- a runtime, cross-module decision that 1.12.2 expressed by mutating
+    a shared `EnumSpring.OIL` instance, but doesn't map onto the modern `EntityBlock`/
+    `BlockEntityType` model's *static*, registration-time-only block entity typing. Needs a real
+    design once `buildcraft.energy` exists to design it against, not a mechanical copy of the
+    water half.
   - `ItemGoggles` implements `ISpecialArmor` (confirmed absent from both targets' jars) to make
     a zero-defense, damage-immune helmet. Modern armor is a bigger redesign than a rename can
     cover: there is no `ArmorItem` class to extend any more (verified via `javap` -- armor

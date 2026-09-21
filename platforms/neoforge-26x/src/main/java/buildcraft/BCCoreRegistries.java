@@ -26,6 +26,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.core.block.BlockPowerConsumerTester;
+import buildcraft.core.block.BlockSpringWater;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.tile.TilePowerConsumerTester;
 import buildcraft.lib.registry.BCRegistry;
@@ -67,6 +68,18 @@ public final class BCCoreRegistries {
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TilePowerConsumerTester>> POWER_TESTER_TYPE =
         REGISTRY.addBlockEntity("power_tester", TilePowerConsumerTester::new, POWER_TESTER);
+
+    /** The water half of 1.12.2's single metadata-subtyped {@code BlockSpring} -- see
+     * {@link BlockSpringWater}'s own javadoc. Not yet spawned anywhere: {@code core.gen.SpringPopulate}, the
+     * world-generation hook that placed it in 1.12.2, needs its own redesign against the modern
+     * {@code Feature}/datapack world-gen system (PORTING.md's {@code buildcraft.core} survey). */
+    public static final DeferredBlock<BlockSpringWater> SPRING_WATER =
+        REGISTRY.addBlockAndItem("spring_water", BlockSpringWater::new,
+            properties -> properties
+                .mapColor(MapColor.STONE)
+                .strength(-1.0F, 6000000.0F)
+                .sound(SoundType.STONE)
+                .noLootTable());
 
     /**
      * BuildCraft's creative tab. The 1.12.2 build had one tab per module via {@code CreativeTabManager}; modern
