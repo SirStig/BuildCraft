@@ -13,7 +13,6 @@ import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Block;
 
@@ -79,7 +78,9 @@ public final class DyedBlockVariants {
             // suffix -> (colour -> block), keyed within a namespace so two mods' "_wool" never merge.
             Map<String, EnumMap<DyeColor, Block>> bySuffix = new HashMap<>();
             for (Block block : BuiltInRegistries.BLOCK) {
-                Identifier id = BuiltInRegistries.BLOCK.getKey(block);
+                // var, not the type name: this is Identifier on 26.x and ResourceLocation on 1.20.1,
+                // and inferring it is what lets this file be identical on both targets.
+                var id = BuiltInRegistries.BLOCK.getKey(block);
                 String path = id.getPath();
                 for (DyeColor colour : BY_PREFIX_LENGTH) {
                     String prefix = colour.getSerializedName().toLowerCase(Locale.ROOT) + "_";
