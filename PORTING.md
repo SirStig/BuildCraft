@@ -325,6 +325,69 @@ Ported (compiling, tested):
     already, never `LocalPlayer`, so this never came up there). Worth remembering for whoever writes the
     next client-bound message on 1.20.1.
 
+- **`buildcraft.lib.misc.data.Box` and `buildcraft.core.marker`'s concrete marker types (9 files, both
+  platforms) — the volume-box and path connections `buildcraft.lib.marker`'s framework was built for.**
+  `Box`, `VolumeCache`/`VolumeConnection`/`VolumeSubCache`/`VolumeSavedData`,
+  `PathCache`/`PathConnection`/`PathSubCache`/`PathSavedData`. This turns out to make the deferred-`Box`
+  entry below stale for `Box` specifically (left as-is rather than rewritten -- a future pass can clean it
+  up): `Box`'s only unported dependency was three `@SideOnly(Side.CLIENT)` fields (`laserData`,
+  `lastMin`/`lastMax`, `lastType`) that nothing in its actual geometry ever read, dropped outright with a
+  one-line class-javadoc note; `MessageUtil.readBlockPos`/`writeBlockPos` (blocked) turned out to be
+  unnecessary too, since `FriendlyByteBuf` already has `readBlockPos()`/`writeBlockPos(BlockPos)` built in
+  on both targets. `BoxIterable`/`BoxIterator` and `ProfilerBC` remain deferred exactly as that entry
+  describes -- this pass didn't touch them.
+  - `IZone#getRandomBlockPos` (inherited through `IBox`) takes a `RandomSource` now, not
+    `java.util.Random`, but `PositionUtil#randomBlockPos` still takes the old `java.util.Random` type, so
+    `Box#getRandomBlockPos(RandomSource)` reimplements that method's arithmetic directly rather than
+    delegating to it.
+  - `Vec3(Vec3i)` -- the constructor 1.12.2's `new Vec3d(BlockPos)` idiom relied on -- doesn't exist on
+    1.20.1 (confirmed via `javap`; only `Vec3.atLowerCornerOf(Vec3i)` does there), even though 26.x does
+    have it. Using `Vec3.atLowerCornerOf` uniformly, and building `getBoundingBox()`'s `AABB` through the
+    `AABB(Vec3, Vec3)` constructor rather than `AABB(BlockPos, BlockPos)` (only present on 1.20.1, not
+    26.x), keeps `Box.java` textually identical on both platforms -- the one genuine divergence left is
+    `CompoundTag`'s int-reading method in the legacy `initialize(CompoundTag)` NBT branch (26.x:
+    `getIntOr(key, default)`; 1.20.1: `getInt(key)`, already 0-defaulting).
+  - `BlockPos.betweenClosed(min, max)` (the modern rename of `BlockPos.getAllInBox`) reuses a single
+    mutable `BlockPos` across the whole iteration; `Box#getBlocksInArea()` calls `.immutable()` on each
+    before adding it to the returned `List`, which the original 1.12.2 method never did -- a latent bug in
+    the class this ports from, fixed rather than carried over, since nothing in either version has a real
+    caller yet to have depended on the broken behaviour.
+  - `BCCoreConfig.markerMaxDistance` isn't ported (see this file's deferred-config entries) -- both
+    `VolumeConnection`/`VolumeSubCache` and `PathSubCache` use a local
+    `private static final int MARKER_MAX_DISTANCE = 64;` (package-visible where a connection type and its
+    sub-cache both need it) standing in for it, `64` being that config's own 1.12.2 default
+    (`config.get(general, "markerMaxDistance", 64)`), not a new value.
+  - `VolumeConnection#renderInWorld`/`PathConnection#renderInWorld` are empty overrides, not the
+    laser-drawing 1.12.2 had -- `buildcraft.lib.client.render.laser` and
+    `buildcraft.core.client.BuildCraftLaserManager` are both unported rendering code, same situation
+    `MarkerConnection#renderInWorld` itself already documents. `PathConnection`'s private `renderLaser`/
+    `offset` rendering helpers, and `VolumeConnection`/`PathConnection`'s dropped `@SideOnly(Side.CLIENT)`
+    annotations, follow the same reasoning already established for `MarkerConnection`/`MarkerSubCache`.
+  - `VolumeSubCache`/`PathSubCache`'s `getPossibleLaserType()` override is deleted outright, not just
+    emptied -- the abstract method it overrode no longer exists on `MarkerSubCache` at all (dropped there
+    in the previous pass), so an `@Override` here would fail to compile.
+  - **`World#getPerWorldStorage().getOrLoadData`/`.setData` needed real per-platform research, and the
+    obvious assumption going in (that 1.20.1's `Level#getDataStorage()` is available on a generic `Level`,
+    unlike 26.x's `ServerLevel`-only `SavedDataStorage`) turned out to be wrong when checked directly.**
+    Confirmed via `javap` against both real merged jars: on 26.x, `Level#getDataStorage` doesn't exist at
+    all -- only `ServerLevel#getDataStorage()` does, returning `SavedDataStorage`. On 1.20.1, the same is
+    true: `javap` against `net.minecraft.world.level.Level` (and, checked separately, against
+    `net.minecraft.client.multiplayer.ClientLevel`) shows neither declares `getDataStorage()` either --
+    only `ServerLevel#getDataStorage()` does there too, returning `DimensionDataStorage`. So both targets
+    behave identically here: a client `Level` has no on-disk storage reachable at all, and
+    `VolumeSubCache`/`PathSubCache`'s constructors branch on `level instanceof ServerLevel serverLevel`,
+    skipping the disk load entirely otherwise and relying on `MessageMarker` network sync for the client --
+    which is what actually kept 1.12.2's client in sync too, the disk load there always having been a
+    server-side concern. On 26.x, the load goes through `serverLevel.getDataStorage().computeIfAbsent(
+    VolumeSavedData.TYPE)`, a `SavedDataType<VolumeSavedData>` built from `MarkerSavedData.createCodec` and
+    `BuildCraftAPI.nameToResourceId(VolumeSavedData.NAME)` via the 3-argument `SavedDataType(Identifier,
+    Supplier<T>, Codec<T>)` constructor (no `DataFixTypes` needed, confirmed present via `javap`). On
+    1.20.1, it's `serverLevel.getDataStorage().computeIfAbsent(VolumeSavedData.LOADER, VolumeSavedData::new,
+    VolumeSavedData.NAME)`, `LOADER` being `MarkerSavedData.createLoader(VolumeSavedData::new)`.
+    `PathSavedData` mirrors this exactly. Both dev servers boot clean with these classes on the classpath
+    (nothing yet constructs a `VolumeCache`/`PathCache` to actually exercise the load/save path -- see the
+    `buildcraft.lib.marker` entry above for why `registerCache` has no caller yet).
+
 - `buildcraft.lib.misc.data.{Box,BoxIterable,BoxIterator}` and `.ProfilerBC` -- deferred as a
   group. `Box` (328 lines) needs `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering,
   not ported) and `MessageUtil` (blocked, needs the old `IMessage` networking stack); it also
