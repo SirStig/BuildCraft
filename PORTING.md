@@ -101,12 +101,9 @@ Ported (compiling, tested):
   `TileBC` and `BlockBCTile` (the block entity and block bases), `VecUtil`, `RotationUtil`,
   and the power consumer tester -- the first machine to go all the way through: block, block
   entity, ticker, MJ capability, model, loot table and tag.
-- `buildcraft.api.core` — all 28 files. Seven are Minecraft-free and live in `:shared`;
-  of the fifteen platform ones, eleven are byte-identical on both targets.
-- `buildcraft.api.tiles`, `buildcraft.api.blocks`, `buildcraft.api.power` — all three
-  packages. `CapabilitiesHelper` is deliberately dropped (see below).
-- `buildcraft.api.enums` (7 of 10) and `buildcraft.api.properties` — every file
-  byte-identical on both targets.
+- **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
+  Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
+  annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
 
 Deliberately not ported, with reasons:
 
@@ -120,6 +117,16 @@ Deliberately not ported, with reasons:
 - `EnumRedstoneChipset`, `BCItems`, `BCBlocks` — all three are keyed off item damage or the
   eight old `@ObjectHolder` mod ids. They want `DeferredHolder` against real registry
   entries, so they follow the modules that define those entries rather than leading them.
+- `IItemHandlerFiltered` — renamed `IFilteredItemHandler` on 26.x, because the interface it
+  extends is now `ResourceHandler<ItemResource>`. Unchanged on 1.20.1.
+- The eight rendering interfaces in `transport` — `IPipeBehaviourBaker`, `IPipeFlowRenderer`,
+  `PluggableModelKey`, `PipeApiClient` and friends. They are all shaped around
+  `BlockRenderLayer` and quad baking, so they come back with the rendering rewrite rather
+  than being guessed at now.
+- The `package-info.java` files. Each carried only
+  `@API(apiVersion = ..., owner = ..., provides = ...)`, an FML annotation for the
+  standalone-API-jar mechanism that no longer exists. Where a package needed real
+  documentation it got a new one, such as `buildcraft.api.core`.
 
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
@@ -133,7 +140,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 
 | Module | Files | Notes |
 | --- | --- | --- |
-| `BuildCraftAPI/api` | ~210 left of 251 | Needed by everything. Port alongside `lib`. The big remaining packages are `transport` (54), `statements` (26), `robots` (13) and `recipes` (10). |
+| `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 85 | Gears (done), wrench, markers, engines, map location. |
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |

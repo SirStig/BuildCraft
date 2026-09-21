@@ -48,6 +48,8 @@ IMPORTS = {
     "net.minecraft.entity.item.EntityItem": "net.minecraft.world.entity.item.ItemEntity",
     "net.minecraftforge.fluids.FluidStack": "net.neoforged.neoforge.fluids.FluidStack",
     "net.minecraftforge.fluids.Fluid": "net.minecraft.world.level.material.Fluid",
+    "net.minecraftforge.fml.common.eventhandler.Event": "net.neoforged.bus.api.Event",
+    "net.minecraftforge.fml.common.eventhandler.Cancelable": "net.neoforged.bus.api.ICancellableEvent",
     "javax.annotation.Nonnull": "org.jetbrains.annotations.NotNull",
     "javax.annotation.Nullable": "org.jetbrains.annotations.Nullable",
 }
@@ -134,6 +136,14 @@ METHODS = {
 
 
 def convert(text: str) -> str:
+    # @Cancelable became "implements ICancellableEvent". Done before the import rewrite so the annotation
+    # and its import are both still recognisable.
+    text = re.sub(
+        r"@Cancelable\s*\n(\s*)((?:public |static |final |abstract )*class \w+ extends [\w.]+)(?!\s+implements)",
+        r"\1\2 implements ICancellableEvent",
+        text,
+    )
+
     for old, new in sorted(IMPORTS.items(), key=lambda kv: -len(kv[0])):
         text = text.replace(old, new)
     for old, new in TYPES.items():
