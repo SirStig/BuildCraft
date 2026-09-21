@@ -1,7 +1,9 @@
 /*
- * Copyright (c) 2017 SpaceToad and the BuildCraft team
- * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
- * distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
+ * Copyright (c) 2026 Joshua Kac -- NeoForge port (BuildCraft 10)
+ *
+ * This file is part of the BuildCraft 10 port and is distributed under the terms of the MIT License.
+ * Please check the contents of the license, which should be located as "LICENSE.PORT" in the BuildCraft
+ * source code distribution.
  */
 package buildcraft.test.lib.misc;
 

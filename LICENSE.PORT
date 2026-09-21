@@ -1,0 +1,44 @@
+BuildCraft 10 NeoForge Port License
+
+Copyright (c) 2026 Joshua Kac
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+NOTE ON SCOPE
+-------------
+
+This license covers only the files written for this port that are not derived
+from earlier BuildCraft code. Those files carry a header naming this file.
+
+Files ported from BuildCraft 8.0.x keep the license they already had, because
+neither of those licenses permits relicensing someone else's code:
+
+  * buildcraft.api.* is MIT, under "LICENSE.API". Ported API files keep the
+    original BuildCraft copyright notice, as MIT requires, with the port's
+    copyright added alongside it.
+
+  * Everything else -- the 1.12.2 tree in common/ and sub_projects/expression/
+    -- is Mozilla Public License 2.0, under "LICENSE-NEW". MPL 2.0 section 3.1
+    does not allow the license on a covered file to be changed, so ported files
+    stay MPL 2.0 with the port's copyright added.
+
+Relicensing those would need agreement from every contributor to the files
+concerned; license_checker/ in this repository is the tooling the BuildCraft
+team used for exactly that when they moved from MMPL to MPL 2.0.

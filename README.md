@@ -146,3 +146,19 @@ dependencies {
 }
 ```
 Where `7.99.12` is the desired version of BuildCraft.
+
+## Licensing
+
+BuildCraft is under two licenses, and the BuildCraft 10 NeoForge port keeps both -- neither
+one permits relicensing code you did not write, so a ported file stays under whatever license
+it already had, with the port's copyright added alongside the original notice.
+
+| Code | License | File |
+| --- | --- | --- |
+| `buildcraft.api.*` | MIT | `LICENSE.API` |
+| Everything else ported from BuildCraft 8.0.x | MPL 2.0 | `LICENSE-NEW` |
+| Files written for this port, not derived from earlier BuildCraft code | MIT | `LICENSE.PORT` |
+
+Every source file says which of the three applies to it. `LICENSE` is the original MMPL,
+which BuildCraft moved off; `license_checker/` is the tooling the BuildCraft team used to
+collect the per-contributor agreement that move required, and is kept for reference.
