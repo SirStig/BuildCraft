@@ -144,6 +144,31 @@ Ported (compiling, tested):
   needed to prove the registration design works, not to bring the whole package along -- but
   each individual message is now an ordinary port against a settled design, not an open
   question.
+- **`buildcraft.lib.gui.pos` (9 files) and `buildcraft.lib.gui.ISimpleDrawable`, in `modules/shared`.**
+  A self-contained "screen coordinate algebra" package (points, rectangles, offsets, all as
+  composable `IGuiPosition`/`IGuiArea` values) discovered while porting `buildcraft.lib.
+  statement` below, which needed it for `StatementContext`. Confirmed via a full import audit
+  of all 9 files that none of it touches Minecraft or rendering at all -- pure interfaces and
+  math, built only on `java.util.function.DoubleSupplier` and the already-ported `modules/
+  expression` -- so, like the earlier `buildcraft.lib.misc`/`misc.data` pure-Java files, it
+  lives once in `modules/shared` rather than duplicated per platform.
+- **`buildcraft.lib.statement` (7 files, both platforms).** The generic trigger/action
+  wrapper layer gates and other statement-driven blocks will eventually sit on top of
+  (`ActionWrapper`, `TriggerWrapper`, `StatementWrapper`, `FullStatement`, `StatementType`,
+  `StatementTypeParam`, `StatementContext`). `buildcraft.api.statements` (already fully
+  ported) turned out to have modernised its own shape along the way, discovered while
+  porting this: `IGuiSlot#getDescription()`/`getTooltip()` return `Component` now, not
+  `String` (both were built from a client-only `I18n` lookup in 1.12.2, which doesn't work on
+  a server; a `Component` carries its translation key and resolves at draw time instead,
+  which is also why the `@SideOnly(Side.CLIENT)` annotations on them are gone -- see
+  `IGuiSlot`'s own javadoc), and `IStatementParameter`'s NBT/buffer read/write methods all
+  gained a `HolderLookup.Provider` parameter, threaded through `StatementType`/
+  `StatementTypeParam`/`FullStatement` here as a result -- reading or writing a parameter can
+  mean reading or writing an `ItemStack`, whose data components need registry access on
+  26.x. 1.20.1's copy of the same API takes the identical parameter, ignoring it, specifically
+  so both platforms' `lib.statement` files could stay this close to identical; they are.
+  `StatementManager`'s lookup also changed shape: no `getParameterReader(kind)` method exists
+  any more, just the public `parameters`/`paramsBuf` maps directly.
 - **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
