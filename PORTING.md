@@ -192,6 +192,13 @@ Ported (compiling, tested):
   GUI node types (`buildcraft.lib.gui.pos`, not ported) are omitted, along with the 1.12.2
   obfuscation-bug workaround (`BCLib.throwBadClass`) that guarded the former -- see its class
   javadoc.
+- `buildcraft.lib.cache` (7, both platforms) — the chunk/neighbour-tile lookup caches every
+  machine's chunk-loading-avoidance code goes through. `Chunk#isLoaded()`/`TileEntity#isInvalid()`
+  are gone (`Level#hasChunk`/`BlockEntity#isRemoved()` respectively), `Block#hasTileEntity(state)`
+  is `BlockState#hasBlockEntity()`, and `TileBC_Neptune`'s own `getChunk` shortcut (which
+  `NeighbourTileCache` special-cased) has no equivalent on `TileBC`, so that lookup now always
+  goes through `ChunkUtil#getChunk` uniformly rather than special-casing BuildCraft's own base
+  class.
 
 Deliberately not ported, with reasons:
 
