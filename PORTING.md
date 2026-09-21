@@ -241,6 +241,59 @@ Ported (compiling, tested):
   `Profiler`->`ProfilerFiller` split) with no consumer either; low value to port ahead of the
   rendering pass it belongs with.
 
+- **Survey of the rest of `buildcraft.core.{item,block,tile,gen}`** (22 of 24 files, `ItemWrench`
+  and `TilePowerConsumerTester`/`BlockPowerConsumerTester` aside). Unlike `buildcraft.lib`'s
+  utility layer, almost none of this is mechanical -- each file needs either a real
+  architectural decision this port hasn't made yet, or an unported subsystem. Recorded here so
+  the next pass doesn't have to re-derive it:
+  - `BlockDecoration`/`ItemBlockDecorated` and `BlockSpring`/`ItemBlockSpring` are both
+    single-`Block`-with-metadata-subtypes (`EnumDecoratedBlock`, 6 values; `EnumSpring`, 2
+    values) -- item #1 on PORTING.md's own structural-changes list, "block metadata is gone".
+    Each needs splitting into one real `Block`/`BlockItem` per enum value (the same shape
+    `DyedBlockVariants` already uses for colour families), not a per-file port. Neither has a
+    reader anywhere in the currently-ported tree to design against yet.
+  - `core.gen.SpringPopulate` (water/oil spring world generation) is built on
+    `PopulateChunkEvent`/`TerrainGen`, Forge's old chunk-populate hook. There is no equivalent
+    event on either target -- world generation is entirely datapack/`Feature`-driven now
+    (`Feature<NoneFeatureConfiguration>` registered through `BiomeModifications` or a
+    `ConfiguredFeature`/`PlacedFeature` JSON pair). A real feature to write, not a rename.
+  - `core.tile.ITileOilSpring` is a two-method marker interface with nothing wrong with it, but
+    its only implementor is `buildcraft.energy.tile.TileSpringOil`, entirely unported; nothing
+    to port it *for* yet.
+  - `ItemGoggles` implements `ISpecialArmor` (confirmed absent from both targets' jars) to make
+    a zero-defense, damage-immune helmet. Modern armor is a bigger redesign than a rename can
+    cover: there is no `ArmorItem` class to extend any more (verified via `javap` -- armor
+    material and rendering moved to a `net.minecraft.world.item.equipment.ArmorMaterial`
+    record that requires a `ResourceKey<EquipmentAsset>`, a new equipment-rendering asset
+    registry this port hasn't touched yet) -- needs its own design pass, not a quick port.
+  - `ItemPaintbrush_BC8` is a 17-metadata-subtype item (1 "clean" + 16 dye colours) storing
+    remaining uses in NBT keyed by damage-as-metadata -- the same subtype-removal redesign
+    `StackUtil`'s class javadoc already describes in the abstract, here in concrete form. It
+    also needs `ParticleUtil` (rendering, not ported) and `SpecialColourFontRenderer`
+    (rendering). A real redesign (one item, uses + colour as data components) rather than a
+    port.
+  - `ItemMapLocation` needs `buildcraft.lib.misc.data.Box`, deferred above for its own reasons.
+    `ItemVolumeBox`, `ItemMarkerConnector`, `BlockMarkerPath`/`BlockMarkerVolume` and
+    `TileMarkerPath`/`TileMarkerVolume` all need `buildcraft.core.marker`/
+    `buildcraft.lib.marker`, neither ported (see the next entry). `ItemFragileFluidContainer`
+    needs `buildcraft.lib.fluid` (unported) and a `Capability<IFluidHandler>` (the `CapUtil`
+    chain, already documented as blocked). `ItemList_BC8` needs `buildcraft.lib.list`,
+    deferred above for having no ported consumer. `ItemEngine_BC8`/`BlockEngine_BC8`/
+    `TileEngineCreative`/`TileEngineRedstone_BC8` all need `buildcraft.lib.engine`, unported.
+  - `buildcraft.lib.marker` (4 files) was checked directly as part of this survey: blocked on
+    `buildcraft.lib.tile.TileMarker` (unported), `buildcraft.lib.client.render.laser.
+    LaserData_BC8` (rendering, unported), and `buildcraft.lib.net.{MessageManager,
+    MessageMarker}` -- which need the actual message-dispatch redesign PORTING.md's
+    networking structural-change entry has flagged as not-yet-designed since early in this
+    port. Of everything surveyed here, this is the one blocker worth resolving deliberately
+    rather than waiting on a consumer: it also blocks wiring the already-ported
+    `buildcraft.lib.delta.DeltaManager` and `buildcraft.lib.cache` into `TileBC`, so a real
+    `CustomPacketPayload`/`StreamCodec` design on 26.x and whatever 1.20.1's equivalent turns
+    out to be (confirmed via `javap`: 1.20.1 has no `CustomPacketPayload` at all -- that's a
+    1.20.2+ vanilla addition, so 1.20.1 needs the older `SimpleChannel`/`NetworkRegistry.
+    ChannelBuilder` shape instead, a genuinely different design per target, not just a
+    renamed one) is worth doing as its own focused pass rather than piecemeal.
+
 Deliberately not ported, with reasons:
 
 - `buildcraft.lib.registry.{RegistrationHelper,RegistryConfig,TagManager,CreativeTabManager}`,
