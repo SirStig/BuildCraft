@@ -104,8 +104,62 @@ Ported (compiling, tested):
 - **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
+- `buildcraft.lib.nbt` (5), `.mj` (2), `.crops` (2), `.compat` (3), `.migrate` (2), `.fake` (1),
+  `.json` (1), `buildcraft.lib.misc.{NBTUtilBC,StackUtil}`, and `BCLibConfig`,
+  `IChunkLoadingTile`, `IBlockWithFacing`, `ILocalBlockUpdateSubscriber`,
+  `buildcraft.lib.registry.PluggableRegistry` — the parts of `buildcraft.lib`'s foundation
+  layer that turned out not to need the tile/net/block/item cluster below them.
 
 Deliberately not ported, with reasons:
+
+- `buildcraft.lib.registry.{RegistrationHelper,RegistryConfig,TagManager,CreativeTabManager}`,
+  `buildcraft.lib.block.{BlockBCBase_Neptune,BlockBCTile_Neptune}`, and
+  `buildcraft.lib.item.IItemBuildCraft` (and everything implementing it --
+  `ItemBC_Neptune`/`ItemBlockBC_Neptune`/`ItemBlockBCMulti`) -- all of 1.12.2's per-module
+  registration plumbing. This is not a porting gap: the port's `BCRegistry` (see "Both
+  platforms, at parity" above) already replaced the whole `RegistrationHelper`/`TagManager`/
+  `RegistryConfig` trio, and `TileBC`/`BlockBCTile` already replaced the Neptune base
+  classes -- both say so in their own javadoc. `IItemBuildCraft`'s job (setting an
+  unlocalised name, a registry name, a creative tab, and per-damage-value model variants) is
+  covered by `BCRegistry` plus the lang/model JSON for everything except the model-variant
+  half, which has nothing left to port: item damage no longer selects a model variant at
+  all.
+- `buildcraft.lib.block.VanillaPaintHandlers` -- registered explicit paint handlers for
+  vanilla glass, glass panes and terracotta, each a single block with a 16-value colour
+  property in 1.12.2. All three are 16 separate blocks now, following the
+  `<colour>_<suffix>` naming convention every vanilla colour family uses
+  (`white_stained_glass`, `red_terracotta`, ...) -- which is exactly what
+  `buildcraft.api.blocks.DyedBlockVariants` (see the api.blocks port) discovers generically.
+  `CustomPaintHelper`'s default fallback already recolours all three without any
+  block-specific registration; there is nothing left for this class to do.
+- `buildcraft.lib.block.LocalBlockUpdateNotifier` and `buildcraft.lib.world.
+  WorldEventListenerAdapter` -- both exist only to implement `IWorldEventListener`, vanilla's
+  generic "notify me of every block change in this level" hook. It is not renamed, it is
+  gone -- confirmed absent from the 26.x jars, with nothing that fires on every block change
+  generically to replace it (NeoForge's `BlockEvent` variants are for specific things:
+  drops, neighbour-notify, trample; none is "a block's state changed"). Nothing in the port
+  calls either class yet, so this is deferred pending a real consumer to design the
+  replacement against, rather than guessed at speculatively.
+- `buildcraft.lib.chunkload.ChunkLoaderManager` -- 1.12.2's chunk-forcing API
+  (`ForgeChunkManager.requestTicket`/`Ticket`) was redesigned into a
+  `TicketHelper`/`LoadingValidationCallback` pair in Forge *before* 1.20.1 (confirmed: this
+  target's jar already has the new shape), and redesigned again into a registered
+  `TicketController` on 26.x. Needs rewriting on both targets, not porting on one and
+  renaming on the other. `IChunkLoadingTile`, the pure-data interface machines implement to
+  ask for chunkloading, is ported; the manager that reads it is not.
+- `buildcraft.lib.registry.MigrationManager` -- block/item id migration across mod versions
+  (`RegistryEvent.MissingMappings`). A maintenance feature with no bearing on anything else
+  in the port; deferred as low priority rather than blocked.
+- `buildcraft.lib.block.VanillaRotationHandlers` -- QoL wrench-rotation for ~25 vanilla block
+  types (anvils, stairs, doors, hoppers, skulls, ...). Each needs individually verifying
+  against the modern renamed block classes (`BlockDirectional`->`DirectionalBlock`,
+  `BlockRedstoneDiode`->`DiodeBlock`, etc.) and the file also leans on
+  `ObfuscationReflectionHelper` for private-field access, which needs rethinking under
+  Mojang mappings. Real value, but an enhancement rather than something anything else
+  depends on; deferred rather than rushed.
+- `buildcraft.lib.block.BlockMarkerBase` and the rest of `buildcraft.lib.item`
+  (`ItemDebugger`, `ItemGuide`, `ItemGuideNote`, `ItemPluggableSimple`) -- follow
+  `buildcraft.lib.marker` and the guide-book/pluggable systems respectively, none ported yet.
 
 - `CapabilitiesHelper` — it existed only to supply the no-op storage and null factory
   1.12.2's capability system demanded but never used. Neither argument exists now.
