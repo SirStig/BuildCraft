@@ -40,6 +40,7 @@ SUBS = [
     (r"\.getByteArray\(([^)]+)\)\.orElse\(new byte\[0\]\)", r".getByteArray(\1)"),
     (r"\.getCompound\(([^)]+)\)\.orElseGet\(CompoundTag::new\)", r".getCompound(\1)"),
     (r"\.getList\(([^)]+)\)\.orElseGet\(ListTag::new\)", r".getList(\1, Tag.TAG_COMPOUND)"),
+    (r"\.keySet\(\)", ".getAllKeys()"),
 ]
 
 

@@ -45,6 +45,22 @@ IMPORTS = {
     "net.minecraft.nbt.NBTBase": "net.minecraft.nbt.Tag",
     "net.minecraft.nbt.NBTTagString": "net.minecraft.nbt.StringTag",
     "net.minecraft.network.PacketBuffer": "net.minecraft.network.RegistryFriendlyByteBuf",
+    "net.minecraft.profiler.Profiler": "net.minecraft.util.profiling.ProfilerFiller",
+    "net.minecraft.util.text.TextFormatting": "net.minecraft.ChatFormatting",
+    "net.minecraft.util.text.ITextComponent": "net.minecraft.network.chat.Component",
+    "net.minecraft.util.text.TextComponentString": "net.minecraft.network.chat.Component",
+    "net.minecraft.client.util.SuffixArray": "net.minecraft.util.SuffixArray",
+    "net.minecraftforge.common.util.INBTSerializable": "net.neoforged.neoforge.common.util.INBTSerializable",
+    "net.minecraft.nbt.NBTTagList": "net.minecraft.nbt.ListTag",
+    "net.minecraft.nbt.NBTTagByte": "net.minecraft.nbt.ByteTag",
+    "net.minecraft.nbt.NBTTagByteArray": "net.minecraft.nbt.ByteArrayTag",
+    "net.minecraft.nbt.NBTTagDouble": "net.minecraft.nbt.DoubleTag",
+    "net.minecraft.nbt.NBTTagFloat": "net.minecraft.nbt.FloatTag",
+    "net.minecraft.nbt.NBTTagInt": "net.minecraft.nbt.IntTag",
+    "net.minecraft.nbt.NBTTagIntArray": "net.minecraft.nbt.IntArrayTag",
+    "net.minecraft.nbt.NBTTagLong": "net.minecraft.nbt.LongTag",
+    "net.minecraft.nbt.NBTTagShort": "net.minecraft.nbt.ShortTag",
+    "net.minecraft.nbt.NBTPrimitive": "net.minecraft.nbt.NumericTag",
     "net.minecraft.entity.item.EntityItem": "net.minecraft.world.entity.item.ItemEntity",
     "net.minecraftforge.fluids.FluidStack": "net.neoforged.neoforge.fluids.FluidStack",
     "net.minecraftforge.fluids.Fluid": "net.minecraft.world.level.material.Fluid",
@@ -76,6 +92,20 @@ TYPES = {
     "IBlockAccess": "BlockGetter",
     "Nonnull": "NotNull",
     "EntityItem": "ItemEntity",
+    "NBTTagList": "ListTag",
+    "NBTTagByteArray": "ByteArrayTag",
+    "NBTTagIntArray": "IntArrayTag",
+    "NBTTagByte": "ByteTag",
+    "NBTTagDouble": "DoubleTag",
+    "NBTTagFloat": "FloatTag",
+    "NBTTagIntTag": "IntTag",
+    "NBTTagInt": "IntTag",
+    "NBTTagLong": "LongTag",
+    "NBTTagShort": "ShortTag",
+    "NBTPrimitive": "NumericTag",
+    "Profiler": "ProfilerFiller",
+    "TextFormatting": "ChatFormatting",
+    "ITextComponent": "Component",
     "World": "Level",
 }
 
@@ -128,14 +158,35 @@ METHODS = {
     # Forge's NBT type constants moved onto Tag itself.
     r"\bConstants\.NBT\.": "Tag.",
 
+    # Profiler: startSection/endSection/endStartSection became push/pop/popPush.
+    r"\.startSection\(": ".push(",
+    r"\.endSection\(\)": ".pop()",
+    r"\.endStartSection\(": ".popPush(",
+
+    # NOTE the argument swap: getFacingFromAxis took (direction, axis), fromAxisAndDirection takes
+    # (axis, direction).
+    r"\bDirection\.getFacingFromAxis\(([^,]+),\s*([^)]+)\)": r"Direction.fromAxisAndDirection(\2, \1)",
+
+    r"\bBlockPos\.getAllInBox\(": "BlockPos.betweenClosed(",
+    r"\.tagCount\(\)": ".size()",
+    r"\.squareDistanceTo\(": ".distanceToSqr(",
+
     # Assorted single-method renames.
     r"\.getPos\(\)": ".getBlockPos()",
     r"\.getTag\((\s*(?:\"[^\"]*\"|\w+))\)": r".get(\1)",
     r"\bnameToResourceLocation\(": "nameToResourceId(",
+    r"\.getKeySet\(\)": ".keySet()",
+    r"\.getWorld\(\)": ".getLevel()",
+    r"\.hasNoTags\(\)": ".isEmpty()",
 }
 
 
 def convert(text: str) -> str:
+    # @SideOnly(Side.CLIENT) has no replacement: @OnlyIn stops the class loading on a server entirely,
+    # which breaks anything holding a reference to it. Dropped, along with its imports.
+    text = re.sub(r"\n[ \t]*@SideOnly\(Side\.\w+\)", "", text)
+    text = re.sub(r"^import net\.minecraftforge\.fml\.relauncher\.(Side|SideOnly);\n", "", text, flags=re.M)
+
     # @Cancelable became "implements ICancellableEvent". Done before the import rewrite so the annotation
     # and its import are both still recognisable.
     text = re.sub(
