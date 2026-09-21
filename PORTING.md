@@ -272,6 +272,58 @@ Ported (compiling, tested):
   `NeighbourTileCache` special-cased) has no equivalent on `TileBC`, so that lookup now always
   goes through `ChunkUtil#getChunk` uniformly rather than special-casing BuildCraft's own base
   class.
+- **`buildcraft.lib.marker` (6 files, both platforms) — the abstract marker-connection framework**:
+  `MarkerCache`, `MarkerSubCache`, `MarkerConnection`, `MarkerSavedData`, `buildcraft.lib.tile.TileMarker`
+  and `buildcraft.lib.net.MessageMarker` (registered `playToClient` on 26.x, `NetworkDirection.PLAY_TO_CLIENT`
+  on 1.20.1 -- this message is server-to-client only, unlike `MessageUpdateTile`). Compiles cleanly on both
+  and both dev servers still boot clean after the registration change, but nothing instantiates a concrete
+  `MarkerCache`/`MarkerSubCache`/`MarkerConnection` yet -- `buildcraft.core.marker`'s concrete
+  `VolumeCache`/`PathCache`/etc. are still out of scope, deliberately deferred to a later pass (see the
+  `buildcraft.core` survey entry above, which flagged this package as the blocker).
+  - `MarkerSavedData<S, C>` cannot supply a complete `SavedDataType`/`DimensionDataStorage` factory by
+    itself -- both need a concrete, constructible type, which a generic class parameterised over `S`/`C`
+    doesn't have. It still `extends SavedData` (rather than becoming a detached data holder), so a future
+    concrete subtype satisfies that bound through ordinary inheritance; what it can't supply is the
+    `Codec<T>` (26.x) / `Function<CompoundTag, T>` loader (1.20.1), so `createCodec`/`createLoader` are
+    generic static factories a concrete subtype calls with nothing but its own no-arg constructor
+    reference. No connection-specific codec is needed either way -- a connection is saved purely as its
+    grouped `BlockPos` list, exactly 1.12.2's own on-disk shape.
+  - `TileMarker`'s `onLoad`/`onChunkUnload` become `clearRemoved`/`setRemoved`, as expected, but the
+    genuine-removal-vs-chunk-unload split turned out to differ *between* the two targets, not just from
+    1.12.2, contradicting this file's own earlier assumption below (in the `buildcraft.core` survey entry)
+    that both targets would need a cooperating `Block#onRemove`: decompiling the real 26.x `LevelChunk`
+    shows `Block#onRemove` is gone there entirely (not renamed -- confirmed via `javap` against
+    `BlockBehaviour`), replaced by `affectNeighborsAfterRemoval`, which drops the `newState` parameter the
+    old `state.getBlock() != newState.getBlock()` trick needed. In its place, 26.x calls a brand new hook
+    directly on the block entity, `BlockEntity#preRemoveSideEffects(BlockPos, BlockState)`, fired only on a
+    genuine block change, never a chunk unload -- so `TileMarker` handles the whole distinction itself there,
+    no cooperating `Block` needed at all. 1.20.1 still has the old `onRemove(state, level, pos, newState,
+    movedByPiston)` shape, so that target's `TileMarker` still exposes a public `removeFromMarkerCache()`
+    for a future `BlockMarkerBase` to call from its own `onRemove` override, matching the original
+    assumption. Both platforms guard against `setRemoved()` (which still fires afterwards either way, for
+    both genuine removal and chunk unload) double-handling an already-genuinely-removed marker via the same
+    `genuinelyRemoved` flag.
+  - `MarkerSubCache`'s abstract `getPossibleLaserType()` is dropped outright (no `LaserData_BC8`, no
+    renderer to call it for yet -- see that class's own javadoc), and `MarkerCache.registerCache`'s 1.12.2
+    FML-lifecycle guard is dropped with no replacement (no modern equivalent check, and nothing calls this
+    before mod construction finishes anyway).
+  - **A real, previously-unknown runtime pitfall, found by actually booting the 1.20.1 dedicated server
+    (not just compiling) after wiring `MessageMarker` into `BCNetwork`**: reading
+    `Minecraft.getInstance().player` (declared type `LocalPlayer`, client-only) directly inside
+    `MessageMarker.handle` crashed dedicated-server mod construction with a `BootstrapMethodError` --
+    `Attempted to load class net/minecraft/client/player/LocalPlayer for invalid dist DEDICATED_SERVER` --
+    even though `handle` itself is never *invoked* server-side (the message is server-to-client only).
+    `BCNetwork.register()` still has to pass `MessageMarker::handle` as a method reference on both sides to
+    register the codec, and that alone loads and bytecode-verifies the whole class, including `handle`'s
+    body; verifying the implicit `LocalPlayer -> Player` widening assignment needs the verifier to resolve
+    `LocalPlayer`'s hierarchy, which Forge's runtime dist-cleaner refuses on a dedicated server. Fixed by
+    isolating that one touch into its own nested class (`MessageMarker.ClientPlayerLookup`), which only
+    loads lazily when actually invoked -- never, server-side. This is a general trap for *any* future
+    client-bound message handler on 1.20.1 that reads a client-only type inline, not specific to markers;
+    26.x's merged/joined jar has no equivalent restriction (confirmed: the 26.x dev server boots fine with
+    `MessageMarker.handle` reading `IPayloadContext#player()`, whose static type is the common `Player`
+    already, never `LocalPlayer`, so this never came up there). Worth remembering for whoever writes the
+    next client-bound message on 1.20.1.
 
 - `buildcraft.lib.misc.data.{Box,BoxIterable,BoxIterator}` and `.ProfilerBC` -- deferred as a
   group. `Box` (328 lines) needs `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering,
@@ -350,6 +402,11 @@ Ported (compiling, tested):
     `buildcraft.lib.net`/`BCNetwork` progress entry below -- so `MessageMarker` itself is now
     just an ordinary message to write once `MarkerCache` exists to route it through, not a
     design problem in its own right.
+
+    Update: this whole entry is superseded -- `buildcraft.lib.marker` and `TileMarker` are both ported now
+    (see the new `buildcraft.lib.marker` progress entry above), and the `onRemove` assumption two sentences
+    up turned out to only hold for 1.20.1; 26.x found a better dedicated hook instead. See that entry for
+    the full account. Only `buildcraft.core.marker`'s concrete subtypes remain unported.
 
 Deliberately not ported, with reasons:
 
@@ -828,6 +885,7 @@ These are the traps when porting a file to both at once.
 | `ChatFormatting` | gutted to the escape sequence and `stripFormatting` only -- no `isColor()`/`getColor()`/`getChar()`/`getName()` (confirmed against the real source; text styling moved to `Style`/`TextColor`) | keeps the full 1.12.2-shaped API, `isColor()` included |
 | `CompoundTag` key set | `keySet()` | `getAllKeys()` |
 | `FluidStack` existence | still exists (`net.neoforged.neoforge.fluids.FluidStack`), as a plain value type -- just not what a handler moves any more | `net.minecraftforge.fluids.FluidStack`, unchanged in shape from 1.12.2 |
+| Block-entity genuine-removal hook | `Block#onRemove` is gone (confirmed via `javap` against `BlockBehaviour`); `BlockEntity#preRemoveSideEffects(BlockPos, BlockState)` fires directly on the tile, only for a genuine block change, never a chunk unload | `BlockBehaviour#onRemove(state, level, pos, newState, movedByPiston)`, unchanged in shape from 1.12.2 |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs
@@ -855,6 +913,18 @@ Each of these cost a failed server boot, so they are worth knowing up front.
   The directory is `data/<ns>/loot_table/blocks/` — note `loot_table` is singular as of 1.21,
   and `tags/block/` likewise.
 - **`requiresCorrectToolForDrops()` needs a mining tag**, or the block is unbreakable-for-drops.
+- **On 1.20.1, a client-bound message handler cannot read a client-only type (e.g.
+  `Minecraft.getInstance().player`, declared type `LocalPlayer`) inline in its own method body**, even if
+  that method only ever runs client-side at runtime. Registering the message (`SimpleChannel.registerMessage`
+  via a `MessageClass::handle` method reference) has to happen on both sides, which loads and
+  bytecode-verifies the whole class regardless of which side actually calls the method -- and verifying an
+  implicit widening assignment from a client-only type needs the verifier to resolve that type's hierarchy,
+  which Forge's runtime dist-cleaner refuses on a dedicated server, crashing mod construction with a
+  `BootstrapMethodError` ("invalid dist DEDICATED_SERVER"). Isolate the touch into its own class file (nested
+  is fine) that only loads when actually invoked. Found porting `MessageMarker` -- see the
+  `buildcraft.lib.marker` progress entry above for the full account. 26.x has no equivalent restriction (its
+  merged/joined jar and `IPayloadContext#player()`, whose static type is already the common `Player`, never
+  `LocalPlayer`, sidestep this entirely).
 
 ## How much actually has to be duplicated
 

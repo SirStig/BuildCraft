@@ -10,6 +10,7 @@ package buildcraft;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+import buildcraft.lib.net.MessageMarker;
 import buildcraft.lib.net.MessageUpdateTile;
 
 /**
@@ -30,5 +31,6 @@ public final class BCNetwork {
         PayloadRegistrar registrar = event.registrar(BuildCraft.MOD_ID).versioned("1");
 
         registrar.playBidirectional(MessageUpdateTile.TYPE, MessageUpdateTile.STREAM_CODEC, MessageUpdateTile::handle);
+        registrar.playToClient(MessageMarker.TYPE, MessageMarker.STREAM_CODEC, MessageMarker::handle);
     }
 }

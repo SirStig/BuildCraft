@@ -7,6 +7,7 @@
  */
 package buildcraft;
 
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -14,10 +15,13 @@ import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
+import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
+import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
+import buildcraft.lib.net.MessageMarker;
 import buildcraft.lib.net.MessageUpdateTile;
 
 /**
@@ -48,6 +52,19 @@ public final class BCNetwork {
     public static void register() {
         registerMessage(MessageUpdateTile.class, MessageUpdateTile::write, MessageUpdateTile::read,
             MessageUpdateTile::handle);
+        // Server-to-client only, unlike the bidirectional registerMessage helper above -- SimpleChannel's
+        // direction-restricted overload takes an Optional<NetworkDirection> rather than a boolean flag, so
+        // this is registered directly here instead of through the shared helper.
+        CHANNEL.registerMessage(nextId++, MessageMarker.class, MessageMarker::write, MessageMarker::read,
+            MessageMarker::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+    }
+
+    /** Forwards a send onto {@link #CHANNEL}. This has to be public rather than package-private: unlike
+     * {@link #register}, a message's actual send call happens wherever that message is produced (e.g.
+     * {@code buildcraft.lib.marker.MarkerSubCache}), not from this class, and {@link #CHANNEL} itself stays
+     * private since nothing outside this class needs more than "send this". */
+    public static <MSG> void send(PacketDistributor.PacketTarget target, MSG message) {
+        CHANNEL.send(target, message);
     }
 
     private static <T> void registerMessage(Class<T> messageClass, BiConsumer<T, FriendlyByteBuf> encoder,
