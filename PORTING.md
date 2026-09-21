@@ -129,6 +129,21 @@ Ported (compiling, tested):
   Registered (`spring_water`, reusing vanilla's own `bedrock` model/texture, matching 1.12.2's
   own choice there) but not yet spawned anywhere -- `core.gen.SpringPopulate`, the world-gen
   hook that placed it, needs its own design; see the survey entry.
+- **`buildcraft.lib.net`'s networking foundation is designed and landed, both platforms.**
+  `BCNetwork` (a new root-package class, alongside `BCRegistries`) is this port's replacement
+  for `MessageManager`: a thin, per-message static registration list rather than a dynamic
+  per-mod dispatch table -- see the "Networking" structural-change entry for the full design
+  and why the two targets need genuinely different underlying registration APIs.
+  `IPayloadReceiver` and `MessageUpdateTile` (both platforms) are the first ported message:
+  routes an opaque payload to whatever block entity implementing `IPayloadReceiver` sits at a
+  given position. Verified with a real dev-server boot on each target, not just a compile
+  check -- no crash, no registration error, mod construction and world load both completed
+  cleanly on both. `MessageManager`, `MessageUtil`, and the rest of `lib.net`'s concrete
+  messages (`MessageContainer`, `MessageDebugRequest`/`Response`, `MessageMarker`,
+  `MessageObjectCacheRequest`/`Response`) are still not ported -- `MessageUpdateTile` only
+  needed to prove the registration design works, not to bring the whole package along -- but
+  each individual message is now an ordinary port against a settled design, not an open
+  question.
 - **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
@@ -297,18 +312,19 @@ Ported (compiling, tested):
     deferred above for having no ported consumer. `ItemEngine_BC8`/`BlockEngine_BC8`/
     `TileEngineCreative`/`TileEngineRedstone_BC8` all need `buildcraft.lib.engine`, unported.
   - `buildcraft.lib.marker` (4 files) was checked directly as part of this survey: blocked on
-    `buildcraft.lib.tile.TileMarker` (unported), `buildcraft.lib.client.render.laser.
-    LaserData_BC8` (rendering, unported), and `buildcraft.lib.net.{MessageManager,
-    MessageMarker}` -- which need the actual message-dispatch redesign PORTING.md's
-    networking structural-change entry has flagged as not-yet-designed since early in this
-    port. Of everything surveyed here, this is the one blocker worth resolving deliberately
-    rather than waiting on a consumer: it also blocks wiring the already-ported
-    `buildcraft.lib.delta.DeltaManager` and `buildcraft.lib.cache` into `TileBC`, so a real
-    `CustomPacketPayload`/`StreamCodec` design on 26.x and whatever 1.20.1's equivalent turns
-    out to be (confirmed via `javap`: 1.20.1 has no `CustomPacketPayload` at all -- that's a
-    1.20.2+ vanilla addition, so 1.20.1 needs the older `SimpleChannel`/`NetworkRegistry.
-    ChannelBuilder` shape instead, a genuinely different design per target, not just a
-    renamed one) is worth doing as its own focused pass rather than piecemeal.
+    `buildcraft.lib.tile.TileMarker` (unported -- and its own `onLoad`/`onChunkUnload` hooks
+    are themselves gone from `BlockEntity`, folded into `setLevel`/`clearRemoved`/`setRemoved`;
+    distinguishing "chunk unloaded" from "genuinely destroyed", which 1.12.2 could tell apart
+    at the tile level, now needs the owning `Block`'s `onRemove(state, level, pos, newState,
+    movedByPiston)` comparing `state.getBlock() != newState.getBlock()` instead -- a real
+    design point for whoever ports `TileMarker`, not a one-line rename), and
+    `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering, unported; `MarkerSubCache`'s
+    one use of it, `getPossibleLaserType()`, can simply be dropped when that file is ported --
+    nothing calls it without a renderer to call it for). The message-dispatch blocker this
+    entry used to flag is resolved -- see the "Networking" structural-change entry and the new
+    `buildcraft.lib.net`/`BCNetwork` progress entry below -- so `MessageMarker` itself is now
+    just an ordinary message to write once `MarkerCache` exists to route it through, not a
+    design problem in its own right.
 
 Deliberately not ported, with reasons:
 
@@ -625,8 +641,32 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    `getItemData`/`setItemData`/`updateItemData` for exactly this reason; the 1.20.1 copy keeps
    the original single `getItemData` because 1.20.1's `stack.getOrCreateTag()` is still a live
    reference.
-5. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
-   `CustomPacketPayload` with a `StreamCodec` and explicit registration.
+5. **Networking**, and this is the one place besides capabilities where the two targets need
+   genuinely different designs, not a renamed one -- confirmed via `javap`: 1.20.1 has no
+   `CustomPacketPayload` at all (that class is a 1.20.2+ vanilla addition), so it keeps
+   1.12.2's own `SimpleChannel`/`NetworkRegistry.ChannelBuilder`, registering each message
+   against a numeric id the same way 1.12.2 did, just once and statically rather than
+   dynamically at FML postInit. 26.x replaces the whole stack with `CustomPacketPayload` +
+   `StreamCodec`, registered through `RegisterPayloadHandlersEvent`'s `PayloadRegistrar`.
+
+   Both targets drop `MessageManager` itself rather than port it: 1.12.2's dynamic per-mod
+   message-class registry (which assigned each message an id lazily, resolved at FML
+   postInit) has no equivalent left to build now that both platforms want every message
+   statically registered up front, individually -- there is no dispatch table to build, so
+   `BCNetwork` (this port's `MessageManager` equivalent, alongside `BCRegistries`) is a thin
+   per-message registration list instead, one line added per message as it lands.
+   `IMessageHandler`'s return-a-reply contract is also gone: both `IPayloadContext` (26.x) and
+   `NetworkEvent.Context` (1.20.1) already expose `reply(...)` and `enqueueWork(...)` directly
+   on the object a handler receives, so `IPayloadReceiver` (BuildCraft's own generic "does this
+   tile want this payload" interface) has nothing left to hand back either.
+
+   `buildcraft.lib.net.MessageUpdateTile` -- the one truly generic message, routing an opaque
+   payload to whatever `IPayloadReceiver` block entity sits at a given position -- is the first
+   ported message on both targets, verified with a real dev-server boot on each (no crash, no
+   registration error) rather than just a compile check, since networking bugs are exactly the
+   kind that pass `javac` and fail at runtime. `FriendlyByteBuf` already has `readBlockPos`/
+   `writeBlockPos` built in on both targets, so `MessageUtil`'s equivalent helpers (still
+   blocked; see its own entry) were never needed for this file.
 6. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
    1.16, so on 1.20.1 each capability is fetched with a `CapabilityToken` and declared in
    `RegisterCapabilitiesEvent`. 26.x replaces the whole system with `BlockCapability`, keyed by

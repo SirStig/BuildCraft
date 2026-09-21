@@ -41,5 +41,6 @@ public final class BuildCraft {
         LOGGER.info("BuildCraft starting up (Minecraft 1.20.1).");
 
         BCRegistries.register(modBus);
+        BCNetwork.register();
     }
 }
