@@ -66,13 +66,19 @@ Ported (compiling, tested):
 - `buildcraft.api.mj` — the MJ power API. The five interfaces, `MjAPI`'s constants and
   `MjBattery`'s arithmetic are shared; capabilities and the effect manager are per-platform.
   8 tests pass.
-- Both platforms — mod entrypoint, the five gears, the creative tab, `MjCapabilities`,
-  `IMjEffectManager`/`MjEffects`.
-- 26.x only, so far — `BCRegistry` (the registration layer), `TileBC` and `BlockBCTile` (the
-  block entity and block bases), `VecUtil`, `RotationUtil`, and the power consumer tester,
-  which is the first machine to go all the way through: block, block entity, ticker, MJ
-  capability, model, loot table and tag. **Verified by booting a NeoForge 26.3 server**, not
-  just by compiling.
+- Both platforms, at parity — mod entrypoint, the five gears, the creative tab,
+  `MjCapabilities`, `IMjEffectManager`/`MjEffects`, `BCRegistry` (the registration layer),
+  `TileBC` and `BlockBCTile` (the block entity and block bases), `VecUtil`, `RotationUtil`,
+  and the power consumer tester -- the first machine to go all the way through: block, block
+  entity, ticker, MJ capability, model, loot table and tag.
+
+**Both targets are verified by booting a server**, not just by compiling. That matters: every
+bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
+runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
+registration change.
+
+Not verified: client-side rendering. Checking that the models actually draw needs a display,
+so treat the blockstate/model JSON as unconfirmed until someone runs `runClient`.
 
 Remaining, in the order they should be tackled — each module needs the one above it:
 
@@ -214,6 +220,21 @@ Each of these cost a failed server boot, so they are worth knowing up front.
   The directory is `data/<ns>/loot_table/blocks/` — note `loot_table` is singular as of 1.21,
   and `tags/block/` likewise.
 - **`requiresCorrectToolForDrops()` needs a mining tag**, or the block is unbreakable-for-drops.
+
+## How much actually has to be duplicated
+
+Worth knowing before adding a platform class, because the answer is not "all of it":
+
+- `VecUtil` and `RotationUtil` are **byte-identical** on both targets. The vanilla geometry
+  types did not move between 1.20.1 and 26.x, so the only work was the 1.12.2 -> modern rename.
+- `MjEffects` and `IMjEffectManager` are likewise identical, and kept separate only so each
+  platform's `buildcraft.api.mj` package is self-contained.
+- What genuinely differs is registration (`BCRegistry`), block entity serialisation (`TileBC`),
+  and capabilities (`MjCapabilities`, and how a machine exposes one). Those three are where the
+  two targets really diverge, and they are worth reading side by side before porting a machine.
+
+So the practical rule: port to 26.x first, try the same file unchanged on 1.20.1, and only fork
+it when the compiler objects.
 
 ## Conventions
 

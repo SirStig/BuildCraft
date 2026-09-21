@@ -11,6 +11,10 @@ plugins {
     alias(libs.plugins.moddev.legacy)
 }
 
+// The mod model below reads the shared modules' source sets, so they must be configured first.
+evaluationDependsOn(":expression")
+evaluationDependsOn(":shared")
+
 base.archivesName = "buildcraft-neoforge-1.20.1"
 
 java {
@@ -42,6 +46,10 @@ legacyForge {
     mods {
         create("buildcraft") {
             sourceSet(sourceSets.main.get())
+            // A dev run loads build/classes rather than the jar, so the shared modules have to be declared as
+            // part of the mod or the game dies with NoClassDefFoundError on the first shared class touched.
+            sourceSet(project(":expression").sourceSets.main.get())
+            sourceSet(project(":shared").sourceSets.main.get())
         }
     }
 }
