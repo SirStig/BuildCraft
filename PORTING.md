@@ -50,6 +50,24 @@ would cost more than the duplication.
 ./gradlew :neoforge-26x:runClient        # launch the game
 ```
 
+### Testing in a real game
+
+Dev runs (`runClient`/`runServer`) load `build/classes` directly. That is fine for most things but it does
+not exercise the built jar, which is where the bundling gotchas below bite, so anything that needs real
+testing goes into a Prism Launcher instance:
+
+```bash
+./gradlew installToPrism                 # both targets
+./gradlew :neoforge-26x:installToPrism   # just Minecraft 26.3
+./gradlew :neoforge-26x:installToPrism -Pbc.mc26=26.1
+```
+
+Each platform is mapped to the instance matching its Minecraft release and loader, and the task deletes any
+previously installed BuildCraft jar first so two versions never load at once. Other mods in the instance are
+left alone. Override with `-Pbc.prism.instance="<name>"` for a differently named instance, or
+`-Pbc.prism.dir=<PrismLauncher data dir>` for a non-Flatpak install; the task lists the instances it can see
+when it cannot find the one it wants.
+
 Minecraft 26.x needs a **Java 25** toolchain — FancyModLoader 12 refuses to resolve against
 anything older. Gradle will download one if it is not installed. Gradle itself must be 9.x;
 8.x cannot drive a Java 25 toolchain.

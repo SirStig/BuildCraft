@@ -86,3 +86,8 @@ tasks.withType<ProcessResources>().configureEach {
         expand(replacements)
     }
 }
+
+// Installing into a Prism Launcher instance, for testing in a real game. The instance is named after the
+// Minecraft release this build targets, so -Pbc.mc26=26.1 installs into the 26.1 instance.
+extra["bc.prism.instance"] = "Retrograde $mc26 NeoForge"
+apply(from = rootProject.file("gradle/prism.gradle.kts"))

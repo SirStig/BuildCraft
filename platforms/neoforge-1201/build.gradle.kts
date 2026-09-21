@@ -76,3 +76,8 @@ tasks.withType<ProcessResources>().configureEach {
         expand(replacements)
     }
 }
+
+// Installing into a Prism Launcher instance, for testing in a real game. The 1.20.1 instance runs
+// MinecraftForge rather than NeoForge's fork; both are 47.x and load the same jar.
+extra["bc.prism.instance"] = "Retrograde 1.20.1 Forge"
+apply(from = rootProject.file("gradle/prism.gradle.kts"))

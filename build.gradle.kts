@@ -45,3 +45,10 @@ tasks.register("buildCommon") {
     description = "Builds the version-independent modules (expression, shared)."
     dependsOn(":expression:build", ":shared:build")
 }
+
+// Convenience aggregate: install both platform jars into their Prism Launcher instances.
+tasks.register("installToPrism") {
+    group = "buildcraft"
+    description = "Builds both targets and installs them into their Prism Launcher instances."
+    dependsOn(":neoforge-26x:installToPrism", ":neoforge-1201:installToPrism")
+}
