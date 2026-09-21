@@ -218,9 +218,15 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    1.20.1 has none of this — it is still `IItemHandler`/`IFluidHandler` with `FluidAction`.
    This is the single largest source of per-platform divergence after registration, and it
    lands squarely on `transport`, `factory` and `robotics`.
-7. **Rendering.** `TESR` → `BlockEntityRenderer`, and the whole `PoseStack`/`RenderType`
-   pipeline replaces raw GL. `GlUtil` and most of `buildcraft.lib.client` are rewrites, not
-   ports.
+7. **Rendering**, and 26.x is a second rewrite on top of the first. `TESR` → `BlockEntityRenderer`,
+   and the `PoseStack`/`RenderType` pipeline replaces raw GL — that much is the 1.20.1 story.
+   26.x then replaces *that*: rendering no longer draws during the render pass, it **submits**
+   work to a graph that is sorted and executed later. `MultiBufferSource` does not exist;
+   the collector is `net.minecraft.client.renderer.SubmitNodeCollector`, with
+   `submitModel`/`submitModelPart`/`submitCustomGeometry` in place of getting a
+   `VertexConsumer` and writing to it. Anything taking a `MultiBufferSource` is therefore a
+   third signature, not a shared one — `IItemCustomPipeRender` is the worked example.
+   `GlUtil` and most of `buildcraft.lib.client` are rewrites, not ports, on both targets.
 8. **Ore dictionary → tags.** `OreDictionary.registerOre` becomes a tag JSON. BuildCraft
    publishes its gears under `c:gears/<material>` on 26.x and `forge:gears/<material>` on
    1.20.1.
@@ -237,6 +243,10 @@ These are the traps when porting a file to both at once.
 | | 26.x | 1.20.1 |
 | --- | --- | --- |
 | Loader packages | `net.neoforged.*` | `net.minecraftforge.*` |
+| Item/fluid transfer | `transfer.ResourceHandler<T>` + `Transaction` | `IItemHandler` / `IFluidHandler` |
+| Render collector | `SubmitNodeCollector` | `MultiBufferSource` |
+| Stack NBT | `ItemStack.CODEC` only | `ItemStack.save` / `.of` |
+| Stack equality | `isSameItemSameComponents` | `isSameItemSameTags` |
 | Mod metadata | `META-INF/neoforge.mods.toml` | `META-INF/mods.toml` |
 | Dependency flag | `type = "required"` | `mandatory = true` |
 | Registry handle | `DeferredHolder` / `DeferredItem` | `RegistryObject` |
