@@ -111,6 +111,15 @@ Ported (compiling, tested):
   layer that turned out not to need the tile/net/block/item cluster below them.
   `InventoryUtil` is a partial port (the drop/spawn/`addAll`/`addToPlayer` helpers only) --
   see the `CapUtil`/`ItemTransactorHelper` entry below for the rest.
+- `buildcraft.lib.misc.{ArrayUtil,MathUtil,TimeUtil,StringUtilBC,ObjectUtilBC,ModUtil,
+  BoundingBoxUtil,EntityUtil,PermissionUtil,RegistryUtil,FakePlayerProvider,ChunkUtil,
+  StackNbtMatcher,AdvancementUtil}` (both platforms). `StringUtilBC` is a partial port for the
+  same reason `InventoryUtil` is: `formatStringForWhite`/`formatStringForBlack` and
+  `compareBasicReadable` all need `ColourUtil`, which is not ported (and itself needs
+  `BCLibConfig`, `LocaleUtil` and `SpecialColourFontRenderer`, none of which are ported
+  either) -- see that class's own javadoc. `DebuggingTools`, the fifteenth file in this batch,
+  is not ported at all: it exists solely to register a `WorldEventListenerAdapter`, which the
+  "deliberately not ported" list below already explains is gone with nothing to replace it.
 - `buildcraft.lib.tile.craft.IAutoCraft` (relocated to `buildcraft.lib.tile.item`, next to its
   only real dependency, `ItemHandlerSimple`).
 - `buildcraft.lib.delta` (2, both platforms) — the render/GUI interpolation helper
@@ -148,6 +157,41 @@ Ported (compiling, tested):
   message dispatch it served in 1.12.2 (`IPayloadReceiver`, `MessageManager`) is not ported
   yet; both targets' networking layers differ enough from 1.12's single channel that design
   follows once there is a concrete message to register.
+- `buildcraft.lib.misc.{LocaleUtil,PositionUtil,VolumeUtil,WorkerThreadUtil,ColourUtil,
+  ProfilerUtil,JsonUtil,FluidUtilBC,ExpressionCompat}` (both platforms, all with the previous
+  batch's `ColourUtil`/`StringUtilBC` gap now closed -- `ColourUtil` only needed `BCLibConfig`,
+  `LocaleUtil` and `SpecialColourFontRenderer`, and only the last is still missing, worked
+  around below). `WorkerThreadUtil`, `PositionUtil` and `VolumeUtil` are unchanged beyond the
+  1.12.2 -> modern rename (see the new Method-rename-table rows for `BlockPos.relative`,
+  `Direction.getClockWise` and `AxisDirection.getStep`). `LocaleUtil` swaps 1.12.2's `I18n`
+  for `Language.getInstance()` (common code on both targets, unlike the client-only modern
+  `I18n`) and `MjAPI.getRfConversion()` for `IMjToRfStatus.get().getConversion()`, the latter
+  already ported as part of `buildcraft.api.mj`. `ColourUtil` hard-codes
+  `useColouredLabels`/`useHighContrastLabelColours` to their 1.12.2 defaults rather than
+  reading them from `BCLibConfig` (outside this batch's scope to extend) -- see its class
+  javadoc -- and its `NAMES`/`DARK_HEX`/`LIGHT_HEX` arrays are reordered for `DyeColor`'s
+  flipped ordinal order (see the new Method-renames-table note). On 26.x it also reproduces
+  `ChatFormatting#isColor()` from the ordinal, since 26.x's `ChatFormatting` dropped that
+  method entirely (new "differs between targets" table row). `ProfilerUtil` follows
+  `Profiler`'s split into write-only `ProfilerFiller` and read-only `ProfileResults`/
+  `ResultField` (new Method-renames-table rows), identically on both targets. `JsonUtil` keeps
+  `FLUID_STACK_DESERIALIZER` on 1.20.1 only -- 26.x's `FluidResource` has no "resource +
+  amount" carrier that stands in for a standalone `FluidStack` deserializer outside a
+  `ResourceHandler` -- and both targets' NBT<->JSON adapters follow the `Tag`/`getAsX()` vs.
+  `value()` split already in the "Primitive NBT tag payload" table row, plus
+  `CompoundTag.keySet()` vs `getAllKeys()` (new table row). `FluidUtilBC` is a partial port on
+  both: `pushFluidAround` needs `buildcraft.lib.fluid.Tank` and `CapUtil.CAP_FLUIDS` (neither
+  ported, the latter already listed below as blocked), and `onTankActivated` needs
+  `buildcraft.lib.misc.SoundUtil` (not ported by anyone yet); both are skipped with the reason
+  in the class javadoc rather than guessed at. The kept methods (`mergeSameFluids`,
+  `areFluidStackEqual`, `areFluidsEqual`, `move`) are a real per-platform fork on 26.x, rewired
+  onto `ResourceHandler<FluidResource>` + `Transaction` (`move` walks slots directly instead
+  of going through `IFluidHandlerAdv`, which has no role left once every handler is
+  introspectable -- see `FluidFilters`). `ExpressionCompat` is a partial port: the
+  `Controllable Mode` node type (`buildcraft.api.tiles.IControllable`, not ported) and the two
+  GUI node types (`buildcraft.lib.gui.pos`, not ported) are omitted, along with the 1.12.2
+  obfuscation-bug workaround (`BCLib.throwBadClass`) that guarded the former -- see its class
+  javadoc.
 
 Deliberately not ported, with reasons:
 
@@ -404,6 +448,24 @@ behaviours all differ:
 | `TileEntity.readFromNBT` / `writeToNBT` | `BlockEntity.loadAdditional` / `saveAdditional` |
 | `ITickable.update()` | a `BlockEntityTicker` returned from `EntityBlock.getTicker` |
 | `Block.hasTileEntity` / `createTileEntity` | implement `EntityBlock.newBlockEntity` |
+| `AxisAlignedBB.grow(amount)` | `AABB.inflate(amount)` |
+| `Vec3i.add(Vec3i)` / `BlockPos.add(Vec3i)` | `Vec3i.offset(Vec3i)` / `BlockPos.offset(Vec3i)` |
+| `EntityPlayerMP.getAdvancements().grantCriterion(advancement, name)` | `PlayerAdvancements.award(advancement, name)` |
+| `FMLCommonHandler.instance().getMinecraftServerInstance()` | `ServerLifecycleHooks.getCurrentServer()` |
+| `BlockPos.offset(EnumFacing[, int])` | `BlockPos.relative(Direction[, int])` |
+| `EnumFacing.rotateAround(Axis)` | `Direction.getClockWise(Axis)` (no bare `rotateAround` any more) |
+| `AxisDirection.getOffset()` | `AxisDirection.getStep()` |
+| `I18n.translateToLocal`/`canTranslate` (`net.minecraft.util.text.translation`) | `Language.getInstance().getOrDefault(key)` / `.has(key)` — common code on both targets, unlike the client-only modern `I18n` |
+| `Profiler.getProfilingData(name)` -> `List<Profiler.Result>` | `ProfileResults.getTimes(name)` -> `List<ResultField>` (obtained from a `ProfileCollector`'s `getResults()`, not from the write-side `ProfilerFiller` itself) |
+| `Profiler.Result.profilerName`/`usePercentage`/`totalUsePercentage` | `ResultField.name`/`percentage`/`globalPercentage` |
+| `IFluidHandler.fill`/`drain(..., boolean doFill/doDrain)` | `fill`/`drain(..., IFluidHandler.FluidAction)` — true on 1.20.1 too, not just the 26.x transfer API |
+| `FluidStack.amount` (public field) | `FluidStack.getAmount()`/`setAmount(int)`/`grow(int)`/`shrink(int)` — both targets' `FluidStack` (`net.minecraftforge.fluids.FluidStack` on 1.20.1, `net.neoforged.neoforge.fluids.FluidStack` on 26.x) |
+
+`EnumDyeColor`/`DyeColor`'s ordinal order flipped along the way: 1.12.2's `getDyeDamage()` ran
+BLACK(0)..WHITE(15); modern `DyeColor.getId()` (== `ordinal()`) runs WHITE(0)..BLACK(15), the
+reverse. Anything indexing a BuildCraft-owned array by the old damage value needs the array
+reordered to match, not just the accessor renamed -- `ColourUtil`'s `NAMES`/`DARK_HEX`/
+`LIGHT_HEX` are the worked example. Unchanged on both targets, since `DyeColor` is pure vanilla.
 
 `BlockPos` no longer has a double constructor at all, so anything that rounded a different
 way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
@@ -557,9 +619,18 @@ These are the traps when porting a file to both at once.
 | `CompoundTag` getters | `getInt` → `Optional`; `getIntOr(k, 0)` | `getInt(k)` returns the value |
 | Block entity type | `new BlockEntityType<>(supplier, blocks...)` | `BlockEntityType.Builder.of(...).build(null)` |
 | Block `codec()` | not required (removed) | required (`simpleCodec`) |
+| `AABB` corner constructor | no `(BlockPos, BlockPos)` ctor -- use the six-`double` ctor | `AABB(BlockPos, BlockPos)` still exists |
+| `Vec3` from `BlockPos`/`Vec3i` | `new Vec3(Vec3i)` ctor exists | no such ctor -- spell out `new Vec3(pos.getX(), pos.getY(), pos.getZ())` |
+| `ChunkPos` coordinates | `x()`/`z()` (fields are private) | public `x`/`z` fields, same as 1.12.2 |
+| `AbstractArrow`/`SpectralArrow` package | `net.minecraft.world.entity.projectile.arrow` | `net.minecraft.world.entity.projectile` |
+| Advancement lookup | `ServerAdvancementManager#get(Identifier)` -> `AdvancementHolder` | `ServerAdvancementManager#getAdvancement(ResourceLocation)` -> `Advancement` |
+| `ServerPlayer`'s own level accessor | `level()` returns `ServerLevel` directly | `serverLevel()` (`level()` returns plain `Level`) |
 | Mod banner | `bannerFile` / `iconFile` | `logoFile` |
 | `pack_format` | 97 | 15 |
 | Gradle plugin | `net.neoforged.moddev` | `net.neoforged.moddev.legacyforge` |
+| `ChatFormatting` | gutted to the escape sequence and `stripFormatting` only -- no `isColor()`/`getColor()`/`getChar()`/`getName()` (confirmed against the real source; text styling moved to `Style`/`TextColor`) | keeps the full 1.12.2-shaped API, `isColor()` included |
+| `CompoundTag` key set | `keySet()` | `getAllKeys()` |
+| `FluidStack` existence | still exists (`net.neoforged.neoforge.fluids.FluidStack`), as a plain value type -- just not what a handler moves any more | `net.minecraftforge.fluids.FluidStack`, unchanged in shape from 1.12.2 |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

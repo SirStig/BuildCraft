@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) 2026 Joshua Kac -- NeoForge port (BuildCraft 10)
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL
+ * was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
+ */
+package buildcraft.lib.misc;
+
+import org.jetbrains.annotations.Nullable;
+
+public class ObjectUtilBC {
+
+    /** @param obj The object to check
+     * @param clazz the type that is needed
+     * @return Either the object as an instance of the specified type, or null if it is not of the specified type. */
+    @Nullable
+    public static <T> T castOrNull(Object obj, Class<T> clazz) {
+        if (clazz.isInstance(obj)) {
+            return clazz.cast(obj);
+        } else {
+            return null;
+        }
+    }
+
+    /** @param obj The object to check
+     * @param clazz the type that is needed
+     * @param _default The default type to use if the object was not an instance.
+     * @return Either the object as an instance of the specified type, or the default object given. */
+    public static <T> T castOrDefault(Object obj, Class<T> clazz, T _default) {
+        if (clazz.isInstance(obj)) {
+            return clazz.cast(obj);
+        } else {
+            return _default;
+        }
+    }
+}
