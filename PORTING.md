@@ -71,6 +71,25 @@ Ported (compiling, tested):
   `TileBC` and `BlockBCTile` (the block entity and block bases), `VecUtil`, `RotationUtil`,
   and the power consumer tester -- the first machine to go all the way through: block, block
   entity, ticker, MJ capability, model, loot table and tag.
+- `buildcraft.api.core` — all 28 files. Seven are Minecraft-free and live in `:shared`;
+  of the fifteen platform ones, eleven are byte-identical on both targets.
+- `buildcraft.api.tiles`, `buildcraft.api.blocks`, `buildcraft.api.power` — all three
+  packages. `CapabilitiesHelper` is deliberately dropped (see below).
+- `buildcraft.api.enums` (7 of 10) and `buildcraft.api.properties` — every file
+  byte-identical on both targets.
+
+Deliberately not ported, with reasons:
+
+- `CapabilitiesHelper` — it existed only to supply the no-op storage and null factory
+  1.12.2's capability system demanded but never used. Neither argument exists now.
+  `TilesAPI` and `MjCapabilities` show the replacement shape per platform.
+- `IFluidHandlerAdv` on 26.x — replaced by `FluidFilters`, because `ResourceHandler` can be
+  introspected from outside. 1.20.1 keeps the interface. See structural change 6.
+- `EnumColor`'s sprite registry and `getLocalizedName` — client-only statics behind
+  `@SideOnly`, which has no equivalent; they belong to the rendering rewrite.
+- `EnumRedstoneChipset`, `BCItems`, `BCBlocks` — all three are keyed off item damage or the
+  eight old `@ObjectHolder` mod ids. They want `DeferredHolder` against real registry
+  entries, so they follow the modules that define those entries rather than leading them.
 
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
@@ -84,7 +103,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 
 | Module | Files | Notes |
 | --- | --- | --- |
-| `BuildCraftAPI/api` | 251 | Needed by everything. Port alongside `lib`. |
+| `BuildCraftAPI/api` | ~210 left of 251 | Needed by everything. Port alongside `lib`. The big remaining packages are `transport` (54), `statements` (26), `robots` (13) and `recipes` (10). |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 85 | Gears (done), wrench, markers, engines, map location. |
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
