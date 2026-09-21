@@ -1,0 +1,6 @@
+{
+  "parent": "buildcraft:block/marker_base",
+  "textures": {
+    "all": "buildcraft:block/marker_volume"
+  }
+}

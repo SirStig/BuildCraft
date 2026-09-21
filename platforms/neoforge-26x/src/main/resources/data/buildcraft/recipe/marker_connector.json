@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_marker_connector",
+  "pattern": [
+    "R",
+    "G",
+    "W"
+  ],
+  "key": {
+    "R": "minecraft:redstone_torch",
+    "G": "#c:gears/wooden",
+    "W": "buildcraft:wrench"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:marker_connector"
+  }
+}

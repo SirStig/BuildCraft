@@ -7,6 +7,8 @@
  */
 package buildcraft;
 
+import java.util.function.UnaryOperator;
+
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
@@ -25,10 +27,19 @@ import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 import buildcraft.api.mj.MjCapabilities;
+import buildcraft.api.tiles.TilesAPI;
+import buildcraft.core.block.BlockMarkerPath;
+import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
 import buildcraft.core.block.BlockSpringWater;
+import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
+import buildcraft.core.marker.PathCache;
+import buildcraft.core.marker.VolumeCache;
+import buildcraft.core.tile.TileMarkerPath;
+import buildcraft.core.tile.TileMarkerVolume;
 import buildcraft.core.tile.TilePowerConsumerTester;
+import buildcraft.lib.marker.MarkerCache;
 import buildcraft.lib.registry.BCRegistry;
 
 /**
@@ -56,6 +67,28 @@ public final class BCCoreRegistries {
 
     // --- Tools --------------------------------------------------------------------
     public static final DeferredItem<ItemWrench> WRENCH = REGISTRY.addItem("wrench", ItemWrench::new);
+    public static final DeferredItem<ItemMarkerConnector> MARKER_CONNECTOR =
+        REGISTRY.addItem("marker_connector", ItemMarkerConnector::new);
+
+    // --- Markers ------------------------------------------------------------------
+    private static final UnaryOperator<BlockBehaviour.Properties> MARKER_PROPERTIES = properties -> properties
+        .mapColor(MapColor.NONE)
+        .noCollision()
+        .noOcclusion()
+        .strength(0.25F)
+        .sound(SoundType.WOOD);
+
+    public static final DeferredBlock<BlockMarkerVolume> MARKER_VOLUME =
+        REGISTRY.addBlockAndItem("marker_volume", BlockMarkerVolume::new, MARKER_PROPERTIES);
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileMarkerVolume>> MARKER_VOLUME_TYPE =
+        REGISTRY.addBlockEntity("marker_volume", TileMarkerVolume::new, MARKER_VOLUME);
+
+    public static final DeferredBlock<BlockMarkerPath> MARKER_PATH =
+        REGISTRY.addBlockAndItem("marker_path", BlockMarkerPath::new, MARKER_PROPERTIES);
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileMarkerPath>> MARKER_PATH_TYPE =
+        REGISTRY.addBlockEntity("marker_path", TileMarkerPath::new, MARKER_PATH);
 
     // --- Machines ---------------------------------------------------------------
     public static final DeferredBlock<BlockPowerConsumerTester> POWER_TESTER =
@@ -101,10 +134,15 @@ public final class BCCoreRegistries {
         REGISTRY.register(modBus);
         CREATIVE_TABS.register(modBus);
         modBus.addListener(BCCoreRegistries::registerCapabilities);
+        // MarkerCache.registerCache has no other caller yet (see buildcraft.lib.marker's PORTING.md entry) --
+        // without this, VolumeSubCache/PathSubCache's own MarkerCache.CACHES.indexOf(...) lookup returns -1,
+        // and every MessageMarker they send would carry an invalid cache id.
+        MarkerCache.registerCache(VolumeCache.INSTANCE);
+        MarkerCache.registerCache(PathCache.INSTANCE);
     }
 
     /**
-     * Binds MJ capabilities to block entity types.
+     * Binds MJ/area-provider capabilities to block entity types.
      *
      * <p>In 1.12.2 a tile attached its own capabilities by holding an {@code ICapabilityProvider}. NeoForge inverts
      * that: capabilities are registered per block entity type here, and the lookup is what finds the instance.
@@ -112,5 +150,6 @@ public final class BCCoreRegistries {
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
         event.registerBlockEntity(MjCapabilities.RECEIVER, POWER_TESTER_TYPE.get(), (tile, side) -> tile);
         event.registerBlockEntity(MjCapabilities.CONNECTOR, POWER_TESTER_TYPE.get(), (tile, side) -> tile);
+        event.registerBlockEntity(TilesAPI.TILE_AREA_PROVIDER, MARKER_VOLUME_TYPE.get(), (tile, side) -> tile);
     }
 }

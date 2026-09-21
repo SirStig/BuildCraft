@@ -21,10 +21,18 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.core.block.BlockMarkerPath;
+import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
 import buildcraft.core.block.BlockSpringWater;
+import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
+import buildcraft.core.marker.PathCache;
+import buildcraft.core.marker.VolumeCache;
+import buildcraft.core.tile.TileMarkerPath;
+import buildcraft.core.tile.TileMarkerVolume;
 import buildcraft.core.tile.TilePowerConsumerTester;
+import buildcraft.lib.marker.MarkerCache;
 import buildcraft.lib.registry.BCRegistry;
 
 /**
@@ -53,6 +61,30 @@ public final class BCCoreRegistries {
     // --- Tools --------------------------------------------------------------------
     public static final RegistryObject<ItemWrench> WRENCH =
         REGISTRY.addItem("wrench", () -> new ItemWrench(new Item.Properties()));
+    public static final RegistryObject<ItemMarkerConnector> MARKER_CONNECTOR =
+        REGISTRY.addItem("marker_connector", () -> new ItemMarkerConnector(new Item.Properties()));
+
+    // --- Markers ------------------------------------------------------------------
+    private static BlockBehaviour.Properties markerProperties() {
+        return BlockBehaviour.Properties.of()
+            .mapColor(MapColor.NONE)
+            .noCollission()
+            .noOcclusion()
+            .strength(0.25F)
+            .sound(SoundType.WOOD);
+    }
+
+    public static final RegistryObject<BlockMarkerVolume> MARKER_VOLUME =
+        REGISTRY.addBlockAndItem("marker_volume", () -> new BlockMarkerVolume(markerProperties()));
+
+    public static final RegistryObject<BlockEntityType<TileMarkerVolume>> MARKER_VOLUME_TYPE =
+        REGISTRY.addBlockEntity("marker_volume", TileMarkerVolume::new, MARKER_VOLUME);
+
+    public static final RegistryObject<BlockMarkerPath> MARKER_PATH =
+        REGISTRY.addBlockAndItem("marker_path", () -> new BlockMarkerPath(markerProperties()));
+
+    public static final RegistryObject<BlockEntityType<TileMarkerPath>> MARKER_PATH_TYPE =
+        REGISTRY.addBlockEntity("marker_path", TileMarkerPath::new, MARKER_PATH);
 
     // --- Machines ---------------------------------------------------------------
     public static final RegistryObject<BlockPowerConsumerTester> POWER_TESTER =
@@ -93,5 +125,10 @@ public final class BCCoreRegistries {
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         CREATIVE_TABS.register(modBus);
+        // MarkerCache.registerCache has no other caller yet (see buildcraft.lib.marker's PORTING.md entry) --
+        // without this, VolumeSubCache/PathSubCache's own MarkerCache.CACHES.indexOf(...) lookup returns -1,
+        // and every MessageMarker they send would carry an invalid cache id.
+        MarkerCache.registerCache(VolumeCache.INSTANCE);
+        MarkerCache.registerCache(PathCache.INSTANCE);
     }
 }

@@ -388,6 +388,93 @@ Ported (compiling, tested):
     (nothing yet constructs a `VolumeCache`/`PathCache` to actually exercise the load/save path -- see the
     `buildcraft.lib.marker` entry above for why `registerCache` has no caller yet).
 
+- **The marker blocks, tiles, and connector item are placeable and connectable in-game (6 files, both
+  platforms): `buildcraft.lib.block.BlockMarkerBase`, `core.tile.{TileMarkerVolume,TileMarkerPath}`,
+  `core.block.{BlockMarkerVolume,BlockMarkerPath}`, `core.item.ItemMarkerConnector`.** This is what the
+  `buildcraft.lib.marker`/`buildcraft.core.marker` framework above was actually built for -- a real block a
+  player can place, wrench-rotate, and connect. Registered in `BCCoreRegistries` (`marker_volume`,
+  `marker_path`, `marker_connector`) with textures/models/blockstates/loot tables/recipes/lang pulled from
+  `buildcraft_resources/assets/buildcraftcore/`, following the same pattern `BlockSpringWater`/
+  `BlockPowerConsumerTester`/`ItemWrench` already established. Verified with forced rebuilds, the full test
+  suite, and real dedicated-server boots on both targets (registration/asset bugs like a bad blockstate JSON
+  or missing loot table only surface there, not at compile time).
+  - **`MarkerCache.registerCache(VolumeCache.INSTANCE)`/`registerCache(PathCache.INSTANCE)` finally has a
+    caller.** Both were left unregistered when `buildcraft.lib.marker`/`buildcraft.core.marker` landed, since
+    nothing constructed one yet. Without registering, `VolumeSubCache`/`PathSubCache`'s own
+    `MarkerCache.CACHES.indexOf(...)` lookup (their `cacheId`) returns `-1`, silently breaking every
+    `MessageMarker` these tiles send -- this is now wired into `BCCoreRegistries`' `register(modBus)`.
+  - **The old id-tagged network-payload system (`writePayload`/`readPayload`/`sendNetworkUpdate(id)`/
+    `IdAllocator`) is gone, and doesn't need replacing -- it needs deleting.** `TileMarkerVolume`'s
+    `showSignals` boolean used to need its own `NET_SIGNALS_ON`/`NET_SIGNALS_OFF` payload pair; `TileBC`'s
+    `markDirtyAndSync()` (already landed, see its own javadoc) syncs the block entity's entire saved state to
+    tracking clients, so `showSignals` is now just an ordinary persisted field
+    (`saveAdditional`/`loadAdditional` on 1.20.1's `CompoundTag`; `ValueInput`/`ValueOutput` on 26.x), and
+    `switchSignals()` just calls `markDirtyAndSync()`. A genuine simplification, not a compromise.
+  - **`IBlockState#getActualState`'s removal (already known from `ItemWrench`) forces a real design change
+    here, not just a rename.** `BlockMarkerBase.getActualState` used to synthesise
+    `BuildCraftProperties.ACTIVE` from the tile's `isActiveForRender()` at render time; with no render-time
+    state override left at all, `ACTIVE` has to be a persisted blockstate value the tile pushes explicitly.
+    `TileMarkerVolume`/`TileMarkerPath` each added a `refreshActiveState()` helper, called from every method
+    that can change whether a connection exists (`switchSignals`, `onPlacedBy`, `onManualConnectionAttempt`),
+    diffing against the current blockstate before writing (`Block.UPDATE_CLIENTS`, sync-only, deliberately not
+    a neighbour-notifying flag -- nothing here reacts to `ACTIVE`, so there's no loop to cause). Connections
+    formed through `ItemMarkerConnector` (which calls `cache.tryConnect` directly, bypassing the tiles' own
+    methods -- the *only* way path markers ever connect at all) get an equivalent helper inside that class
+    instead. One documented, currently-harmless gap: a marker whose connection is invalidated by a *different*
+    marker's removal never gets its own `ACTIVE` refreshed, since that path runs entirely inside
+    `MarkerSubCache`/`MarkerConnection` -- inert today since nothing renders `ACTIVE` yet (no renderer, same
+    deferral `MarkerConnection#renderInWorld` already documents).
+  - **Wrench rotation reuses `buildcraft.lib.block.IBlockWithFacing`** (already ported, built around
+    `RotationUtil.rotateAll`) rather than a hand-rolled `ICustomRotationHandler#attemptRotation` override --
+    `BlockMarkerBase` just implements it and returns `true` from `canFaceVertically()`. `RotationUtil.rotateAll`
+    cycles faces in a different order (north-east-south-west-up-down) than 1.12.2's
+    `VanillaRotationHandlers.ROTATE_FACING` (east-south-down-west-north-up) -- same "cycle through all six
+    faces" behaviour, different order, and reusing an established mechanism beat reimplementing one that just
+    happens to order its cycle differently.
+  - **`BlockMarkerVolume`'s periodic redstone re-check (1.12.2's randomly-ticked `updateTick`) is dropped, not
+    reproduced with a scheduled tick.** Verified against real decompiled vanilla redstone-component source
+    (`DiodeBlock` and friends) that a power change always fires `neighborChanged` on every adjacent block, and
+    vanilla's own components rely on exactly that rather than random ticking to catch signal changes --
+    `checkSignalState` being wired only into `neighborChanged` is already sufficient in practice.
+    `World#isBlockPowered(pos)` is `Level#hasNeighborSignal(BlockPos)` now (a default method inherited through
+    `SignalGetter`, identical on both targets, confirmed via `javap`).
+  - **`BlockMarkerVolume#neighborChanged` deliberately doesn't call `BlockMarkerBase`'s self-destruct-if-
+    unsupported check** -- not a new decision, a preserved 1.12.2 quirk: the original fully overrode its base
+    class' `neighborChanged` the same way, so volume markers never actually self-destroyed when their support
+    block was removed, unlike path markers (which don't override `neighborChanged` at all, keeping the base
+    behaviour). Carried over unchanged rather than "fixed".
+  - `World#isSideSolid(pos, side)` (`BlockMarkerBase.canPlaceBlockOnSide`) is
+    `BlockState#isFaceSturdy(BlockGetter, BlockPos, Direction)` on the *neighbouring* block's state now,
+    identical signature on both targets (confirmed via `javap`), wired into a real `canSurvive` override (a
+    placement-validity hook 1.12.2 didn't have here) as well as `neighborChanged`.
+  - `AxisAlignedBB`-returning `getBoundingBox`/`getCollisionBoundingBox` are `VoxelShape`-returning
+    `getShape`/`getCollisionShape` now. `Block.box(...)`'s pixel-scale (0-16) arguments just divide by 16
+    before reaching `Shapes.box(...)`, which already takes 0-1-scaled coordinates (confirmed via decompiled
+    `Block#box` source) -- so the original six `AxisAlignedBB` literals carry over completely unchanged, just
+    re-wrapped. `getCollisionShape` returns `Shapes.empty()` for the same "no collision, walk straight
+    through" behaviour 1.12.2's `getCollisionBoundingBox() -> null` had.
+  - `getRenderBoundingBox()`/`getMaxRenderDistanceSquared()` (1.12.2 client render-distance hints on
+    `TileEntity`) don't exist in any form on `BlockEntity` any more (confirmed via `javap` on both targets) --
+    dropped rather than forced into a non-existent equivalent.
+  - **`ItemMarkerConnector` is a partial port.** 1.12.2's single `onItemRightClick` bundled two unrelated
+    features: the marker-line connector (`interactCache`/`MarkerLineInteraction`, looking along the player's
+    view line for two nearby markers of the same cache type to connect -- ported in full, onto the modern
+    `Item#use(Level, Player, InteractionHand)`) and a second, entirely separate volume-box "addon" region
+    editor (`onItemRightClickVolumeBoxes`, depending on `buildcraft.core.marker.volume.*` -- `Addon`,
+    `AddonsRegistry`, `VolumeBox`, `WorldSavedDataVolumeBoxes`, `Lock`, `EnumAddonSlot`). That whole
+    sub-feature was already explicitly deferred when this package's other marker types were ported (see this
+    file's own entry above) and remains entirely unported; porting the addon system is its own project,
+    independent of the marker-connector feature this class otherwise provides in full.
+  - New divergence-table rows worth knowing: `BlockBehaviour.Properties#noCollision()` (26.x, correctly
+    spelled) vs. `#noCollission()` (1.20.1, keeps the old double-s typo); and on 26.x, `BlockBehaviour` hooks
+    like `getShape`/`getCollisionShape`/`canSurvive`/`neighborChanged`/`useWithoutItem` are `protected`, while
+    the same hooks (`getShape`/`getCollisionShape`/`canSurvive`/`neighborChanged`/`use`) are `public` on
+    1.20.1 -- both confirmed via `javap` against the real merged jars.
+  - Not yet done: no in-game interaction test beyond a clean dedicated-server boot (give/place/connect via a
+    real client) -- the registration and asset pipeline is verified, but nobody has watched a marker connect
+    in a running game yet. Worth doing before relying on this for anything downstream (a `builders` machine
+    that reads a `VolumeConnection`'s box, for instance).
+
 - `buildcraft.lib.misc.data.{Box,BoxIterable,BoxIterator}` and `.ProfilerBC` -- deferred as a
   group. `Box` (328 lines) needs `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering,
   not ported) and `MessageUtil` (blocked, needs the old `IMessage` networking stack); it also

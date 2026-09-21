@@ -1,4 +1,6 @@
 {
+  "block.buildcraft.marker_path": "Path Mark",
+  "block.buildcraft.marker_volume": "Land Mark",
   "block.buildcraft.power_tester": "Power Consumer Tester",
   "block.buildcraft.spring_water": "Water Spring",
   "item.buildcraft.gear_diamond": "Diamond Gear",
@@ -6,6 +8,7 @@
   "item.buildcraft.gear_iron": "Iron Gear",
   "item.buildcraft.gear_stone": "Stone Gear",
   "item.buildcraft.gear_wood": "Wood Gear",
+  "item.buildcraft.marker_connector": "Marker Connector",
   "item.buildcraft.wrench": "Wrench",
   "itemGroup.buildcraft.main": "BuildCraft"
 }
