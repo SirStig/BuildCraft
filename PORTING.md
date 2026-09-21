@@ -179,6 +179,26 @@ Deliberately not ported, with reasons:
   `RecipeManager`/`RecipeType`) has no other consumer, so it waits for the same thing.
   `InventoryUtil`'s own capability-independent half (drop/spawn/`addAll`/`addToPlayer`) is
   ported already; see its entry above.
+- `buildcraft.lib.cap.CapabilityHelper` -- a generic multi-capability-per-face
+  `ICapabilityProvider` (the same "several capability instances behind one provider" idea
+  `MjCapabilityHelper`/`ItemHandlerManager` each implement one-off for their own case, made
+  reusable). Blocked entirely on 26.x for the same reason those two are restructured there:
+  no `ICapabilityProvider` to implement. Mechanically portable on 1.20.1, but every consumer
+  (`TileFiller`, `TileQuarry`, `TileMiner`, `TileLaser`, pipe behaviours, ...) lives in
+  `buildcraft.core`/`builders`/`factory`/`silicon`/`transport`, all entirely unported; nothing
+  to wire it into yet.
+- `buildcraft.lib.prop.UnlistedNonNullProperty` -- implements Forge's old
+  `IUnlistedProperty`, the extended-blockstate mechanism for carrying render-only data that
+  isn't a real blockstate property. Confirmed absent from both targets' jars via `javap`;
+  block entity renderers get their block entity directly now, so there's nothing left needing
+  an unlisted property to smuggle data through the blockstate.
+- `buildcraft.lib.list` (8 files) -- the item-list ("phantom item list") GUI's matching
+  engine (`ListHandler`, `ListMatchHandler{Armor,Class,Fluid,OreDictionary,Tools}`,
+  `ListOreDictionaryCache`, `VanillaListHandlers`). The `buildcraft.api.lists` interfaces it
+  implements are already ported, but every real consumer (`ItemList_BC8`, the list GUI/
+  container, `BCLib`'s registration) is in `buildcraft.core`, entirely unported, and
+  `ListMatchHandlerOreDictionary` specifically needs redesigning around tags now that the ore
+  dictionary is gone. Waits for a real consumer along with the rest of `core`.
 - `buildcraft.lib.misc.BlockUtil` (555 lines) -- deferred whole rather than partially ported,
   because it bundles several genuinely separate redesigns rather than one mechanical port:
   - Its fluid-block cluster (`isFullFluidBlock`, `getFluid`/`getFluidWithFlowing`/
