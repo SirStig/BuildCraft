@@ -110,6 +110,11 @@ Ported (compiling, tested):
   `buildcraft.lib.registry.PluggableRegistry` — the parts of `buildcraft.lib`'s foundation
   layer that turned out not to need the tile/net/block/item cluster below them.
   `InventoryUtil` is a partial port (the drop/spawn/`addAll`/`addToPlayer` helpers only) --
+  see the `CapUtil`/`ItemTransactorHelper` entry further down for the rest.
+  `buildcraft.lib.misc.data.AverageDouble` (both platforms, most of `misc.data` already lives
+  in `modules/shared` -- see that entry) drops the `INBTSerializable` interface entirely on
+  26.x, the same way `ItemHandlerSimple` does and for the same reason (the interface doesn't
+  exist there) -- see its own class javadoc.
   see the `CapUtil`/`ItemTransactorHelper` entry below for the rest.
 - `buildcraft.lib.misc.{ArrayUtil,MathUtil,TimeUtil,StringUtilBC,ObjectUtilBC,ModUtil,
   BoundingBoxUtil,EntityUtil,PermissionUtil,RegistryUtil,FakePlayerProvider,ChunkUtil,
@@ -199,6 +204,21 @@ Ported (compiling, tested):
   `NeighbourTileCache` special-cased) has no equivalent on `TileBC`, so that lookup now always
   goes through `ChunkUtil#getChunk` uniformly rather than special-casing BuildCraft's own base
   class.
+
+- `buildcraft.lib.misc.data.{Box,BoxIterable,BoxIterator}` and `.ProfilerBC` -- deferred as a
+  group. `Box` (328 lines) needs `buildcraft.lib.client.render.laser.LaserData_BC8` (rendering,
+  not ported) and `MessageUtil` (blocked, needs the old `IMessage` networking stack); it also
+  has no consumer yet (every reader is in the unported `builders`/`core`/`energy`/`silicon`
+  modules). `BoxIterable` exists only to construct a `BoxIterator`, so the two travel together.
+  `BoxIterator` (256 lines) itself has no blocked dependency -- everything it needs
+  (`NBTUtilBC`, `StringUtilBC`, `VecUtil`, `AxisOrder`) is already ported -- but it is dense,
+  order/invert/repeat-aware 3-axis iteration logic (`advance`/`moveTo`/`compare`/`willVisit`/
+  `hasVisited`) with no ported consumer to verify correctness against yet; a wrong axis-order
+  edge case here would be easy to miss without a real caller exercising it, so it waits for one
+  rather than shipping unverified. `ProfilerBC` is a client-only wrapper around
+  `Minecraft.getMinecraft()` and the old `Profiler` (see `ProfilerUtil`'s already-ported
+  `Profiler`->`ProfilerFiller` split) with no consumer either; low value to port ahead of the
+  rendering pass it belongs with.
 
 Deliberately not ported, with reasons:
 
