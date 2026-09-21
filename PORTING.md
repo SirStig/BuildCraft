@@ -109,6 +109,35 @@ Ported (compiling, tested):
   `IChunkLoadingTile`, `IBlockWithFacing`, `ILocalBlockUpdateSubscriber`,
   `buildcraft.lib.registry.PluggableRegistry` — the parts of `buildcraft.lib`'s foundation
   layer that turned out not to need the tile/net/block/item cluster below them.
+- `buildcraft.lib.recipe` (8 of 12) and `buildcraft.lib.particle` (6) — recipe-adjacent
+  helpers and `IEffect`-driven particle rendering. `OredictionaryNames` now points at
+  BuildCraft's real published item tags rather than ore-dictionary names. The 4 skipped
+  recipe files (`BCRecipeShaped`, `BCRecipeShapeless`, `IngredientNBTBC`,
+  `RecipeBuilderShaped`) need the full datapack recipe redesign, deferred until a consuming
+  module needs one.
+- `buildcraft.lib.inventory` (27 of 27, both platforms) — `IItemTransactor`'s single
+  concrete implementation, `AbstractInvItemTransactor`, plus every handler/entity/filter
+  wrapper around it. On 26.x, `InventoryWrapper` wraps NeoForge's own
+  `VanillaContainerWrapper`; on 1.20.1 it wraps `IItemHandler` directly, unchanged in shape
+  from 1.12.2.
+- `buildcraft.lib.tile.item` (both platforms) — the array-backed item handler every machine
+  uses (`ItemHandlerSimple`), its manager (`ItemHandlerManager`), and the
+  insert-only/extract-only/filtered wrapper family around it. On 26.x this is a rewrite
+  against NeoForge's own `StacksResourceHandler`/`ItemStacksResourceHandler`, which already
+  provides transaction safety and NBT persistence, letting `StackInsertionFunction` and
+  `IItemHandlerAdv` be dropped entirely (see `ItemHandlerSimple`'s own javadoc for why). On
+  1.20.1, which keeps `IItemHandler`, the shape stays close to 1.12.2's original --
+  `StackInsertionFunction` is still dropped there too (checked against every 1.12.2 call
+  site, it was only ever used via its two factory methods, never the general form), but
+  `IItemHandlerAdv` and `CombinedItemHandlerWrapper` are kept since `IItemHandler` still
+  exists for them to wrap. `ItemHandlerManager` keeps `ICapabilityProvider` on 1.20.1
+  (matching `MjCapabilityHelper`'s precedent) and drops it entirely on 26.x, where
+  capabilities are registered per block entity type instead.
+- `buildcraft.lib.net.{PacketBufferBC,IPayloadWriter}` (both platforms) — the bit-packing
+  `FriendlyByteBuf` subclass used by compact NBT/network encoding elsewhere in `lib`. The
+  message dispatch it served in 1.12.2 (`IPayloadReceiver`, `MessageManager`) is not ported
+  yet; both targets' networking layers differ enough from 1.12's single channel that design
+  follows once there is a concrete message to register.
 
 Deliberately not ported, with reasons:
 
@@ -160,6 +189,31 @@ Deliberately not ported, with reasons:
 - `buildcraft.lib.block.BlockMarkerBase` and the rest of `buildcraft.lib.item`
   (`ItemDebugger`, `ItemGuide`, `ItemGuideNote`, `ItemPluggableSimple`) -- follow
   `buildcraft.lib.marker` and the guide-book/pluggable systems respectively, none ported yet.
+- `buildcraft.lib.script.{ScriptableRegistry,SimpleScript,SimpleReloadableRegistry,
+  ReloadableRegistryManager}` -- 1,629 lines together, and effectively one feature:
+  BuildCraft's own JSON-based scripting system for adding, replacing or removing recipes
+  without writing a mod, predating (and now largely superseded in spirit by) vanilla's own
+  datapack recipe system. `SimpleScript` alone is 1043 lines and leans on `BCLibProxy` for
+  resource-pack enumeration and `Loader.isModLoaded` for its `is_mod_loaded` script
+  function -- both 1.12.2-era FML, needing real replacements
+  (`ModList.get().isLoaded(id)` for the latter). Large, self-contained, and nothing calls
+  it yet; deferred as a unit rather than half-ported.
+- `buildcraft.lib.config.{DetailedConfigOption,OverridableConfigOption,EnumRestartRequirement,
+  StreamConfigManager}` (and by extension `RoamingConfigManager`, which reads them) all
+  touch `net.minecraftforge.common.config.Property` -- Forge's old `Configuration`/
+  `Property` config file API, confirmed absent from both targets' jars. It was replaced by
+  `ModConfigSpec` (`ForgeConfigSpec`), a structural change to how a config *value* is
+  declared, not a rename. BuildCraft's actual config values live in `buildcraft.core` (not
+  ported) rather than in `lib` itself, and `BCLibConfig` (ported) is already a plain
+  settings holder rather than a `Property` wrapper, so none of this blocks anything already
+  landed. `StreamConfigManager` was already marked `@Deprecated` in its own 1.12.2 source;
+  only `FileConfigManager` is genuinely dependency-free, and is a candidate for a later,
+  focused pass once there is a real `ModConfigSpec` to wire it to.
+- `buildcraft.lib.command` (4 files) -- pre-Brigadier commands (`ICommand`,
+  `event.registerServerCommand`). Modern commands are Brigadier
+  (`CommandDispatcher<CommandSourceStack>` via `RegisterCommandsEvent`); this is a rewrite
+  of each command's argument parsing and execution, not a port, and also depends on the
+  dropped `BCLib` singleton for its mod-version/changelog commands specifically.
 
 - `CapabilitiesHelper` — it existed only to supply the no-op storage and null factory
   1.12.2's capability system demanded but never used. Neither argument exists now.
@@ -338,6 +392,17 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    1.20.1 has none of this — it is still `IItemHandler`/`IFluidHandler` with `FluidAction`.
    This is the single largest source of per-platform divergence after registration, and it
    lands squarely on `transport`, `factory` and `robotics`.
+
+   NeoForge ships its own base classes for the array-backed, transaction-safe case --
+   `net.neoforged.neoforge.transfer.StacksResourceHandler<S, T>` (and its `ItemStack`
+   specialisation, `ItemStacksResourceHandler`) already do the snapshot/rollback bookkeeping
+   and `ValueIOSerializable` NBT persistence by themselves, with `isValid`/`getCapacity`/
+   `onContentsChanged` as the extension points. `DelegatingResourceHandler<T>` and
+   `CombinedResourceHandler<T>` are the generic equivalents of 1.12.2's hand-written
+   delegate/combined wrappers. Before hand-rolling a `ResourceHandler` implementation, check
+   whether one of these already covers it -- `buildcraft.lib.tile.item.ItemHandlerSimple` is
+   the worked example: BuildCraft's `StackInsertionFunction` abstraction turned out to be
+   fully replaceable by `ItemStacksResourceHandler`'s inherited `getCapacity` hook.
 8. **Rendering**, and 26.x is a second rewrite on top of the first. `TESR` → `BlockEntityRenderer`,
    and the `PoseStack`/`RenderType` pipeline replaces raw GL — that much is the 1.20.1 story.
    26.x then replaces *that*: rendering no longer draws during the render pass, it **submits**

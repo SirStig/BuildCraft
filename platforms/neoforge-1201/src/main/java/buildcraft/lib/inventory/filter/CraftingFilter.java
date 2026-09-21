@@ -1,0 +1,53 @@
+/*
+ * Copyright (c) 2017 SpaceToad and the BuildCraft team
+ * Copyright (c) 2026 Joshua Kac -- NeoForge port (BuildCraft 10)
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL
+ * was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
+ */
+package buildcraft.lib.inventory.filter;
+
+import org.jetbrains.annotations.NotNull;
+
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.item.ItemStack;
+
+import buildcraft.api.core.IStackFilter;
+
+import buildcraft.lib.misc.StackUtil;
+
+/** Returns true if the stack matches any one one of the filter stacks. Checks item tags and wildcards. */
+public class CraftingFilter implements IStackFilter {
+
+    private final NonNullList<ItemStack> stacks;
+
+    public CraftingFilter(ItemStack... stacks) {
+        this.stacks = StackUtil.listOf(stacks);
+    }
+
+    @Override
+    public boolean matches(@NotNull ItemStack stack) {
+        if (stacks.size() == 0 || !hasFilter()) {
+            return true;
+        }
+        for (ItemStack stack1 : stacks) {
+            if (StackUtil.isCraftingEquivalent(stack1, stack, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public NonNullList<ItemStack> getStacks() {
+        return stacks;
+    }
+
+    public boolean hasFilter() {
+        for (ItemStack filter : stacks) {
+            if (filter != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
