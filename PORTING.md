@@ -401,6 +401,21 @@ Deliberately not ported, with reasons:
   container, `BCLib`'s registration) is in `buildcraft.core`, entirely unported, and
   `ListMatchHandlerOreDictionary` specifically needs redesigning around tags now that the ore
   dictionary is gone. Waits for a real consumer along with the rest of `core`.
+- `buildcraft.core.statements` (19 files) -- checked directly once `buildcraft.lib.statement`
+  landed, since that was the blocker PORTING.md's `buildcraft.core` survey originally flagged
+  for it. It turns out `lib.statement` was necessary but not sufficient: an import audit of
+  all 19 files found most also need one or more of -- the old `IFluidHandler`/`IItemHandler`
+  capability-based transfer API (`TriggerFluidContainer`, `TriggerFluidContainerLevel`,
+  `TriggerInventory`, `TriggerInventoryLevel`, `CoreTriggerProvider`), gone entirely on 26.x
+  and needing the same kind of per-file `ResourceHandler` redesign `lib.tile.item` and
+  `FluidUtilBC` already went through, not a rename; the blocked `CapUtil` chain (same files);
+  `buildcraft.core.{BCCoreSprites,BCCoreStatements}`, themselves unported (every concrete
+  trigger/action's `getSprite()` reads a constant off `BCCoreSprites`, and each self-registers
+  into `BCCoreStatements` at construction); `buildcraft.lib.engine.TileEngineBase_BC8`
+  (`TriggerEnginePowerStage`), unported; and, for `StatementParameterDirection` specifically,
+  direct `TextureAtlasSprite`/`TextureMap` rendering. `lib.statement` itself is done and
+  verified (see its own Progress entry) -- this package just turned out to need several more
+  things besides.
 - `buildcraft.lib.misc.BlockUtil` (555 lines) -- deferred whole rather than partially ported,
   because it bundles several genuinely separate redesigns rather than one mechanical port:
   - Its fluid-block cluster (`isFullFluidBlock`, `getFluid`/`getFluidWithFlowing`/
