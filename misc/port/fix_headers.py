@@ -30,11 +30,20 @@ PREFIXES = ["BuildCraftAPI/api/", "common/", "tests/",
             "sub_projects/expression/src/generator/java/",
             "sub_projects/expression/src/test/java/"]
 
+# Files the port moved to a different package, so the same-relative-path match below can't
+# find their real upstream ancestor on its own. Keyed by the ported file's "buildcraft/..."
+# relative path; value is its true 1.12.2 origin, same format upstream_for() would return.
+RELOCATED = {
+    "buildcraft/lib/tile/item/IAutoCraft.java": "common/buildcraft/lib/tile/craft/IAutoCraft.java",
+}
+
 def upstream_for(path: pathlib.Path):
     m = re.search(r"/java/(buildcraft/.*\.java)$", str(path))
     if not m:
         return None
     rel = m.group(1)
+    if rel in RELOCATED:
+        return RELOCATED[rel]
     for pre in PREFIXES:
         cand = pre + rel
         # BuildCraftAPI is a git submodule, so its files are a single gitlink in the base

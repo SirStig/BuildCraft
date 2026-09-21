@@ -31,6 +31,8 @@ import net.neoforged.neoforge.transfer.item.ItemResource;
 
 import buildcraft.api.core.EnumPipePart;
 
+import buildcraft.lib.misc.InventoryUtil;
+
 /**
  * Collects a block entity's named item handlers, and which ones (if any) are reachable from each face.
  *
@@ -132,17 +134,9 @@ public class ItemHandlerManager implements ValueIOSerializable {
         return addInvHandler(key, handler, access, parts);
     }
 
-    /** Was {@code InventoryUtil.addAll(IItemHandler, NonNullList)} in 1.12.2; inlined here since
-     * {@code buildcraft.lib.misc.InventoryUtil} hasn't been ported yet and this is its only remaining use in this
-     * class. */
     public void addDrops(NonNullList<ItemStack> toDrop) {
         for (ItemHandlerSimple handler : handlersToDrop) {
-            for (int i = 0; i < handler.size(); i++) {
-                ItemStack stack = handler.getStackInSlot(i);
-                if (!stack.isEmpty()) {
-                    toDrop.add(stack);
-                }
-            }
+            InventoryUtil.addAll(handler, toDrop);
         }
     }
 

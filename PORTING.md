@@ -105,10 +105,14 @@ Ported (compiling, tested):
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.
 - `buildcraft.lib.nbt` (5), `.mj` (2), `.crops` (2), `.compat` (3), `.migrate` (2), `.fake` (1),
-  `.json` (1), `buildcraft.lib.misc.{NBTUtilBC,StackUtil}`, and `BCLibConfig`,
+  `.json` (1), `buildcraft.lib.misc.{NBTUtilBC,StackUtil,InventoryUtil}`, and `BCLibConfig`,
   `IChunkLoadingTile`, `IBlockWithFacing`, `ILocalBlockUpdateSubscriber`,
   `buildcraft.lib.registry.PluggableRegistry` — the parts of `buildcraft.lib`'s foundation
   layer that turned out not to need the tile/net/block/item cluster below them.
+  `InventoryUtil` is a partial port (the drop/spawn/`addAll`/`addToPlayer` helpers only) --
+  see the `CapUtil`/`ItemTransactorHelper` entry below for the rest.
+- `buildcraft.lib.tile.craft.IAutoCraft` (relocated to `buildcraft.lib.tile.item`, next to its
+  only real dependency, `ItemHandlerSimple`).
 - `buildcraft.lib.recipe` (8 of 12) and `buildcraft.lib.particle` (6) — recipe-adjacent
   helpers and `IEffect`-driven particle rendering. `OredictionaryNames` now points at
   BuildCraft's real published item tags rather than ore-dictionary names. The 4 skipped
@@ -153,6 +157,22 @@ Deliberately not ported, with reasons:
   covered by `BCRegistry` plus the lang/model JSON for everything except the model-variant
   half, which has nothing left to port: item damage no longer selects a model variant at
   all.
+- `buildcraft.lib.misc.CapUtil`, `buildcraft.lib.inventory.ItemTransactorHelper`,
+  `buildcraft.lib.tile.craft.WorkbenchCrafting` and `buildcraft.lib.misc.CraftingUtil` -- one
+  blocked chain. `CapUtil`'s actual job (exposing `Capability<IItemHandler>`/
+  `Capability<IFluidHandler>` tokens, plus a custom-registered `Capability<IItemTransactor>`)
+  is entirely built on `@CapabilityInject`, removed well before either target; 1.20.1's two
+  vanilla tokens already have a built-in replacement with no class of their own needed
+  (`ForgeCapabilities.ITEM_HANDLER`, used directly by `ItemHandlerManager`), but the custom
+  `IItemTransactor` capability still needs designing against `RegisterCapabilitiesEvent`
+  (1.20.1) or `BlockCapability` (26.x) -- real work, not a rename, and nothing yet needs
+  `IItemTransactor` to be a capability rather than just an interface. `ItemTransactorHelper`
+  (capability lookup against an arbitrary neighbouring block entity) needs that token to
+  exist. `WorkbenchCrafting` needs `InventoryUtil.addToBestAcceptor`, which needs
+  `ItemTransactorHelper`; `CraftingUtil` (`GameRegistry.findRegistry(IRecipe.class)` ->
+  `RecipeManager`/`RecipeType`) has no other consumer, so it waits for the same thing.
+  `InventoryUtil`'s own capability-independent half (drop/spawn/`addAll`/`addToPlayer`) is
+  ported already; see its entry above.
 - `buildcraft.lib.block.VanillaPaintHandlers` -- registered explicit paint handlers for
   vanilla glass, glass panes and terracotta, each a single block with a 16-value colour
   property in 1.12.2. All three are 16 separate blocks now, following the

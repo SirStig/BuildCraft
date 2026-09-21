@@ -34,6 +34,8 @@ import net.minecraftforge.items.IItemHandlerModifiable;
 
 import buildcraft.api.core.EnumPipePart;
 
+import buildcraft.lib.misc.InventoryUtil;
+
 /**
  * Collects a block entity's named item handlers, and which ones (if any) are reachable from each face.
  *
@@ -139,17 +141,9 @@ public class ItemHandlerManager implements ICapabilityProvider, INBTSerializable
         return addInvHandler(key, handler, access, parts);
     }
 
-    /** Was {@code InventoryUtil.addAll(IItemHandler, NonNullList)} in 1.12.2; inlined here since
-     * {@code buildcraft.lib.misc.InventoryUtil} hasn't been ported yet and this is its only remaining use in
-     * this class -- matches the 26.x port's identical inlining. */
     public void addDrops(NonNullList<ItemStack> toDrop) {
         for (IItemHandlerModifiable itemHandler : handlersToDrop) {
-            for (int i = 0; i < itemHandler.getSlots(); i++) {
-                ItemStack stack = itemHandler.getStackInSlot(i);
-                if (!stack.isEmpty()) {
-                    toDrop.add(stack);
-                }
-            }
+            InventoryUtil.addAll(itemHandler, toDrop);
         }
     }
 
