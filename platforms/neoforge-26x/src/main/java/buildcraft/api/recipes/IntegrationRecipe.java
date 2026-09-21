@@ -6,6 +6,8 @@
  */
 package buildcraft.api.recipes;
 
+import java.util.List;
+
 import org.jetbrains.annotations.NotNull;
 
 import net.minecraft.core.NonNullList;
@@ -34,6 +36,15 @@ public abstract class IntegrationRecipe {
     public abstract long getRequiredMicroJoules(ItemStack output);
 
     public abstract IngredientStack getCenterStack();
+
+    /**
+     * @param output Only ever a stack obtained from {@link #getOutput}.
+     * @return Everything consumed to produce that output -- what {@code extract} should take from the
+     *         integration table's inventory. Was {@code ImmutableList<IngredientStack>} in 1.12.2;
+     *         {@code IngredientStack} is a record now, so a plain immutable {@link List} says the same
+     *         thing.
+     */
+    public abstract List<IngredientStack> getRequirements(@NotNull ItemStack output);
 
     @Override
     public boolean equals(Object o) {

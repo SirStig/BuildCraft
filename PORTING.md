@@ -395,6 +395,9 @@ These are the traps when porting a file to both at once.
 | Plant/soil interface | `VegetationBlock` base; `BlockState#canSustainPlant` -> `TriState` | `IPlantable`; `Block#canSustainPlant` -> `boolean` |
 | `InteractionResult` | sealed interface (`instanceof .Success`) | plain enum (`== SUCCESS`) |
 | Level height accessor | `getMinY()` | `getMinBuildHeight()` |
+| Fluid equality | static `FluidStack.matches(a, b)` | instance `a.isFluidEqual(b)` |
+| Particle detail setting | `net.minecraft.server.level.ParticleStatus` | `net.minecraft.client.ParticleStatus` |
+| `Ingredient` stack accessor | `.items()` -> `Stream<Holder<Item>>` | `.getItems()` -> `ItemStack[]` |
 | Mod metadata | `META-INF/neoforge.mods.toml` | `META-INF/mods.toml` |
 | Dependency flag | `type = "required"` | `mandatory = true` |
 | Registry handle | `DeferredHolder` / `DeferredItem` | `RegistryObject` |
