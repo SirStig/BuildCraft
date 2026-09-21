@@ -178,6 +178,28 @@ question this table does not.
 | `net.minecraft.util.ResourceLocation` | `net.minecraft.resources.ResourceLocation` on 1.20.1, **`net.minecraft.resources.Identifier` on 26.x** |
 | `javax.vecmath.*` | `org.joml.*` |
 | `gnu.trove.*` | `it.unimi.dsi.fastutil.*` |
+| `net.minecraft.nbt.CompressedStreamTools` | `net.minecraft.nbt.NbtIo` |
+| `net.minecraft.profiler.Profiler` (concrete, no-op by default) | `net.minecraft.util.profiling.ProfilerFiller` (interface); `InactiveProfiler.INSTANCE` for a standalone no-op |
+
+`gnu.trove.*` is not a rename-and-done -- the collection types, method names and a couple of
+behaviours all differ:
+
+- `TIntIntHashMap` -> `Int2IntOpenHashMap`, `TIntHashSet` -> `IntOpenHashSet`, and the
+  `T<Type>ArrayList` family -> `it.unimi.dsi.fastutil.<type>s.<Type>ArrayList` (note the
+  lower-case type in the package).
+- `list.toArray()` needs the typed name -- `toIntArray()`, `toByteArray()`, etc. -- fastutil has
+  no bare no-arg overload.
+- `list.sort()` (no args) -> `list.sort(null)`; fastutil's `sort(Comparator)` treats `null` as
+  natural order, same as Trove's implicit sort.
+- `TIntIntHashMap#increment(key)` (false if the key was absent, so callers needed a manual
+  `put(key, 1)` fallback) collapses to a single `Int2IntOpenHashMap#addTo(key, 1)` -- `addTo`
+  inserts an absent key starting from the map's default value, so it always does the right thing
+  in one call.
+- `TIntArrayList#remove(offset, length)` -> `IntArrayList#removeElements(from, to)`; the second
+  argument's meaning changes from a length to an end index (equivalent at `offset == 0`, not
+  otherwise).
+- Trove's bulk-append `list.add(int[])` has no fastutil equivalent; use the array constructor
+  (`new IntArrayList(data)`) instead of `new IntArrayList(); list.add(data);`.
 
 ### Method renames
 
@@ -217,6 +239,23 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    read and write it through `ValueInput`/`ValueOutput` (`getLongOr(name, default)`,
    `putLong(name, value)`) rather than `CompoundTag`, so the hooks are `loadAdditional` and
    `saveAdditional`. 1.20.1 still uses `CompoundTag`.
+
+   For the specific case of "BuildCraft wants to stash an arbitrary `CompoundTag` on a stack" --
+   which is most of what item NBT was actually used for (guide books, filters, markers, list
+   contents) -- vanilla already componentized exactly that as `DataComponents.CUSTOM_DATA`
+   (`CustomData`, holding a `CompoundTag`). Use it rather than inventing a BuildCraft-specific
+   component type. The one thing to get right: `CustomData` is copy-on-read.
+   `stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag()` hands back a
+   *detached copy* -- mutating it does nothing to the stack. The 1.12.2 idiom of
+   `getItemData(stack).setInteger(...)` and walking away relied on the returned tag being a live
+   reference, which no longer holds. Either pair a read with an explicit write
+   (`CustomData.set(DataComponents.CUSTOM_DATA, stack, nbt)`), or use
+   `CustomData.update(DataComponents.CUSTOM_DATA, stack, nbtConsumer)`, which reads, hands your
+   lambda a mutable tag, and writes the result back in one call -- the closest equivalent to the
+   old idiom this target allows. `buildcraft.lib.misc.NBTUtilBC` on 26.x splits into
+   `getItemData`/`setItemData`/`updateItemData` for exactly this reason; the 1.20.1 copy keeps
+   the original single `getItemData` because 1.20.1's `stack.getOrCreateTag()` is still a live
+   reference.
 5. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
    `CustomPacketPayload` with a `StreamCodec` and explicit registration.
 6. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
@@ -262,6 +301,30 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    `result.id`; `data/<ns>/recipes/` on 1.20.1 with object ingredients and `result.item`.
 12. **Item models** need a client item definition in `assets/<ns>/items/<id>.json` on 26.x
     (1.21.4+); 1.20.1 only needs `models/item/`.
+13. **`IPlantable` is gone on 26.x** (confirmed absent from every 26.x/NeoForge jar; still
+    present, unchanged, on 1.20.1's Forge fork). This is a real removal, not a rename, and it
+    hits anything that touches crops, saplings or farmland.
+    - Block-side: the `IPlantable` interface is gone. `net.minecraft.world.level.block.
+      VegetationBlock` is the new common base for the same family -- `CropBlock`, `SaplingBlock`,
+      `StemBlock`, `NetherWartBlock`, `FlowerBlock`, `TallGrassBlock`, `MushroomBlock` and
+      `DoublePlantBlock` all extend it directly now, where 1.20.1 still has them implement
+      `IPlantable` on top of `BushBlock`.
+    - Soil-side: `Block#canSustainPlant(state, level, pos, dir, IPlantable)` (`boolean`) is
+      replaced by the NeoForge extension method `BlockState#canSustainPlant(BlockGetter,
+      BlockPos, Direction, BlockState)`, which takes the *plant's* `BlockState` rather than an
+      `IPlantable` instance, and returns `net.minecraft.util.TriState`
+      (`TRUE`/`FALSE`/`DEFAULT`) rather than `boolean`. `DEFAULT` means "no opinion, ask the
+      plant", resolved with `TriState#toBoolean(fallback)` -- `plantState.canSurvive(level,
+      pos)` is a reasonable fallback.
+14. **`InteractionResult` changed shape, not just package, on 26.x.** It is a plain enum on
+    1.20.1 (`SUCCESS`/`CONSUME`/`PASS`/`FAIL`), but a sealed interface with record subtypes on
+    26.x -- `SUCCESS` and `SUCCESS_SERVER` are both instances of the nested
+    `InteractionResult.Success`. A success check is `result == InteractionResult.SUCCESS` on
+    1.20.1 but `result instanceof InteractionResult.Success` on 26.x.
+15. **`LevelHeightAccessor.getMinBuildHeight()` was renamed `getMinY()`** at some point after
+    1.20.1 -- 26.x has `getMinY()`, 1.20.1 still has `getMinBuildHeight()`. Easy to miss because
+    both compile against completely different, unrelated things if you get it backwards on one
+    target and the IDE doesn't catch it, since both classes have plenty of other methods.
 
 ### Things that differ *between* our two targets
 
@@ -274,6 +337,10 @@ These are the traps when porting a file to both at once.
 | Render collector | `SubmitNodeCollector` | `MultiBufferSource` |
 | Stack NBT | `ItemStack.CODEC` only | `ItemStack.save` / `.of` |
 | Stack equality | `isSameItemSameComponents` | `isSameItemSameTags` |
+| Primitive NBT tag payload | `ByteTag.value()`, `StringTag.value()`, ... (records) | `.getAsByte()`, `.getAsString()`, ... |
+| Plant/soil interface | `VegetationBlock` base; `BlockState#canSustainPlant` -> `TriState` | `IPlantable`; `Block#canSustainPlant` -> `boolean` |
+| `InteractionResult` | sealed interface (`instanceof .Success`) | plain enum (`== SUCCESS`) |
+| Level height accessor | `getMinY()` | `getMinBuildHeight()` |
 | Mod metadata | `META-INF/neoforge.mods.toml` | `META-INF/mods.toml` |
 | Dependency flag | `type = "required"` | `mandatory = true` |
 | Registry handle | `DeferredHolder` / `DeferredItem` | `RegistryObject` |

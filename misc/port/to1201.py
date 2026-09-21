@@ -40,7 +40,13 @@ SUBS = [
     (r"\.getByteArray\(([^)]+)\)\.orElse\(new byte\[0\]\)", r".getByteArray(\1)"),
     (r"\.getCompound\(([^)]+)\)\.orElseGet\(CompoundTag::new\)", r".getCompound(\1)"),
     (r"\.getList\(([^)]+)\)\.orElseGet\(ListTag::new\)", r".getList(\1, Tag.TAG_COMPOUND)"),
-    (r"\.keySet\(\)", ".getAllKeys()"),
+
+    # NOT mapped: CompoundTag.keySet() -> getAllKeys(). A blind text substitution can't tell a
+    # CompoundTag receiver from a plain java.util.Map/fastutil map (both spell iteration as
+    # .keySet()), and rewriting the latter breaks it outright -- found the hard way when this
+    # clobbered Int2IntOpenHashMap.keySet() calls with no CompoundTag anywhere nearby. Fix
+    # CompoundTag.keySet() -> .getAllKeys() by hand; the compiler will point at exactly the
+    # right lines either way.
 ]
 
 
