@@ -22,6 +22,7 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
 import buildcraft.core.block.BlockPowerConsumerTester;
+import buildcraft.core.item.ItemWrench;
 import buildcraft.core.tile.TilePowerConsumerTester;
 import buildcraft.lib.registry.BCRegistry;
 
@@ -47,6 +48,10 @@ public final class BCCoreRegistries {
     public static final RegistryObject<Item> GEAR_IRON = REGISTRY.addItem("gear_iron");
     public static final RegistryObject<Item> GEAR_GOLD = REGISTRY.addItem("gear_gold");
     public static final RegistryObject<Item> GEAR_DIAMOND = REGISTRY.addItem("gear_diamond");
+
+    // --- Tools --------------------------------------------------------------------
+    public static final RegistryObject<ItemWrench> WRENCH =
+        REGISTRY.addItem("wrench", () -> new ItemWrench(new Item.Properties()));
 
     // --- Machines ---------------------------------------------------------------
     public static final RegistryObject<BlockPowerConsumerTester> POWER_TESTER =

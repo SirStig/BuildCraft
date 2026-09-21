@@ -26,6 +26,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.core.block.BlockPowerConsumerTester;
+import buildcraft.core.item.ItemWrench;
 import buildcraft.core.tile.TilePowerConsumerTester;
 import buildcraft.lib.registry.BCRegistry;
 
@@ -51,6 +52,9 @@ public final class BCCoreRegistries {
     public static final DeferredItem<Item> GEAR_IRON = REGISTRY.addItem("gear_iron");
     public static final DeferredItem<Item> GEAR_GOLD = REGISTRY.addItem("gear_gold");
     public static final DeferredItem<Item> GEAR_DIAMOND = REGISTRY.addItem("gear_diamond");
+
+    // --- Tools --------------------------------------------------------------------
+    public static final DeferredItem<ItemWrench> WRENCH = REGISTRY.addItem("wrench", ItemWrench::new);
 
     // --- Machines ---------------------------------------------------------------
     public static final DeferredBlock<BlockPowerConsumerTester> POWER_TESTER =

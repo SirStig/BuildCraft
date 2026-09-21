@@ -101,6 +101,27 @@ Ported (compiling, tested):
   `TileBC` and `BlockBCTile` (the block entity and block bases), `VecUtil`, `RotationUtil`,
   and the power consumer tester -- the first machine to go all the way through: block, block
   entity, ticker, MJ capability, model, loot table and tag.
+- **`buildcraft.core` — started.** `core.item.ItemWrench` (renamed from `ItemWrench_Neptune`,
+  following the same "supersede `ItemBC_Neptune`/`IItemBuildCraft` with `BCRegistry` plus
+  lang/model JSON" pattern already used for the five gears and the power tester -- see the
+  "Deliberately not ported" note on `IItemBuildCraft`) is the first `core` item, registered in
+  `BCCoreRegistries` alongside the gears. `onItemUseFirst`/`onItemUse` merge into `useOn`;
+  `IBlockState#getActualState` and `Item#doesSneakBypassUse` are both simply gone (see the
+  class's own javadoc for the full account, including 26.x's sealed-interface
+  `InteractionResult` check and its three-argument `LivingEntity#swing`). Texture, item model
+  and a modern datapack recipe (`c:gears/stone` + `c:ingots/iron` / `forge:` equivalents on
+  1.20.1) are ported from `buildcraft_resources/assets/buildcraftcore/`; the advancement JSON
+  is not -- `AdvancementUtil.unlockAdvancement` already treats an unregistered advancement id
+  as a harmless one-time warning rather than an error (see its own class javadoc), and nothing
+  else needs a BuildCraft advancement tree to exist yet, so building one prematurely for a
+  single leaf advancement isn't worth it.
+  `buildcraft.lib.misc.SoundUtil` (both platforms) also landed as part of this -- `ItemWrench`
+  needed it for its slide-sound feedback, and it turned out to have no rendering/client-only
+  dependency blocking it (unlike the `GlUtil`/`DrawingUtil`/... cluster it sits next to in
+  `lib.misc`): `IBlockState#getSoundType(state, world, pos, entity)` lost its three context
+  parameters, and per-fluid bucket sounds move from `Fluid#getEmptySound`/`getFillSound` to
+  `Fluid#getFluidType()#getSound(FluidStack, SoundAction)`, Forge's generic fluid-property
+  system already shared by both targets.
 - **`BuildCraftAPI/api` — 217 of 251 files.** Everything except the list below, on both targets.
   Of the 34 not ported: 20 are `package-info.java` whose only content was FML's `@API`
   annotation, which no longer exists; the rest are blocked or deliberate, and listed below.

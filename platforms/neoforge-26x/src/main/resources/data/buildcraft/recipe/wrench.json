@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_wrench",
+  "pattern": [
+    "I I",
+    " G ",
+    " I "
+  ],
+  "key": {
+    "I": "#c:ingots/iron",
+    "G": "#c:gears/stone"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:wrench"
+  }
+}

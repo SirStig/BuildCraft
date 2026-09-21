@@ -35,6 +35,7 @@ PREFIXES = ["BuildCraftAPI/api/", "common/", "tests/",
 # relative path; value is its true 1.12.2 origin, same format upstream_for() would return.
 RELOCATED = {
     "buildcraft/lib/tile/item/IAutoCraft.java": "common/buildcraft/lib/tile/craft/IAutoCraft.java",
+    "buildcraft/core/item/ItemWrench.java": "common/buildcraft/core/item/ItemWrench_Neptune.java",
 }
 
 def upstream_for(path: pathlib.Path):
