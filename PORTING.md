@@ -160,16 +160,37 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    `RegisterCapabilitiesEvent`. 26.x replaces the whole system with `BlockCapability`, keyed by
    an `Identifier` and registered per block entity type — there is no attach-by-event path at
    all, so anything that used `ICapabilityProvider` needs restructuring, not renaming.
-6. **Rendering.** `TESR` → `BlockEntityRenderer`, and the whole `PoseStack`/`RenderType`
+6. **Item, fluid and energy transfer is a new API on 26.x**, and this one matters more to
+   BuildCraft than to most mods, because moving items and fluids around *is* BuildCraft.
+   `IItemHandler`, `IFluidHandler` and `IEnergyStorage` are all gone from NeoForge 26.x,
+   replaced by one generic `net.neoforged.neoforge.transfer.ResourceHandler<T extends Resource>`
+   with `ItemResource`, `FluidResource` and a separate `EnergyHandler`. Three things change:
+   - **Resource and amount are separate.** A `FluidResource`/`ItemResource` says *what*
+     something is; the amount is a `long` the handler holds per slot. There is no
+     `FluidStack`-as-a-key any more, which is what `StackKey` was for.
+   - **Handlers are slot-indexed and introspectable** — `size()`, `getResource(slot)`,
+     `getAmountAsLong(slot)`. Anything 1.12.2 solved by making tanks implement an extra
+     BuildCraft interface can usually now be done from outside, against any mod's handler.
+     `IFluidHandlerAdv` → `FluidFilters` is the worked example.
+   - **`boolean simulate` became transactions.** Operations take a `TransactionContext`;
+     `Transaction.openRoot()` in try-with-resources, `commit()` to keep the effect, otherwise
+     it rolls back on close, and `Transaction.open(parent)` nests. This replaces both
+     `doDrain`/`simulate` booleans and BuildCraft's own manual rollback in the pipe and
+     robot code.
+
+   1.20.1 has none of this — it is still `IItemHandler`/`IFluidHandler` with `FluidAction`.
+   This is the single largest source of per-platform divergence after registration, and it
+   lands squarely on `transport`, `factory` and `robotics`.
+7. **Rendering.** `TESR` → `BlockEntityRenderer`, and the whole `PoseStack`/`RenderType`
    pipeline replaces raw GL. `GlUtil` and most of `buildcraft.lib.client` are rewrites, not
    ports.
-7. **Ore dictionary → tags.** `OreDictionary.registerOre` becomes a tag JSON. BuildCraft
+8. **Ore dictionary → tags.** `OreDictionary.registerOre` becomes a tag JSON. BuildCraft
    publishes its gears under `c:gears/<material>` on 26.x and `forge:gears/<material>` on
    1.20.1.
-8. **`.lang` → `.json`**, and translation keys become `item.<namespace>.<path>`.
-9. **Recipes.** `data/<ns>/recipe/` (singular) on 26.x with string ingredients and
+9. **`.lang` → `.json`**, and translation keys become `item.<namespace>.<path>`.
+10. **Recipes.** `data/<ns>/recipe/` (singular) on 26.x with string ingredients and
    `result.id`; `data/<ns>/recipes/` on 1.20.1 with object ingredients and `result.item`.
-10. **Item models** need a client item definition in `assets/<ns>/items/<id>.json` on 26.x
+11. **Item models** need a client item definition in `assets/<ns>/items/<id>.json` on 26.x
     (1.21.4+); 1.20.1 only needs `models/item/`.
 
 ### Things that differ *between* our two targets

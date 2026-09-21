@@ -8,6 +8,7 @@ package buildcraft;
 import net.minecraftforge.eventbus.api.IEventBus;
 
 import buildcraft.api.mj.MjCapabilities;
+import buildcraft.api.tiles.TilesAPI;
 
 /** Central hook-up point for every {@code DeferredRegister} BuildCraft owns on 1.20.1. */
 public final class BCRegistries {
@@ -18,5 +19,6 @@ public final class BCRegistries {
         BCCoreRegistries.register(modBus);
         // 1.20.1 lost @CapabilityInject, so every capability BuildCraft defines has to be declared here.
         modBus.addListener(MjCapabilities::register);
+        modBus.addListener(TilesAPI::register);
     }
 }
