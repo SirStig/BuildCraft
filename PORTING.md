@@ -113,6 +113,12 @@ Ported (compiling, tested):
   see the `CapUtil`/`ItemTransactorHelper` entry below for the rest.
 - `buildcraft.lib.tile.craft.IAutoCraft` (relocated to `buildcraft.lib.tile.item`, next to its
   only real dependency, `ItemHandlerSimple`).
+- `buildcraft.lib.delta` (2, both platforms) — the render/GUI interpolation helper
+  (`DeltaManager`/`DeltaInt`) used for smoothly animating a synced value between two known
+  states. Self-contained (NBT + `PacketBufferBC` only); its only real consumer,
+  `TileBC_Neptune`'s network/NBT wiring, is superseded by `TileBC` here, which doesn't wire a
+  `DeltaManager` in yet -- that's `lib.net`'s message-dispatch redesign's job, not this
+  package's.
 - `buildcraft.lib.recipe` (8 of 12) and `buildcraft.lib.particle` (6) — recipe-adjacent
   helpers and `IEffect`-driven particle rendering. `OredictionaryNames` now points at
   BuildCraft's real published item tags rather than ore-dictionary names. The 4 skipped
@@ -173,6 +179,42 @@ Deliberately not ported, with reasons:
   `RecipeManager`/`RecipeType`) has no other consumer, so it waits for the same thing.
   `InventoryUtil`'s own capability-independent half (drop/spawn/`addAll`/`addToPlayer`) is
   ported already; see its entry above.
+- `buildcraft.lib.misc.BlockUtil` (555 lines) -- deferred whole rather than partially ported,
+  because it bundles several genuinely separate redesigns rather than one mechanical port:
+  - Its fluid-block cluster (`isFullFluidBlock`, `getFluid`/`getFluidWithFlowing`/
+    `getFluidWithoutFlowing`, `drainBlock`) is built on `IFluidBlock`/`BlockFluidBase`/
+    `BlockFluidClassic`/`BlockLiquid`/`FluidRegistry` -- a whole block-per-fluid-level
+    architecture that no longer exists. Fluids are `FluidState` on any `BlockState` now
+    (confirmed: `BlockBehaviour.BlockStateBase#getFluidState()`), a fundamentally different
+    shape, not a rename.
+  - `Block.getDrops` and `ForgeEventFactory.fireBlockHarvesting`, which
+    `getItemStackFromBlock`/`harvestBlock` build on, are both gone. The static
+    `Block.getDrops` replacement takes a `BlockState`/`ServerLevel`/`BlockPos`/
+    `BlockEntity`, and optionally an `Entity` and a *new* `net.minecraft.world.item.
+    ItemInstance` type (confirmed via `javap` against the 26.x jar) in place of the old
+    `ItemStack` + fortune-int pair -- `ItemInstance` didn't exist in any version this port
+    has touched so far and needs its own investigation before anything builds on it.
+    `BlockEvent.BreakEvent` itself moved packages and names, to
+    `net.neoforged.neoforge.event.level.block.BreakBlockEvent` (confirmed present in the
+    26.x NeoForge jar; the harvesting-chance hook `fireBlockHarvesting` used to pair with
+    doesn't appear to still exist under that name and needs its own search).
+  - `computeBlockBreakPower` reads `buildcraft.core.BCCoreConfig`, which is in `buildcraft.
+    core` -- entirely unported.
+  - `getOtherDoubleChest` reads `TileEntityChest`'s `adjacentChestX/ZNeg/Pos` fields directly;
+    modern double-chest merging goes through `DoubleBlockCombiner` and needs verifying from
+    scratch, not assumed compatible.
+  - `explodeBlock` hand-builds an `Explosion` and manually sends `SPacketExplosion` to nearby
+    players; both the `Explosion` constructor shape and the packet class have almost
+    certainly changed and need the same from-scratch verification.
+
+  Everything else in the file (`breakBlock`/`harvestBlock`/`destroyBlock`/
+  `getFakePlayerWithTool`, `canChangeBlock`, `getBlockHardnessMining`/`isUnbreakableBlock`/
+  `isToughBlock`, the `getTileEntity`/`getBlockState` chunk-avoiding wrappers around the
+  already-ported `CompatManager`, `useItemOnBlock`, `onComparatorUpdate`, and the
+  blockstate-property comparison helpers) has no similar blocker and is a reasonable target
+  for a focused follow-up pass once the fluid/drops/double-chest pieces above are actually
+  designed, rather than split off today into a partial file that would need revisiting
+  anyway.
 - `buildcraft.lib.block.VanillaPaintHandlers` -- registered explicit paint handlers for
   vanilla glass, glass panes and terracotta, each a single block with a 16-value colour
   property in 1.12.2. All three are 16 separate blocks now, following the
