@@ -27,6 +27,7 @@ IMPORTS = {
     "net.minecraft.util.IStringSerializable": "net.minecraft.util.StringRepresentable",
     "net.minecraft.util.EnumHand": "net.minecraft.world.InteractionHand",
     "net.minecraft.util.EnumActionResult": "net.minecraft.world.InteractionResult",
+    "net.minecraft.util.Rotation": "net.minecraft.world.level.block.Rotation",
     "net.minecraft.world.World": "net.minecraft.world.level.Level",
     "net.minecraft.world.IBlockAccess": "net.minecraft.world.level.BlockGetter",
     "net.minecraft.world.Explosion": "net.minecraft.world.level.Explosion",
@@ -89,6 +90,46 @@ METHODS = {
     r"\.isRemote\b": ".isClientSide()",
     # Direction.VALUES and .HORIZONTALS were public fields; both are gone.
     r"\bDirection\.VALUES\b": "Direction.values()",
+
+    # NBT writes: setX -> putX.
+    r"\.setInteger\(": ".putInt(",
+    r"\.setString\(": ".putString(",
+    r"\.setBoolean\(": ".putBoolean(",
+    r"\.setByte\(": ".putByte(",
+    r"\.setShort\(": ".putShort(",
+    r"\.setLong\(": ".putLong(",
+    r"\.setFloat\(": ".putFloat(",
+    r"\.setDouble\(": ".putDouble(",
+    r"\.setIntArray\(": ".putIntArray(",
+    r"\.setByteArray\(": ".putByteArray(",
+    r"\.setTag\(": ".put(",
+    r"\.setUniqueId\(": ".putUUID(",
+    r"\.hasKey\(": ".contains(",
+
+    # NBT reads. On 26.x CompoundTag.getX(name) returns an Optional; getXOr(name, default)
+    # returns the value. 1.12.2's getX returned a zero value for a missing key, so the "Or"
+    # form with a zero default is what preserves the old behaviour -- which is usually, but
+    # NOT always, what the caller wanted. Check each one.
+    r"\.getInteger\((\s*[^,()]+)\)": r".getIntOr(\1, 0)",
+    r"\.getBoolean\((\s*[^,()]+)\)": r".getBooleanOr(\1, false)",
+    r"\.getByte\((\s*[^,()]+)\)": r".getByteOr(\1, (byte) 0)",
+    r"\.getLong\((\s*[^,()]+)\)": r".getLongOr(\1, 0L)",
+    r"\.getFloat\((\s*[^,()]+)\)": r".getFloatOr(\1, 0.0F)",
+    r"\.getDouble\((\s*[^,()]+)\)": r".getDoubleOr(\1, 0.0D)",
+    r"\.getString\((\s*[^,()]+)\)": r'.getStringOr(\1, "")',
+    r"\.getShort\((\s*[^,()]+)\)": r".getShort(\1).orElse((short) 0)",
+    r"\.getIntArray\((\s*[^,()]+)\)": r".getIntArray(\1).orElse(new int[0])",
+    r"\.getByteArray\((\s*[^,()]+)\)": r".getByteArray(\1).orElse(new byte[0])",
+    r"\.getCompoundTag\((\s*[^,()]+)\)": r".getCompound(\1).orElseGet(CompoundTag::new)",
+    r"\.getTagList\((\s*[^,()]+), [^)]+\)": r".getList(\1).orElseGet(ListTag::new)",
+
+    # Forge's NBT type constants moved onto Tag itself.
+    r"\bConstants\.NBT\.": "Tag.",
+
+    # Assorted single-method renames.
+    r"\.getPos\(\)": ".getBlockPos()",
+    r"\.getTag\((\s*(?:\"[^\"]*\"|\w+))\)": r".get(\1)",
+    r"\bnameToResourceLocation\(": "nameToResourceId(",
 }
 
 
@@ -100,7 +141,9 @@ def convert(text: str) -> str:
     for pattern, new in METHODS.items():
         text = re.sub(pattern, new, text)
     # The variable is conventionally named "level" now that the type is. The lookbehind keeps this off
-    # dotted paths -- without it, net.minecraft.world.item becomes net.minecraft.level.item.
+    # dotted paths -- without it, net.minecraft.world.item becomes net.minecraft.level.item. Field
+    # accesses through this/super are the one dotted form that IS a rename, so they go first.
+    text = re.sub(r"\b(this|super)\.world\b", r"\1.level", text)
     text = re.sub(r"(?<![.\w])world\b", "level", text)
     text = re.sub(r"(?<![.\w])oLevel\b", "oLevel", text)
     return text

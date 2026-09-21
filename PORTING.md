@@ -50,6 +50,18 @@ would cost more than the duplication.
 ./gradlew :neoforge-26x:runClient        # launch the game
 ```
 
+### Porting helpers
+
+`misc/port/rename.py` applies the 1.12.2 → 26.x changes that are purely positional: package moves, type
+renames with identical semantics, `setX` → `putX`, and the NBT getter mapping above. `misc/port/to1201.py`
+takes a file already compiling on 26.x and produces the 1.20.1 copy, which is far less work than porting
+from 1.12.2 twice.
+
+Neither is a port. They know nothing about capabilities, the transfer API, stack NBT, rendering, block
+metadata or the packet system — everything in the list below, in other words — so every file they touch
+still has to be read, and the compiler is the real check. In practice they remove most of the noise and
+leave the decisions.
+
 ### Testing in a real game
 
 Dev runs (`runClient`/`runServer`) load `build/classes` directly. That is fine for most things but it does
@@ -185,19 +197,27 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
 2. **Registration.** BuildCraft's `RegistrationHelper` + FML `preInit` becomes
    `DeferredRegister` on the mod event bus. On 26.x the registry object carries its own id,
    so items no longer need an unlocalised-name string threaded through the constructor.
-3. **NBT → data components** (1.20.5). Item NBT does not exist on 26.x; anything BuildCraft
+3. **`CompoundTag`'s getters return `Optional` on 26.x**, and this one is dangerous because the
+   compiler only catches some of it. `getInt(name)` is `Optional<Integer>`; the value form is
+   `getIntOr(name, default)`. 1.12.2's `getInteger` returned 0 for a missing key, so `getIntOr(name, 0)`
+   is the faithful port — but it is now an explicit choice, and for a lot of BuildCraft's code the
+   honest default is not zero. `getTagList(name, type)` became
+   `getList(name).orElseGet(ListTag::new)`, and the write side is `setX` → `putX` throughout.
+   1.20.1 still returns values, so this is a per-target divergence. `misc/port/rename.py` applies the
+   faithful mapping and `misc/port/to1201.py` reverses it.
+4. **NBT → data components** (1.20.5). Item NBT does not exist on 26.x; anything BuildCraft
    stored on a stack needs a `DataComponentType`. Block entities still use NBT, but on 26.x they
    read and write it through `ValueInput`/`ValueOutput` (`getLongOr(name, default)`,
    `putLong(name, value)`) rather than `CompoundTag`, so the hooks are `loadAdditional` and
    `saveAdditional`. 1.20.1 still uses `CompoundTag`.
-4. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
+5. **Networking.** The 1.12 `IMessage`/`SimpleNetworkWrapper` stack becomes
    `CustomPacketPayload` with a `StreamCodec` and explicit registration.
-5. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
+6. **Capabilities**, and note this differs *twice*. 1.12.2's `@CapabilityInject` was removed in
    1.16, so on 1.20.1 each capability is fetched with a `CapabilityToken` and declared in
    `RegisterCapabilitiesEvent`. 26.x replaces the whole system with `BlockCapability`, keyed by
    an `Identifier` and registered per block entity type — there is no attach-by-event path at
    all, so anything that used `ICapabilityProvider` needs restructuring, not renaming.
-6. **Item, fluid and energy transfer is a new API on 26.x**, and this one matters more to
+7. **Item, fluid and energy transfer is a new API on 26.x**, and this one matters more to
    BuildCraft than to most mods, because moving items and fluids around *is* BuildCraft.
    `IItemHandler`, `IFluidHandler` and `IEnergyStorage` are all gone from NeoForge 26.x,
    replaced by one generic `net.neoforged.neoforge.transfer.ResourceHandler<T extends Resource>`
@@ -218,7 +238,7 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    1.20.1 has none of this — it is still `IItemHandler`/`IFluidHandler` with `FluidAction`.
    This is the single largest source of per-platform divergence after registration, and it
    lands squarely on `transport`, `factory` and `robotics`.
-7. **Rendering**, and 26.x is a second rewrite on top of the first. `TESR` → `BlockEntityRenderer`,
+8. **Rendering**, and 26.x is a second rewrite on top of the first. `TESR` → `BlockEntityRenderer`,
    and the `PoseStack`/`RenderType` pipeline replaces raw GL — that much is the 1.20.1 story.
    26.x then replaces *that*: rendering no longer draws during the render pass, it **submits**
    work to a graph that is sorted and executed later. `MultiBufferSource` does not exist;
@@ -227,13 +247,13 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
    `VertexConsumer` and writing to it. Anything taking a `MultiBufferSource` is therefore a
    third signature, not a shared one — `IItemCustomPipeRender` is the worked example.
    `GlUtil` and most of `buildcraft.lib.client` are rewrites, not ports, on both targets.
-8. **Ore dictionary → tags.** `OreDictionary.registerOre` becomes a tag JSON. BuildCraft
+9. **Ore dictionary → tags.** `OreDictionary.registerOre` becomes a tag JSON. BuildCraft
    publishes its gears under `c:gears/<material>` on 26.x and `forge:gears/<material>` on
    1.20.1.
-9. **`.lang` → `.json`**, and translation keys become `item.<namespace>.<path>`.
-10. **Recipes.** `data/<ns>/recipe/` (singular) on 26.x with string ingredients and
+10. **`.lang` → `.json`**, and translation keys become `item.<namespace>.<path>`.
+11. **Recipes.** `data/<ns>/recipe/` (singular) on 26.x with string ingredients and
    `result.id`; `data/<ns>/recipes/` on 1.20.1 with object ingredients and `result.item`.
-11. **Item models** need a client item definition in `assets/<ns>/items/<id>.json` on 26.x
+12. **Item models** need a client item definition in `assets/<ns>/items/<id>.json` on 26.x
     (1.21.4+); 1.20.1 only needs `models/item/`.
 
 ### Things that differ *between* our two targets
@@ -256,6 +276,7 @@ These are the traps when porting a file to both at once.
 | Capabilities | `BlockCapability.createSided(Identifier, Class)` | `CapabilityManager.get(new CapabilityToken<>(){})` + `RegisterCapabilitiesEvent` |
 | Resource ids | `Identifier` | `ResourceLocation` |
 | Block entity NBT | `ValueInput` / `ValueOutput` | `CompoundTag` |
+| `CompoundTag` getters | `getInt` → `Optional`; `getIntOr(k, 0)` | `getInt(k)` returns the value |
 | Block entity type | `new BlockEntityType<>(supplier, blocks...)` | `BlockEntityType.Builder.of(...).build(null)` |
 | Block `codec()` | not required (removed) | required (`simpleCodec`) |
 | Mod banner | `bannerFile` / `iconFile` | `logoFile` |
