@@ -3821,6 +3821,163 @@ Deliberately not ported, with reasons:
     delete the `build/classes` other agents' running dev servers load from), the full 25-test suite (25/25 in
     both the snapshot and the shared tree), plus the server/client runs above.
 
+- **`buildcraft.energy` -- the oil/fuel fluid family (`BCEnergyFluids`) and the fuel/coolant registry
+  (`buildcraft.api.fuels` implementations + `BCEnergyRecipes`), both platforms.** The foundation for the
+  oil -> distiller -> combustion-engine chain; the engines and the distiller themselves are a later batch.
+  - **The fluid set, enumerated from 1.12.2's own `BCEnergyFluids#preInit` table, not guessed: ten fluids x three
+    heat variants = thirty.** 1.12.2 only registered all thirty when `buildcraftfactory` was loaded (otherwise just
+    heat-0 `oil` and `fuel_light`); `BCModules.FACTORY.isLoaded()` is constant `true` in this one-mod port, so the
+    full set always registers. The declared-but-never-defined `tar` field stays unregistered, as in 1.12.2.
+    Registry ids are 1.12.2's own fluid names: `oil`, `oil_heat_1`, `oil_heat_2`, `oil_residue[_heat_N]`,
+    `oil_heavy`, `oil_dense`, `oil_distilled`, `fuel_dense`, `fuel_mixed_heavy`, `fuel_light`, `fuel_mixed_light`,
+    `fuel_gaseous` -- each id names the `FluidType`, the source `Fluid`, and the placeable `LiquidBlock`; the
+    flowing fluid is `flowing_<id>` and the bucket `<id>_bucket` (150 registry entries per platform). Derived
+    properties are 1.12.2's formulas unchanged: viscosity `base * (4 - heat) / 4`; density negated once
+    `heat >= boil` (so `oil_distilled_heat_2`, `fuel_dense_heat_2`, `fuel_mixed_heavy_heat_2`,
+    `fuel_light_heat_1/2`, `fuel_mixed_light_heat_1/2` and all three `fuel_gaseous` are gases --
+    `FluidType#isLighterThanAir`); temperature `300 + 20 * heat`; luminosity 0; flammable (`enableOilBurn`
+    default `true`) for everything except residue; map colour = 1.12.2's own nearest-`MapColor` search over
+    `tex_dark` (oil -> `COLOR_BLACK` `0x191919`, residue `0x562c3e`, ...). Base table (density, viscosity, boil,
+    spread, light, dark): oil 900/2000/3/6/`505050`/`050505`; residue 1200/4000/3/4/`100F10`/`421042`; heavy oil
+    850/1800/3/6/`A08F1F`/`423520`; dense oil 950/1600/3/5/`876E77`/`422424`; distilled 750/1400/2/8/
+    `E4AF78`/`B47F00`; dense fuel 600/800/2/7/`FFAF3F`/`E07F00`; mixed heavy 700/1000/2/7/`F2A700`/`C48700`;
+    light fuel 400/600/1/8/`FFFF30`/`E4CF00`; mixed light 650/900/1/9/`F6D700`/`C4B700`; gaseous 300/500/0/10/
+    `FAF630`/`E0D900`. **Sticky** ("`oilIsDense`", web-like drag) was config-gated and **off by default** in
+    1.12.2; with no energy config in this port yet it is not implemented (documented in `BCFluidBlock`).
+  - **New files, both platforms**: `buildcraft.energy.BCEnergyFluids` (table + registration; nested
+    `BCFluid` ties the five registry objects together), `buildcraft.energy.BCEnergyRecipes`,
+    `buildcraft.lib.fluid.BCFluidType` (port of 1.12.2 `BCFluid`: heat, light/dark colours, flammability,
+    textures, heat-suffixed name), `BCFluidBlock` (port of `BCFluidBlock`: `LiquidBlock` + flammability 200 /
+    fire spread 200 as `IBlockExtension`/`IForgeBlock` overrides + `ignitedByLava()`), `BCFluidBucketItem`
+    (port-only: replaces Forge 1.12.2's universal bucket, which no longer exists), `FuelRegistry`,
+    `CoolantRegistry` (1.12.2 `buildcraft.lib.fluid` implementations of the already-ported `buildcraft.api.fuels`
+    interfaces, which had no implementation until now). `BCEnergyRegistries` (both): a static block calling
+    `BCEnergyFluids.preInit(REGISTRY)` (buckets land in the creative tab after the Stirling engine), plus
+    `register()` registering the fluid-type/fluid `DeferredRegister`s and installing `BuildcraftFuelRegistry.fuel`/
+    `.coolant` (1.12.2 did that in `BCLibRegistries#preInit`). **`BuildCraft.java` (26.x only): one line** in the
+    client-only block, `modBus.addListener(BCEnergyClientRegistries::registerFluidModels)`; 1.20.1's
+    `BuildCraft.java` is untouched. `BCEnergyClientRegistries` (26.x) gained `registerFluidModels`.
+  - **Registry keys and APIs, confirmed per platform in the real sources jars.** 26.x: `NeoForgeRegistries.Keys
+    .FLUID_TYPES` (`neoforge:fluid_type`), `Registries.FLUID`, `BaseFlowingFluid.Source/Flowing/Properties`,
+    `LiquidBlock(FlowingFluid, Properties)` (takes the fluid itself -- safe because vanilla registers `FLUID`
+    before `BLOCK`), `BucketItem(Fluid, Properties)` with `public final Fluid content`, `noCollision()`,
+    `PushReaction.POPPED` (vanilla 26.x water). 1.20.1: `ForgeRegistries.Keys.FLUID_TYPES` (`forge:fluid_type`),
+    `ForgeRegistries.FLUIDS`, `ForgeFlowingFluid.*`, Forge's `Supplier` constructors on `LiquidBlock`/`BucketItem`
+    (`getFluid()` accessors), `noCollission()` (1.20.1 spelling), `PushReaction.DESTROY` (vanilla 1.20.1 water).
+    `FluidType.Properties` is the same shape on both (`descriptionId`/`density`/`viscosity`/`temperature`/
+    `sound(SoundActions.BUCKET_FILL/EMPTY, ...)`); both `*FlowingFluid.Properties` default to tick rate 5, level
+    decrease 1, slope distance 4, explosion resistance 1 (set to 100 here, vanilla water's value).
+  - **Flow model is a genuine, documented approximation.** 1.12.2 `setQuantaPerBlock(base + (base > 6 ? heat :
+    heat / 2))` travelled `quanta - 1` blocks, any 1..15; vanilla `FlowingFluid` starts at level 8 and can only
+    travel 7/3/2/1 blocks (`levelDecreasePerBlock` 1/2/3/4). `levelDecreasePerBlock = max(1, round(7 / (quanta -
+    1)))` picks the nearest: spreads of 5+ become 7 (the 8-11-block fuels are capped at water's reach), 3-4
+    become 3. Tick delay is `max(1, viscosity / 200)` -- exactly vanilla's calibration on both targets (water
+    1000 -> `getTickDelay` 5, lava 6000 -> 30, both read from the sources); Forge 1.12.2's `BlockFluidBase` used
+    the same rule, but no 1.12.2 Forge jar exists here to re-check it. **Gases do not flow upward**: vanilla
+    `FlowingFluid` has no upward flow, so a placed gaseous source spreads downward like a liquid (1.12.2's
+    negative-density `BlockFluidClassic` rose). Their buckets *do* render upside down (`flip_gas: true`, matching
+    the universal bucket's own `"flipGas": true`, still visible in NeoForge's legacy `dynbucket.json`).
+    1.12.2's water/lava `displacements` map and `isEntityInsideMaterial` are not ported (see `BCFluidBlock`).
+  - **Textures: 1.12.2 did not ship per-fluid textures -- it recoloured three greyscale ones at stitch time; that
+    recolour was baked offline, exactly.** `buildcraft_resources/.../textures/blocks/fluids/` holds `heat_{0,1,2}_
+    {still,flow}.png` (byte-identical images; only the `.mcmeta` differs: heat 0/1 `frametime 3, interpolate`,
+    heat 2 default) plus unused legacy `oil_heat_0_*`/`fuel_*`/`redplasma_*`. `BCEnergySprites`/
+    `AtlasSpriteFluid` (`BCLibConfig.useSwappableSprites`, default `true`) generated each fluid's sprite from the
+    heat-N texture by a per-channel gradient map, `(dark * (256 - v) + light * v) / 256`, alpha forced to 255 --
+    not a multiplicative tint (residue's "dark" is lighter than its "light"), so no tint colour can reproduce it.
+    Vanilla's data-driven `paletted_permutations` sprite source was ruled out by reading it on both targets: its
+    `PalettedSpriteSupplier` builds `new SpriteContents(id, new FrameSize(w, h), image)` over the whole image with
+    no animation metadata, which would squash the 16x512 animation strip into one static sprite. So the same
+    formula was run once (Python/PIL, integer maths identical to `recolourSubPixel`) and the 60 results ship as
+    `assets/buildcraft/textures/block/fluids/<name>_heat_<N>_{still,flow}.png`, each with the original
+    `heat_N_*.png.mcmeta` copied byte-for-byte beside it (identical trees on both platforms, 876K each). The fluid
+    tint is plain white, just as `BCFluid#setColour(light, dark)` forced `colour` to white. Plus 30 blockstates
+    (`{"variants": {"": ...}}`, vanilla water's own shape) and 30 particle-only block models per platform, and
+    per-platform bucket models (below). Lang: 10 `fluid_type.buildcraft.<name>` names (1.12.2's `fluid.<name>`
+    strings), 1.12.2's three `buildcraft.fluid.heat_N` formats verbatim (`%s (§bCool§r)`/`(§6Hot§r)`/
+    `(§cSearing§r)` -- heat 0 included, since every fluid is `heatable`), and one `item.buildcraft.fluid_bucket`
+    (`%s Bucket`, the universal bucket's format); block and bucket names derive from the fluid type's
+    description instead of 60 per-variant keys.
+  - **Client fluid rendering, 26.x -- new territory, with evidence.** `IClientFluidTypeExtensions` has no texture/
+    tint methods and `FluidType#initializeClient` does not exist on 26.3. Vanilla `FluidStateModelSet#bake`
+    hard-codes `FluidModel.Unbaked`s for water/lava only, then calls NeoForge `ClientHooks#gatherFluidModels`,
+    which posts the mod-bus **`RegisterFluidModelsEvent`** (worker thread, during model loading) and afterwards
+    logs `Missing FluidModel for fluid '...'` for every registered fluid still unmapped; `FluidStateModelSet#get`
+    then falls back to `ModelBakery.MissingModels#fluid` (missing sprite, `null` tint). There is no JSON path for
+    fluid models; the event is the mechanism, and it is exactly how NeoForge registers its own milk
+    (`ClientNeoForgeMod#onRegisterFluidModels`). `registerFluidModels` registers `new FluidModel.Unbaked(new
+    Material(still), new Material(flow), null, FluidTintSources.constant(0xFFFFFFFF))` for each source+flowing
+    pair. `FluidModel.Unbaked#bake` rejects non-block-atlas sprites; `textures/block/` is covered by vanilla
+    `atlases/blocks.json`'s `directory` source. **The tint source must be non-null**: `RenderTileTank` and
+    `GuiAutoCraftFluids` (26.x) both call `model.tintSource().color(...)` unguarded, so a `null` tint (legal --
+    vanilla lava's) would NPE there. (Consequence for a later batch, not fixed here since `buildcraft.factory`
+    was out of scope: a tank holding **lava** would hit exactly that NPE in both 26.x consumers.) **Negative
+    control run**: with `registerFluidModels` temporarily short-circuited, a real `runClient` logged exactly 60
+    `Missing FluidModel for fluid 'buildcraft:...'` warnings (30 sources + 30 flowing); with it restored, zero.
+    Buckets use NeoForge's `neoforge:fluid_container` item model (`DynamicFluidContainerModel`, registered in
+    `ClientNeoForgeMod#registerItemModels`) in `assets/buildcraft/items/<id>_bucket.json`: base
+    `minecraft:item/bucket`, fluid mask `neoforge:item/mask/bucket_fluid_drip`, `fluid`, `flip_gas: true` --
+    it resolves the fluid sprite through the same `FluidStateModelSet`.
+  - **Client fluid rendering, 1.20.1 -- the classic hook, confirmed.** `FluidType`'s constructor calls private
+    `initClient()`, which only on `Dist.CLIENT` (and not datagen) calls `initializeClient(consumer)`;
+    `BCFluidType` supplies an anonymous `IClientFluidTypeExtensions` overriding `getStillTexture()`/
+    `getFlowingTexture()` (tint left at the interface default `0xFFFFFFFF`). Because `initializeClient` runs from
+    the *super* constructor, before `BCFluidType`'s own fields are assigned, the anonymous class reads
+    `BCFluidType.this.stillTexture` on every call rather than capturing it. Buckets: `models/item/<id>_bucket
+    .json` with `"loader": "forge:fluid_container"`, parent `forge:item/bucket_drip`, `flip_gas: true` (loader
+    fields read from `DynamicFluidContainerModel.Loader#read`); no item colour handler is needed since there is
+    no tint.
+  - **Fuel/coolant values -- 1.12.2's `BCEnergyRecipes#init` formulas verbatim** (`TIME_BASE = 240_000`,
+    `totalTime = TIME_BASE * boost / 4 / multiplier / amountDiff`, `power = multiplier * MjAPI.MJ`, residue
+    `1000 / amountDiff` mB of heat-0 residue; only heat-0 fluids are fuels). Read back live on both platforms:
+    `fuel_gaseous` 8 MJ/t x 1875 t; `fuel_light` 6 x 15000; `fuel_dense` 4 x 90000; `fuel_mixed_light` 3 x
+    10000; `fuel_mixed_heavy` 5 x 19200; `oil_dense` 4 x 30000 + 500 mB residue; `oil_distilled` 1 x 37500;
+    `oil_heavy` 2 x 40000 + 333 mB residue; `oil` 3 x 10000 + 125 mB residue. Coolants: water 0.0023 deg/mB;
+    ice -> 1000 mB water x 1.5; packed ice x 2. The distillation/heat-exchange half of 1.12.2's `init` feeds
+    `refineryRecipes`, used only by the Distiller/Heat Exchanger -- not ported (scope). The 26.x registries key
+    on `FluidResource` (`equals`), 1.20.1 on `FluidStack#isFluidEqual`, matching each platform's already-ported
+    API; `isItemEqual` -> `ItemStack.isSameItem`.
+  - **A real defect found live on 26.x, not by reading: the fuel registry cannot be filled at common setup.**
+    First boot with `BCEnergyRecipes.init` queued from `FMLCommonSetupEvent` (1.12.2's init slot) failed mod
+    loading: `NullPointerException: Components not bound yet` from `Holder.Reference#components`, via
+    `FluidResource.of(Fluids.WATER)` -> `Fluid#computeDefaultResource` -> `new FluidStack`. On 26.3 even a plain
+    fluid's default `FluidStack`/`ItemStack` needs its holder's default data components, which are only bound by
+    `ReloadableServerResources#updateComponentsAndStaticRegistryTags` during world/datapack load (or from the
+    registry-sync packet on a remote client), which then posts the game-bus `DefaultDataComponentsBoundEvent`.
+    26.x now fills the (static, immutable) registries once, on the first such event (synchronised, guarded);
+    rebooted and re-verified. 1.20.1 has no data components and keeps common setup (`enqueueWork`).
+  - **In-game verification, both platforms, via RCON against real dedicated servers.** Every one of the 30 source
+    blocks placed by `/setblock ... buildcraft:<id>` (1.20.1 all 30; 26.x oil/fuel_light/fuel_gaseous_heat_2
+    placed plus a server-side dump confirming `defaultBlockState().getFluidState()` is the right source fluid for
+    all 30); every one of the 30 buckets `/give`n -> `No player was found` (vs `Unknown item
+    'buildcraft:not_a_bucket'` as the control). Flow observed: a single `oil` source in a stone basin became
+    `buildcraft:oil[level=0..4]` along the next four blocks on 26.x (`execute if block ... [level=N]`, all
+    passed); on 1.20.1 levels 0-2 within the first few seconds (idle-server tick throttling, see the RCON
+    memory); a `fuel_light`/`fuel_gaseous_heat_2` source on a one-block pillar ran off its edge onto the block
+    beside and below. **Pump -> tank, both platforms**: a `buildcraft:pump` above a 9x9 oil pond with a
+    `buildcraft:tank` beside it, battery re-merged in a loop, read back afterwards -- 26.x: pump
+    `tank: {stacks: [{amount: 9000, id: "buildcraft:oil"}]}`, tank `{stacks: [{amount: 16000, id:
+    "buildcraft:oil"}]}` (full); 1.20.1: pump `tank: {FluidName: "buildcraft:oil", Amount: 9000}`, tank
+    `{FluidName: "buildcraft:oil", Amount: 16000}`. Fuel/coolant values (above) and per-fluid properties were
+    read back via a temporary self-registering (`@EventBusSubscriber`) `/bctmpfuel`/`/bctmpfluids` command pair,
+    deleted afterwards (no trace in the tree); property dump excerpt (26.x): `oil: name='Oil (§bCool§r)'
+    dens=900 visc=2000 temp=300 gas=false tick=10 flam=200 lavaIgn=true map=191919 bucket=Oil (§bCool§r)
+    Bucket`, `oil_residue: ... dens=1200 visc=4000 ... tick=20 flam=0 lavaIgn=false map=562c3e`,
+    `oil_distilled_heat_2: ... dens=-750 visc=700 temp=340 gas=true tick=3`; 1.20.1 identical. Both servers
+    booted and stopped with zero exceptions. **Real `runClient` on both targets** reached full atlas stitching
+    (`blocks.png-atlas` 2048x2048 on 26.x, 1024x512 on 1.20.1) with no missing-model/missing-texture/missing-
+    fluid-model warning mentioning `buildcraft` (plus the 26.x negative control above).
+  - **Not verified: on-screen appearance** -- no display interaction here, so the in-world fluid surfaces, bucket
+    icons, the Tank renderer and Auto Workbench fluid bars showing these fluids are unconfirmed by eye; what is
+    confirmed is that every sprite/model resolves without warnings and the recoloured PNGs are correct (visually
+    inspected as a strip: oil near-black, residue purple, heavy/dense oils brown, fuels orange-to-yellow).
+  - **Scope cuts**: world-gen oil (springs, lakes, oil biomes), the Distiller, Heat Exchanger and Combustion/
+    Iron engine, the refinery recipe half of `BCEnergyRecipes`, the sticky/`oilIsDense` option and any energy
+    config, upward gas flow, water displacement, and the `MigrationManager` 7.99 block-rename migrations.
+  - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` in the
+    shared tree (both green -- run in the shared tree, not an `rsync` snapshot, so it did wipe `build/classes`
+    for anyone's running dev instance at that moment), and the full 25-test suite (25/25).
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -3840,7 +3997,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves). |
-| `buildcraft.energy` | 41 | Stirling engine (done). Iron/RF combustion engines, oil, fuel still to come. |
+| `buildcraft.energy` | 41 | Stirling engine (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). Combustion/iron and RF engines, distiller, heat exchanger, refinery recipes, oil world-gen still to come. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
 Within `buildcraft.lib` the hard parts, roughly in dependency order, are: the registration

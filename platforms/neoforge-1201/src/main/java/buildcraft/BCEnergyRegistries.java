@@ -14,9 +14,17 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.api.fuels.BuildcraftFuelRegistry;
+
+import buildcraft.lib.fluid.CoolantRegistry;
+import buildcraft.lib.fluid.FuelRegistry;
 import buildcraft.lib.registry.BCRegistry;
+
+import buildcraft.energy.BCEnergyFluids;
+import buildcraft.energy.BCEnergyRecipes;
 
 import buildcraft.energy.block.BlockEngineStone;
 import buildcraft.energy.container.ContainerEngineStone;
@@ -55,7 +63,26 @@ public final class BCEnergyRegistries {
     public static final RegistryObject<MenuType<ContainerEngineStone>> ENGINE_STONE_MENU =
         REGISTRY.addMenu("engine_stone", ContainerEngineStone::new);
 
+    /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
+     * thirty, all defined in BCEnergyFluids. Called here, after the Stirling engine, so the buckets follow it in the
+     * creative tab. */
+    static {
+        BCEnergyFluids.preInit(REGISTRY);
+    }
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
+        BCEnergyFluids.register(modBus);
+        // 1.12.2 installed these in BCLibRegistries#preInit; energy is the only module that fills them.
+        BuildcraftFuelRegistry.fuel = FuelRegistry.INSTANCE;
+        BuildcraftFuelRegistry.coolant = CoolantRegistry.INSTANCE;
+        modBus.addListener(BCEnergyRegistries::commonSetup);
+    }
+
+    /** 1.12.2's {@code FMLInitializationEvent} step: the fuel/coolant values need the registered fluids. Queued
+     * onto the main thread because the two registries are plain unsynchronised lists and common setup itself runs
+     * in parallel across mods. */
+    private static void commonSetup(FMLCommonSetupEvent event) {
+        event.enqueueWork(BCEnergyRecipes::init);
     }
 }

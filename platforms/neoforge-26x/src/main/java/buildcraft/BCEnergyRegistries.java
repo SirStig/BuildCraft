@@ -15,12 +15,20 @@ import net.minecraft.world.level.material.MapColor;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.DefaultDataComponentsBoundEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 
+import buildcraft.api.fuels.BuildcraftFuelRegistry;
 import buildcraft.api.mj.MjCapabilities;
 
+import buildcraft.lib.fluid.CoolantRegistry;
+import buildcraft.lib.fluid.FuelRegistry;
 import buildcraft.lib.registry.BCRegistry;
+
+import buildcraft.energy.BCEnergyFluids;
+import buildcraft.energy.BCEnergyRecipes;
 
 import buildcraft.energy.block.BlockEngineStone;
 import buildcraft.energy.container.ContainerEngineStone;
@@ -57,9 +65,43 @@ public final class BCEnergyRegistries {
     public static final DeferredHolder<MenuType<?>, MenuType<ContainerEngineStone>> ENGINE_STONE_MENU =
         REGISTRY.addMenu("engine_stone", ContainerEngineStone::new);
 
+    /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
+     * thirty, all defined in BCEnergyFluids. Called here, after the Stirling engine, so the buckets follow it in the
+     * creative tab. */
+    static {
+        BCEnergyFluids.preInit(REGISTRY);
+    }
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
+        BCEnergyFluids.register(modBus);
+        // 1.12.2 installed these in BCLibRegistries#preInit; energy is the only module that fills them.
+        BuildcraftFuelRegistry.fuel = FuelRegistry.INSTANCE;
+        BuildcraftFuelRegistry.coolant = CoolantRegistry.INSTANCE;
+        NeoForge.EVENT_BUS.addListener(BCEnergyRegistries::onDefaultComponentsBound);
         modBus.addListener(BCEnergyRegistries::registerCapabilities);
+    }
+
+    /**
+     * 1.12.2 filled the fuel/coolant registries in {@code FMLInitializationEvent}. The 26.x equivalent,
+     * {@code FMLCommonSetupEvent}, is too early here -- found live, not by reading: the first dedicated-server boot
+     * with this wired to common setup crashed mod loading with {@code NullPointerException: Components not bound
+     * yet}, thrown from {@code Holder.Reference#components} inside {@code FluidResource.of(Fluids.WATER)} (via
+     * {@code Fluid#computeDefaultResource} -> {@code new FluidStack}). On this target even a plain fluid's default
+     * {@code FluidResource}/{@code FluidStack}/{@code ItemStack} needs its holder's default data components, and
+     * those are only bound by {@code ReloadableServerResources#updateComponentsAndStaticRegistryTags} during
+     * world/datapack load (or from the registry-sync packet on a remote client), which then posts this game-bus
+     * {@link DefaultDataComponentsBoundEvent}. The registry contents never change, so it is filled exactly once, on
+     * the first such event, from whichever side sees it first (both hold the same static, immutable values).
+     * 1.20.1 has no data components at all and keeps using common setup.
+     */
+    private static boolean fuelsRegistered = false;
+
+    private static synchronized void onDefaultComponentsBound(DefaultDataComponentsBoundEvent event) {
+        if (!fuelsRegistered) {
+            fuelsRegistered = true;
+            BCEnergyRecipes.init();
+        }
     }
 
     /**

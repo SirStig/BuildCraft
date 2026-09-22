@@ -58,6 +58,7 @@ public final class BuildCraft {
             modBus.addListener(BCFactoryClientRegistries::registerRenderers);
             modBus.addListener(BCEnergyClientRegistries::registerScreens);
             modBus.addListener(BCEnergyClientRegistries::registerRenderers);
+            modBus.addListener(BCEnergyClientRegistries::registerFluidModels);
             modBus.addListener(BCTransportClientRegistries::registerRenderers);
             modBus.addListener(buildcraft.core.client.BCCoreClientRegistries::registerRenderers);
         }

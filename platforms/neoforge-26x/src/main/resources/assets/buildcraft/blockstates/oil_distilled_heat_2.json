@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "buildcraft:block/fluids/oil_distilled_heat_2"
+    }
+  }
+}
