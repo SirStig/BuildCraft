@@ -7,18 +7,23 @@
  */
 package buildcraft.energy.client;
 
+import net.minecraft.resources.Identifier;
+
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 import buildcraft.energy.gui.GuiEngineStone;
 
+import buildcraft.BCCoreRegistries;
 import buildcraft.BCEnergyRegistries;
+import buildcraft.lib.engine.RenderTileEngine;
 
 /**
- * Client-only menu screen registration for {@code buildcraft.energy}. Mirrors
+ * Client-only menu screen and renderer registration for {@code buildcraft.energy}. Mirrors
  * {@code buildcraft.factory.client.BCFactoryClientRegistries} exactly -- see that class's own javadoc for why
  * this has to be gated at the *listener registration itself* (in {@code BuildCraft}'s constructor), never just
  * inside the method body: a dedicated server must never have a reason to resolve {@link GuiEngineStone} (a
- * client-only type) at all.
+ * client-only type) at all. {@link #registerRenderers} follows the identical rule for {@link RenderTileEngine}.
  */
 public final class BCEnergyClientRegistries {
 
@@ -26,5 +31,27 @@ public final class BCEnergyClientRegistries {
 
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(BCEnergyRegistries.ENGINE_STONE_MENU.get(), GuiEngineStone::new);
+    }
+
+    /**
+     * Registers {@link RenderTileEngine} for all three ported engines -- {@code ENGINE_WOOD}/{@code
+     * ENGINE_CREATIVE} live in {@link BCCoreRegistries}, not here, since {@code buildcraft.core} owns those two
+     * block/tile pairs (see {@code TileEngineWood}'s own javadoc); only {@code ENGINE_STONE} is actually this
+     * module's own. Each registration supplies a different existing block texture -- see {@link RenderTileEngine}'s
+     * own javadoc for why no new texture asset was authored for this pass.
+     */
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(
+            BCCoreRegistries.ENGINE_WOOD_TYPE.get(),
+            context -> new RenderTileEngine(context, Identifier.fromNamespaceAndPath("buildcraft", "block/engine_wood_side"))
+        );
+        event.registerBlockEntityRenderer(
+            BCCoreRegistries.ENGINE_CREATIVE_TYPE.get(),
+            context -> new RenderTileEngine(context, Identifier.fromNamespaceAndPath("buildcraft", "block/engine_creative_side"))
+        );
+        event.registerBlockEntityRenderer(
+            BCEnergyRegistries.ENGINE_STONE_TYPE.get(),
+            context -> new RenderTileEngine(context, Identifier.fromNamespaceAndPath("buildcraft", "block/engine_stone_side"))
+        );
     }
 }

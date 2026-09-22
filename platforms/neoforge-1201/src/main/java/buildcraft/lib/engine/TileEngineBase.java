@@ -68,6 +68,12 @@ import buildcraft.lib.tile.TileBC;
  *     where 26.x's {@code DirectionProperty} class no longer exists at all and {@code FACING} is typed a plain
  *     {@code EnumProperty<Direction>} instead -- invisible to this file either way, since neither platform's code
  *     names the field's static type explicitly.</li>
+ * <li><b>Piston rendering</b> ({@link #getRenderProgress(float)}, {@link RenderTileEngine}) is also byte-identical
+ *     in shape to the 26.x copy: only the actual {@code BlockEntityRenderer} registration surface genuinely
+ *     diverges between the two targets (1.20.1 keeps the classic immediate-mode {@code render(...)} contract; 26.x
+ *     replaced it with a state-extraction/{@code submit(...)} split -- see each platform's own
+ *     {@code RenderTileEngine} for the real, {@code javap}-confirmed API each one is written against), not the
+ *     tile-side logic this file owns.</li>
  * </ul>
  */
 public abstract class TileEngineBase extends TileBC implements IDebuggable, IEngineLikeForLedger {
@@ -99,6 +105,16 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
     /** Increments from 0 to 1 across a pump stroke. Above 0.5, all of the held power is emitted. */
     private float progress;
     private int progressPart = 0;
+
+    /** Client-side-only mirror of {@link #progress}, advanced independently of the server's own copy -- see the
+     * 26.x class javadoc's "Ticking" entry for why {@link #progress} itself can't be trusted to arrive smoothly on
+     * the client every tick. Read and written only from {@link #getRenderProgress(float)}; never saved, never
+     * synced. */
+    private float clientProgress;
+    private float lastClientProgress;
+    /** Guards {@link #getRenderProgress(float)} against advancing more than once for the same game tick, since it
+     * is called once per render frame -- i.e. far more often than once per tick. */
+    private long lastClientProgressTick = Long.MIN_VALUE;
 
     protected EnumPowerStage powerStage = EnumPowerStage.BLUE;
     protected Direction currentDirection = Direction.UP;
@@ -275,6 +291,39 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
             default:
                 return 0;
         }
+    }
+
+    /**
+     * Client-side only, called every frame by {@link RenderTileEngine}. Advances {@link #clientProgress} by at
+     * most one {@link #getPistonSpeed()} step per real game tick (the {@code gameTime} guard below), then lerps
+     * the last two tick values by {@code partialTick} -- the same shape as 1.12.2's own {@code
+     * getProgressClient(float)}, including its fixup for the moment {@link #clientProgress} wraps from just under
+     * 1 back to just over 0 between the two ticks being interpolated.
+     *
+     * @return A value in {@code [0, 1)}: 0 both before this engine has ever pumped and while it sits idle.
+     */
+    public float getRenderProgress(float partialTick) {
+        if (level != null) {
+            long gameTime = level.getGameTime();
+            if (gameTime != lastClientProgressTick) {
+                lastClientProgressTick = gameTime;
+                lastClientProgress = clientProgress;
+                if (isPumping) {
+                    clientProgress += getPistonSpeed();
+                    if (clientProgress >= 1) {
+                        clientProgress = 0;
+                    }
+                } else if (clientProgress > 0) {
+                    clientProgress = Math.max(0, clientProgress - 0.01f);
+                }
+            }
+        }
+        float last = lastClientProgress;
+        float now = clientProgress;
+        if (last > 0.5f && now < 0.5f) {
+            now += 1;
+        }
+        return (last * (1 - partialTick) + now * partialTick) % 1f;
     }
 
     protected abstract IMjConnector createConnector();

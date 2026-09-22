@@ -64,10 +64,16 @@ import buildcraft.lib.tile.TileBC;
  *     wired through {@code EntityBlock#getTicker} on each concrete engine block exactly like
  *     {@code BlockPowerConsumerTester}/{@code TilePowerConsumerTester} already do. The original also had a real
  *     client-side half (the piston {@code progress} animation interpolating every client tick while
- *     {@code isPumping}), but nothing in this port can register a {@code BlockEntityRenderer} yet to consume it --
- *     no machine ported so far has one -- so that half ({@code getProgressClient}, the {@code lastProgress}
- *     bookkeeping, {@code clientModelData}/{@code ModelVariableData}) is dropped rather than kept inert. It costs
- *     nothing to re-add once a renderer exists to read {@code progress} from.</li>
+ *     {@code isPumping}), which stayed dropped until this batch, when {@link buildcraft.lib.engine.RenderTileEngine}
+ *     became the first {@code BlockEntityRenderer} registered anywhere in this port. {@link #getRenderProgress(float)}
+ *     is its client-side read: not a literal replay of {@link #serverTick()}'s own extend/retract state machine
+ *     (whose {@link #progress} increments only reach clients on a {@link #markDirtyAndSync()} call -- a stage
+ *     change or a pumping-state flip, not every tick), but a small self-contained client-local mirror of 1.12.2's
+ *     own client half, which had exactly the same shape: climb by {@link #getPistonSpeed()} while {@link
+ *     #isPumping} (a field that <em>is</em> synced reliably, since it only ever flips via {@link #setPumping}),
+ *     ease back down by a fixed step when not, and reuse the original {@code getProgressClient}'s wrap-around lerp
+ *     math verbatim. {@code clientModelData}/{@code ModelVariableData} stay dropped -- nothing here needs a
+ *     general model-variable framework for one float.</li>
  * <li><b>Capabilities.</b> {@code mjConnector} is the only capability an engine tile itself ever actually exposes:
  *     it is typed {@link IMjConnector}, and {@code EngineConnector} (the only implementation either concrete
  *     engine uses) implements nothing else, so the 1.12.2 {@code MjCapabilityHelper}'s {@code instanceof} probing
@@ -148,6 +154,15 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
     /** Increments from 0 to 1 across a pump stroke. Above 0.5, all of the held power is emitted. */
     private float progress;
     private int progressPart = 0;
+
+    /** Client-side-only mirror of {@link #progress}, advanced independently of the server's own copy -- see the
+     * class javadoc's "Ticking" entry for why {@link #progress} itself can't be trusted to arrive smoothly on the
+     * client every tick. Read and written only from {@link #getRenderProgress(float)}; never saved, never synced. */
+    private float clientProgress;
+    private float lastClientProgress;
+    /** Guards {@link #getRenderProgress(float)} against advancing more than once for the same game tick, since it
+     * is called once per render frame -- i.e. far more often than once per tick. */
+    private long lastClientProgressTick = Long.MIN_VALUE;
 
     protected EnumPowerStage powerStage = EnumPowerStage.BLUE;
     protected Direction currentDirection = Direction.UP;
@@ -303,6 +318,39 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
             case RED -> 0.12;
             default -> 0;
         };
+    }
+
+    /**
+     * Client-side only, called every frame by {@link RenderTileEngine}. Advances {@link #clientProgress} by at
+     * most one {@link #getPistonSpeed()} step per real game tick (the {@code gameTime} guard below), then lerps
+     * the last two tick values by {@code partialTick} -- the same shape as 1.12.2's own {@code
+     * getProgressClient(float)}, including its fixup for the moment {@link #clientProgress} wraps from just under
+     * 1 back to just over 0 between the two ticks being interpolated.
+     *
+     * @return A value in {@code [0, 1)}: 0 both before this engine has ever pumped and while it sits idle.
+     */
+    public float getRenderProgress(float partialTick) {
+        if (level != null) {
+            long gameTime = level.getGameTime();
+            if (gameTime != lastClientProgressTick) {
+                lastClientProgressTick = gameTime;
+                lastClientProgress = clientProgress;
+                if (isPumping) {
+                    clientProgress += getPistonSpeed();
+                    if (clientProgress >= 1) {
+                        clientProgress = 0;
+                    }
+                } else if (clientProgress > 0) {
+                    clientProgress = Math.max(0, clientProgress - 0.01f);
+                }
+            }
+        }
+        float last = lastClientProgress;
+        float now = clientProgress;
+        if (last > 0.5f && now < 0.5f) {
+            now += 1;
+        }
+        return (last * (1 - partialTick) + now * partialTick) % 1f;
     }
 
     protected abstract IMjConnector createConnector();

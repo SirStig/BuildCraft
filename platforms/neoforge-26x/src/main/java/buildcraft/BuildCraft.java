@@ -55,6 +55,7 @@ public final class BuildCraft {
         if (FMLEnvironment.getDist().isClient()) {
             modBus.addListener(BCFactoryClientRegistries::registerScreens);
             modBus.addListener(BCEnergyClientRegistries::registerScreens);
+            modBus.addListener(BCEnergyClientRegistries::registerRenderers);
         }
     }
 }
