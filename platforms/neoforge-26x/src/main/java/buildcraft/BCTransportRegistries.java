@@ -7,6 +7,8 @@
  */
 package buildcraft;
 
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.MapColor;
@@ -19,6 +21,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 
 import buildcraft.api.mj.MjCapabilities;
+import buildcraft.api.transport.pipe.IItemPipe;
 import buildcraft.api.transport.pipe.PipeApi;
 import buildcraft.api.transport.pipe.PipeDefinition;
 import buildcraft.api.transport.pipe.PipeFlowType;
@@ -29,6 +32,9 @@ import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourQuartz;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
@@ -98,6 +104,39 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The stone pipe's own {@link PipeDefinition} -- a fast, constant-crawl speed modifier
+     * ({@code PipeBehaviourStone.SPEED_DELTA} of {@code 0.008}). {@code canBeColoured} is {@code false} for the
+     * identical reason {@link #PIPE_COBBLESTONE} already gives -- confirmed against the real 1.12.2
+     * {@code BCTransportPipes#preInit} that the shared builder's {@code enableColouring()} call (set once,
+     * before wood, and never unset) would otherwise have made the real stone pipe colourable too. */
+    public static final PipeDefinition PIPE_STONE = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("stone")
+        .logic(PipeBehaviourStone::new, PipeBehaviourStone::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The sandstone pipe's own {@link PipeDefinition} -- the pipe-to-pipe-only, never-to-an-inventory
+     * material (see {@link PipeBehaviourSandstone}'s own javadoc). Same speed modifier as {@link #PIPE_STONE}
+     * (its behaviour reuses {@code PipeBehaviourStone}'s own constants directly). {@code canBeColoured} is
+     * {@code false} for the same reason as every other material in this batch. */
+    public static final PipeDefinition PIPE_SANDSTONE = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("sandstone")
+        .logic(PipeBehaviourSandstone::new, PipeBehaviourSandstone::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The quartz pipe's own {@link PipeDefinition} -- the gentlest speed modifier of this batch
+     * ({@code PipeBehaviourQuartz.SPEED_DELTA} of {@code 0.002}). {@code canBeColoured} is {@code false} for
+     * the same reason as every other material in this batch. */
+    public static final PipeDefinition PIPE_QUARTZ = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("quartz")
+        .logic(PipeBehaviourQuartz::new, PipeBehaviourQuartz::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block, the same reasoning already worked out for {@code BlockDecoration}/{@code BlockEngineWood}/
      * {@code BlockChute} -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
@@ -135,9 +174,42 @@ public final class BCTransportRegistries {
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_WOOD)
     );
 
+    /** The stone pipe's own placeable item, tagged with {@link #PIPE_STONE}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_STONE = REGISTRY.addItem(
+        "pipe_item_stone",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_STONE)
+    );
+
+    /** The sandstone pipe's own placeable item, tagged with {@link #PIPE_SANDSTONE}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_SANDSTONE = REGISTRY.addItem(
+        "pipe_item_sandstone",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_SANDSTONE)
+    );
+
+    /** The quartz pipe's own placeable item, tagged with {@link #PIPE_QUARTZ}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_QUARTZ = REGISTRY.addItem(
+        "pipe_item_quartz",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_QUARTZ)
+    );
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCTransportRegistries::registerCapabilities);
+    }
+
+    /** Looks up the placeable {@link ItemPipeHolder} for whatever {@link PipeDefinition} is actually stamped
+     * onto a given {@code TilePipeHolder}'s own {@code Pipe} -- used by {@link BlockPipeHolder#getDrops} to
+     * drop the correct material instead of the static {@code pipe_holder} loot table's single hard-coded
+     * {@code pipe_item_cobblestone} entry (a real bug, on file in PORTING.md since the wood-pipe batch, now
+     * fixed because a third material -- and a fourth, fifth, sixth here -- makes it actually wrong in practice,
+     * not just theoretically). Delegates to {@link PipeApi#pipeRegistry}'s own {@code getItemForPipe}, which
+     * every {@link ItemPipeHolder} already self-registers into from its own constructor -- no separate map
+     * needed here, since {@code PipeRegistry} already keeps exactly this association for every registered
+     * pipe material, present and future, with zero extra bookkeeping in this class. */
+    @Nullable
+    public static ItemPipeHolder getItemForPipe(PipeDefinition definition) {
+        IItemPipe item = PipeApi.pipeRegistry.getItemForPipe(definition);
+        return item instanceof ItemPipeHolder holder ? holder : null;
     }
 
     /** Wires the vanilla-interop item capability so a neighbouring machine (a real hopper, an already-ported

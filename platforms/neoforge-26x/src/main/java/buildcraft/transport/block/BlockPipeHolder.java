@@ -7,6 +7,8 @@
  */
 package buildcraft.transport.block;
 
+import java.util.List;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -18,9 +20,16 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.redstone.Orientation;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+
+import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pipe.PipeDefinition;
 
 import buildcraft.lib.block.BlockBCTile;
 
+import buildcraft.BCTransportRegistries;
+import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -70,5 +79,42 @@ public class BlockPipeHolder extends BlockBCTile {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof TilePipeHolder holder) {
             holder.onNeighbourChanged();
         }
+    }
+
+    /** Drops the actual placed pipe material's own item, read live from the tile's own {@code Pipe}, instead of
+     * trusting {@code pipe_holder.json}'s static loot table -- a real, load-bearing bug on file in PORTING.md
+     * since the wood-pipe batch ("harmless while cobblestone is the only material"), now fixed because this
+     * batch's three new materials make it genuinely wrong: a static JSON loot table has no way to read which
+     * {@link PipeDefinition} is actually stamped onto a given tile's NBT at break time, so it always dropped a
+     * hard-coded {@code buildcraft:pipe_item_cobblestone} regardless of what was actually broken.
+     * {@code BlockBehaviour#getDrops(BlockState, LootParams.Builder)} -- confirmed, by reading the real
+     * decompiled {@code Block}/{@code BlockBehaviour} source, to be exactly what
+     * {@code Block#getDrops(BlockState, ServerLevel, BlockPos, BlockEntity)}/{@code BlockState#getDrops}
+     * delegate to, with the block entity already threaded through as
+     * {@link LootContextParams#BLOCK_ENTITY} -- is the real, modern, per-block-instance override point for
+     * this, not {@code playerWillDestroy} (which only gets to see the state/position, not the tile, and exists
+     * to let a block react to being destroyed, not to decide what it drops).
+     *
+     * <p>Falls back to the static loot table (via {@code super.getDrops}) whenever no {@code Pipe} is actually
+     * present -- the tile's own {@code pipe} field is {@code @Nullable} and stays {@code null} until a real
+     * placement (a player's click, or the direct {@code TilePipeHolder#onPlacedBy} call this batch's own RCON
+     * rig uses) stamps a {@link PipeDefinition} onto it, so a bare {@code /setblock buildcraft:pipe_holder}
+     * with no pipe ever assigned falls through to the same cobblestone default this block always had, rather
+     * than dropping nothing at all for a case that (per this class's own placement contract) should not arise
+     * in normal survival play. */
+    @Override
+    protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
+        if (blockEntity instanceof TilePipeHolder holder) {
+            IPipe pipe = holder.getPipe();
+            if (pipe != null) {
+                PipeDefinition definition = pipe.getDefinition();
+                ItemPipeHolder item = BCTransportRegistries.getItemForPipe(definition);
+                if (item != null) {
+                    return List.of(new ItemStack(item));
+                }
+            }
+        }
+        return super.getDrops(state, params);
     }
 }

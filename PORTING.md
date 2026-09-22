@@ -2540,6 +2540,137 @@ Deliberately not ported, with reasons:
     fix above.
   - Verified with a forced `--no-build-cache clean` rebuild on both platforms and the full 25-test suite.
 
+- **`buildcraft.transport` -- three more speed-modifier pipe materials (Stone, Sandstone, Quartz), and the
+  first real fix to the `pipe_holder` loot-table bug this file has been carrying since the wood-pipe batch.**
+  All three ported directly from `common/buildcraft/transport/pipe/behaviour/PipeBehaviour{Stone,Sandstone,
+  Quartz}.java` (31/44/31 lines, re-read directly rather than assumed from `PipeBehaviourCobble`'s own shape),
+  registered in `BCTransportRegistries` the same `PipeDefinition`-plus-`DeferredItem`/`RegistryObject` pattern
+  cobblestone/wood already established -- confirming, for the third time now, that a new pipe material really
+  is zero new block/tile code, on both platforms.
+  - **Stone and Quartz** extend the already-ported `PipeBehaviourSeparate` unchanged, adding only a static
+    `@PipeEventHandler` method reacting to `PipeEventItem.ModifySpeed` -- `event.modifyTo(SPEED_TARGET,
+    SPEED_DELTA)` with `SPEED_TARGET = 0.01` for both, `SPEED_DELTA = 0.008` (Stone, a quick ramp) vs. `0.002`
+    (Quartz, the gentlest of the whole batch, gentler than Cobblestone's already-registered `0.02`). Confirmed
+    via `PipeEventItem.java` and `PipeBehaviour.java`'s own base-class constructor shape that both are
+    byte-identical between platforms (`diff` against the 26.x/1.20.1 copies showed zero differences beyond
+    unrelated capability-token imports already on file from the wood-pipe batch), so the same three source
+    files were copied verbatim onto both targets with no platform fork needed at all -- the "port to 26.x
+    first, try the same file unchanged on 1.20.1" rule this file's own "How much actually has to be
+    duplicated" section recommends, confirmed working exactly as advertised for a whole file, not just a
+    method.
+  - **Sandstone is the one material in this batch that does not extend `PipeBehaviourSeparate`.** It extends
+    `PipeBehaviour` directly and overrides `canConnect(Direction, PipeBehaviour)` to return `true`
+    unconditionally (connects to *any* other pipe, not just another Sandstone one) and
+    `canConnect(Direction, BlockEntity)` to return `false` unconditionally (never connects to a plain
+    inventory) -- `TileEntity` in 1.12.2 is `BlockEntity` here on both targets, confirmed identical against
+    `PipeBehaviour`'s own already-ported base method signature via direct inspection, not assumed to match.
+    Its own `@PipeEventHandler` reuses `PipeBehaviourStone`'s `SPEED_TARGET`/`SPEED_DELTA` constants directly
+    (widened from `private` to package-visible on `PipeBehaviourStone` for exactly this), matching the real
+    1.12.2 `PipeBehaviourSandstone`'s own identical reuse of the real `PipeBehaviourStone`'s constants rather
+    than duplicating the literals.
+  - **`canBeColoured` is `false` on all three, the same deliberate scope choice already on file for
+    Cobblestone/Wood, re-confirmed against the real 1.12.2 source for these three specifically rather than
+    assumed to carry over.** `common/buildcraft/transport/BCTransportPipes.java#preInit` calls
+    `builder.builder.enableColouring()` once, before Wood, and the flag then stays set on the shared builder
+    for every material defined afterwards including Stone/Cobblestone/Quartz/Sandstone -- so the real 1.12.2
+    versions of all three genuinely are colourable. Disabled here anyway, for the identical reason already
+    given for Cobblestone: colouring needs `CustomPaintHelper`-style GUI plumbing this whole module still
+    lacks.
+  - **The loot-table fix.** `pipe_holder.json`'s loot table (both platforms) has held exactly one static entry
+    -- an unconditional `buildcraft:pipe_item_cobblestone` -- since the cobblestone-pipe batch, already flagged
+    in this file (search "harmless while cobblestone is the only material, needs fixing once a third material
+    exists") as broken the moment a third material shipped. With this batch adding a fourth, fifth, and sixth
+    material, left unfixed it would mean breaking any non-cobblestone pipe in survival handed the player back a
+    plain cobblestone one. A static JSON loot table has no way to read which `PipeDefinition` is actually
+    stamped onto a given tile's own NBT at break time, so the fix is in Java: `BlockPipeHolder` on both
+    platforms now overrides `BlockBehaviour#getDrops(BlockState, LootParams.Builder)` -- confirmed via `javap`
+    against the real decompiled jars to be exactly what `Block#getDrops(BlockState, ServerLevel, BlockPos,
+    BlockEntity)`/`BlockState#getDrops` delegate to, with the block entity already threaded through as
+    `LootContextParams.BLOCK_ENTITY` on the `LootParams.Builder` passed in -- reads the tile's own `Pipe`, maps
+    its `PipeDefinition` back to the right `Item` via a new `BCTransportRegistries.getItemForPipe(PipeDefinition)`
+    helper, and returns that item directly instead of falling through to the static table. The one genuine,
+    `javap`-confirmed API divergence in this whole batch: the method is `protected` on 26.x and `public` on
+    1.20.1-Forge's own `BlockBehaviour` -- both overrides match their own platform's visibility, `protected` on
+    26.x and `public` on 1.20.1, since Java forbids narrowing an override's visibility. `playerWillDestroy` was
+    considered and rejected: it only ever sees the state/position, not the block entity, so it cannot read
+    which pipe was actually placed. **No new lookup table was built for the definition-to-item mapping.**
+    `PipeRegistry` (both platforms) already keeps exactly this association -- every `ItemPipeHolder` self-
+    registers into `PipeApi.pipeRegistry.setItemForPipe(definition, this)` from its own constructor, and
+    `getItemForPipe(PipeDefinition)` was already there, unused until now -- so the new helper is a five-line
+    delegation, not a second registry, and it needs no updates the next time a material is added.
+  - **Assets, both platforms, following the exact provenance the cobblestone/wood batch actually used, not the
+    vanilla-block-texture guess this task started from.** Checked first, rather than assumed: `git log --follow`
+    on `pipe_cobblestone.png`/`pipe_wood.png` led to the commits that actually added them, and byte-for-byte
+    `cmp` against every plausible source showed neither is the vanilla `cobblestone.png`/`oak_planks.png` from
+    the real client jar (confirmed different by direct comparison -- same 16x16 dimensions, different pixels,
+    different file sizes) -- they are exact, byte-identical copies of `buildcraft_resources/assets/
+    buildcrafttransport/textures/pipes/cobblestone_item.png`/`wood_item_clear.png`, the real 1.12.2 pipe icon
+    textures already sitting in this repo's own legacy asset tree. The identical legacy directory holds
+    `stone_item.png`/`sandstone_item.png`/`quartz_item.png` (all real, all 16x16, confirmed via Pillow), so
+    those three were copied byte-for-byte the same way (re-confirmed via `cmp` after copying) onto both
+    platforms' `textures/block/pipe_{stone,sandstone,quartz}.png`. Per-material `models/block/pipe_<material>
+    .json` (`cube_all`, mirroring `pipe_wood.json`'s own shape, not the shared `pipe_holder.json` -- the block
+    itself stays hard-wired to the Cobblestone texture, the same known placeholder limitation already on file)
+    and item models were added on both platforms, matching Wood's own precedent exactly rather than
+    Cobblestone's (Cobblestone's item model points at the shared `pipe_holder` block model since it happens to
+    already be Cobblestone-textured; every other material needs its own): 26.x's newer per-item `items/
+    pipe_item_<material>.json` (`{"model": {"type": "minecraft:model", "model": "buildcraft:block/
+    pipe_<material>"}}`) vs. 1.20.1's classic `models/item/pipe_item_<material>.json`
+    (`{"parent": "buildcraft:block/pipe_<material>"}`) -- confirmed by reading Wood's own existing copies on
+    each platform side by side, not assumed to share one format. Lang entries added on both platforms following
+    the port's own established short-name convention (`pipe_item_cobblestone` -> "Cobblestone Pipe"):
+    `pipe_item_stone` -> "Stone Pipe", `pipe_item_sandstone` -> "Sandstone Pipe", `pipe_item_quartz` -> "Quartz
+    Pipe". No recipe exists for any of the three in `buildcraft_resources`, matching the cobblestone/wood
+    batches' own precedent, re-checked fresh for this batch rather than assumed to carry over.
+  - **In-game verification, both platforms, via RCON against real dedicated servers -- and a cleaner rig than
+    every prior pipe batch needed, requiring no temporary debug command at all.** Prior pipe batches (see the
+    cobblestone and wood entries above) had to add a temporary fake-player debug command because `/setblock`
+    does not invoke `TilePipeHolder#onPlacedBy`, so no `Pipe` object ever gets attached to a bare `/setblock`
+    pipe. This batch found a simpler, zero-code path for the same result: `TilePipeHolder#loadAdditional`/
+    `#load` reads a real `Pipe` straight back out of the tile's own persisted `"pipe"` NBT tag (the same tag
+    `saveAdditional` writes), so `/setblock buildcraft:pipe_holder` followed by `/data merge block <pos>
+    {pipe:{def:"buildcraft:stone"}}` reconstructs a genuine `Pipe` object through the tile's own real
+    deserialisation path -- confirmed live, not assumed, by reading back `/data get block` immediately after
+    the merge and seeing the full `{col, con, def, beh, flow}` shape `Pipe#writeToNbt` actually produces, not
+    just the one key that was written. `Pipe`'s own `updateMarked` field starts `true` on both constructors, so
+    the very next real server tick (driven by `BlockPipeHolder#getTicker`, no debug code involved) recomputes
+    connections through the exact same `updateConnections()` a normal placement would use. On both platforms:
+    placed two Stone pipes adjacent (east/west), two Sandstone pipes adjacent plus a vanilla chest on a third
+    side of one of them, and two Quartz pipes adjacent, merged each its own `def`, waited a few real seconds
+    (`time query gametime` advancing, confirming real ticks, not a frozen idle server), then hand-decoded every
+    `con` bitmask read back: `con: 1024` decodes to `(1024 >>> 10) & 0b11 == 0b01` on the EAST bit-pair (bits
+    10-11, `Direction.EAST.ordinal() == 5`) with every other bit-pair `0b00`, and the paired block's `con: 256`
+    decodes to `0b01` on the WEST bit-pair (bits 8-9, ordinal 4) with everything else `0b00` -- a real
+    pipe-to-pipe connection, both directions, for all three materials, on both platforms, with the numbers
+    matching by hand, not by inspection. The Sandstone rig's chest side stayed `0b00` throughout on both
+    platforms -- the one behavioural claim worth actually proving rather than trusting the code, now proven:
+    Sandstone connects to another pipe but never to an adjacent inventory, live, tick-driven, not simulated.
+    The loot-drop fix was verified the same way, both platforms: placed a Stone, a Sandstone, and a Quartz
+    pipe (each `def`-merged), plus a fourth `pipe_holder` left with no `Pipe` at all (the "nothing ever placed
+    a material" case `getDrops` falls through to the static table for), then broke all four with `/setblock
+    <pos> air destroy` (confirmed live that this genuinely triggers `getDrops`/entity drops, unlike a bare
+    `/setblock ... air` which silently removes the block with nothing dropped) and read back the dropped item
+    entities via `/data get entity @e[type=item,...]`: `buildcraft:pipe_item_stone`,
+    `buildcraft:pipe_item_sandstone`, and `buildcraft:pipe_item_quartz` for the three merged pipes, and
+    `buildcraft:pipe_item_cobblestone` (the intended, documented fallback, not a bug) for the one with no
+    `Pipe` attached -- on both platforms independently, in separate RCON sessions against separate fresh
+    worlds. `give buildcraft:pipe_item_{stone,sandstone,quartz}` was also run against `@a` on both platforms to
+    confirm item registration; it failed with "No player was found" rather than any unknown-item error, the
+    same "no connected player" limitation already on file for every prior RCON-only verification in this
+    document, not a registration problem.
+  - **Honest limitations, same categories already on file for every prior pipe batch.** The real right-click
+    placement interaction through a connected client remains unverified -- what is verified directly is that
+    the tile's own NBT-driven `Pipe` reconstruction and tick-driven connection logic behave correctly once a
+    `Pipe` exists, which is exactly what a real placement would also produce. Visual appearance (the block
+    model, the item icon, and the fact that the shared `pipe_holder` block model itself still always renders
+    the Cobblestone texture regardless of which material is actually placed -- an existing, unfixed placeholder
+    limitation, not something this batch changed or was asked to fix) was not checked with a real client; only
+    the JSON shape was confirmed to mirror Wood's own already-working precedent.
+  - Verified with forced `--no-build-cache clean` rebuilds on both platforms (re-run once more after a
+    concurrent, unrelated `buildcraft.factory` change elsewhere in the tree landed, to confirm this batch's own
+    files still compile against the latest state of the rest of the codebase), the full 25-test suite, and real
+    dedicated-server boots on both platforms with zero exceptions in either log.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -2555,7 +2686,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Cobblestone (passive) and wooden (MJ-powered active extraction) item pipes done. Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier) item pipes done, plus the `pipe_holder` per-material loot-drop fix. Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |

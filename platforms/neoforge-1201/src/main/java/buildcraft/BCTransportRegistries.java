@@ -7,6 +7,8 @@
  */
 package buildcraft;
 
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -18,6 +20,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.RegistryObject;
 
 import buildcraft.api.transport.IInjectable;
+import buildcraft.api.transport.pipe.IItemPipe;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.IPipeHolder;
 import buildcraft.api.transport.pipe.PipeApi;
@@ -31,6 +34,9 @@ import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourQuartz;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
@@ -78,6 +84,32 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The stone pipe's own {@link PipeDefinition} -- see the 26.x copy of this class's own javadoc for the
+     * full account of the speed-modifier constants and why {@code canBeColoured} is {@code false}. */
+    public static final PipeDefinition PIPE_STONE = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("stone")
+        .logic(PipeBehaviourStone::new, PipeBehaviourStone::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The sandstone pipe's own {@link PipeDefinition} -- the pipe-to-pipe-only, never-to-an-inventory
+     * material (see {@link PipeBehaviourSandstone}'s own javadoc). */
+    public static final PipeDefinition PIPE_SANDSTONE = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("sandstone")
+        .logic(PipeBehaviourSandstone::new, PipeBehaviourSandstone::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The quartz pipe's own {@link PipeDefinition} -- the gentlest speed modifier of this batch. */
+    public static final PipeDefinition PIPE_QUARTZ = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("quartz")
+        .logic(PipeBehaviourQuartz::new, PipeBehaviourQuartz::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
      * {@code BlockTank}/{@code BlockPump}'s own "no renderer yet" precedent. No {@code addBlockAndItem}: this
@@ -114,6 +146,24 @@ public final class BCTransportRegistries {
         () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_WOOD)
     );
 
+    /** The stone pipe's own placeable item, tagged with {@link #PIPE_STONE}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_STONE = REGISTRY.addItem(
+        "pipe_item_stone",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_STONE)
+    );
+
+    /** The sandstone pipe's own placeable item, tagged with {@link #PIPE_SANDSTONE}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_SANDSTONE = REGISTRY.addItem(
+        "pipe_item_sandstone",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_SANDSTONE)
+    );
+
+    /** The quartz pipe's own placeable item, tagged with {@link #PIPE_QUARTZ}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_QUARTZ = REGISTRY.addItem(
+        "pipe_item_quartz",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_QUARTZ)
+    );
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCTransportRegistries::registerCapabilities);
@@ -124,5 +174,16 @@ public final class BCTransportRegistries {
         event.register(IPipe.class);
         event.register(PipePluggable.class);
         event.register(IInjectable.class);
+    }
+
+    /** Looks up the placeable {@link ItemPipeHolder} for whatever {@link PipeDefinition} is actually stamped
+     * onto a given {@code TilePipeHolder}'s own {@code Pipe} -- see the 26.x copy of this class's own javadoc
+     * for the full account of why this fixes the {@code pipe_holder} loot table's real "always drops
+     * cobblestone" bug, and why {@link PipeApi#pipeRegistry}'s existing {@code getItemForPipe} needs no new map
+     * here. */
+    @Nullable
+    public static ItemPipeHolder getItemForPipe(PipeDefinition definition) {
+        IItemPipe item = PipeApi.pipeRegistry.getItemForPipe(definition);
+        return item instanceof ItemPipeHolder holder ? holder : null;
     }
 }

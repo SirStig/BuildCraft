@@ -7,6 +7,8 @@
  */
 package buildcraft.transport.block;
 
+import java.util.List;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -17,9 +19,16 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+
+import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pipe.PipeDefinition;
 
 import buildcraft.lib.block.BlockBCTile;
 
+import buildcraft.BCTransportRegistries;
+import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -63,5 +72,28 @@ public class BlockPipeHolder extends BlockBCTile {
         if (!level.isClientSide() && level.getBlockEntity(pos) instanceof TilePipeHolder holder) {
             holder.onNeighbourChanged();
         }
+    }
+
+    /** Drops the actual placed pipe material's own item, read live from the tile's own {@code Pipe} -- see the
+     * 26.x copy of this class's own javadoc for the full account of the {@code pipe_holder.json} static-loot-
+     * table bug this fixes and why {@code BlockBehaviour#getDrops(BlockState, LootParams.Builder)} (here
+     * {@code public}, not {@code protected} as on 26.x -- confirmed by {@code javap} against the real
+     * 1.20.1-Forge-fork jar) is the right hook rather than {@code playerWillDestroy}. Falls back to the static
+     * loot table via {@code super.getDrops} when no {@code Pipe} is present, for the identical reason given on
+     * 26.x. */
+    @Override
+    public List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
+        if (blockEntity instanceof TilePipeHolder holder) {
+            IPipe pipe = holder.getPipe();
+            if (pipe != null) {
+                PipeDefinition definition = pipe.getDefinition();
+                ItemPipeHolder item = BCTransportRegistries.getItemForPipe(definition);
+                if (item != null) {
+                    return List.of(new ItemStack(item));
+                }
+            }
+        }
+        return super.getDrops(state, params);
     }
 }
