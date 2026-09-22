@@ -3978,6 +3978,13 @@ Deliberately not ported, with reasons:
     shared tree (both green -- run in the shared tree, not an `rsync` snapshot, so it did wipe `build/classes`
     for anyone's running dev instance at that moment), and the full 25-test suite (25/25).
 
+- **26.x: a tank or Auto Workbench (Fluids) holding lava would have crashed the client.** Flagged by the fluids
+  batch above, fixed separately. `RenderTileTank` and `GuiAutoCraftFluids` both called
+  `model.tintSource().color(...)` on the fluid's `FluidModel` without a null check, but `FluidModel#tintSource()`
+  is `@Nullable` and vanilla's own lava model passes `null` for it (read directly in the decompiled
+  `FluidStateModelSet.LAVA_MODEL`). Both call sites now fall back to untinted white. 1.20.1 is unaffected: its
+  `IClientFluidTypeExtensions#getTintColor` always returns a colour.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

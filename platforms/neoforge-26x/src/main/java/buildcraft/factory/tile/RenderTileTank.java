@@ -10,6 +10,7 @@ package buildcraft.factory.tile;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 
+import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.FluidModel;
@@ -133,7 +134,9 @@ public class RenderTileTank implements BlockEntityRenderer<TileTank, RenderTileT
         state.u1 = sprite.getU1();
         state.v0 = sprite.getV0();
         state.v1 = sprite.getV1();
-        state.tint = model.tintSource().color(fluidState.createLegacyBlock());
+        // Nullable: vanilla's own lava model has no tint source at all (FluidStateModelSet.LAVA_MODEL).
+        BlockTintSource tintSource = model.tintSource();
+        state.tint = tintSource == null ? 0xFFFFFFFF : tintSource.color(fluidState.createLegacyBlock());
         state.topY = Y_MIN + (Y_MAX - Y_MIN) * fraction;
     }
 

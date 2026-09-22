@@ -7,6 +7,7 @@
  */
 package buildcraft.factory.gui;
 
+import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -121,7 +122,9 @@ public class GuiAutoCraftFluids extends AbstractContainerScreen<ContainerAutoCra
         FluidState fluidState = fluid.getFluid().defaultFluidState();
         FluidModel model = Minecraft.getInstance().getModelManager().getFluidStateModelSet().get(fluidState);
         TextureAtlasSprite sprite = model.stillMaterial().sprite();
-        int tint = ARGB.opaque(model.tintSource().color(fluidState.createLegacyBlock()));
+        // Nullable: vanilla's own lava model has no tint source at all (FluidStateModelSet.LAVA_MODEL).
+        BlockTintSource tintSource = model.tintSource();
+        int tint = tintSource == null ? 0xFFFFFFFF : ARGB.opaque(tintSource.color(fluidState.createLegacyBlock()));
 
         int fillHeight = Math.round(BAR_HEIGHT * fraction);
         int fillY = y + (BAR_HEIGHT - fillHeight);
