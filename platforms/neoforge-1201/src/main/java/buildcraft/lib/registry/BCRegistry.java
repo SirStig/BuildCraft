@@ -34,6 +34,10 @@ import net.minecraftforge.registries.RegistryObject;
  */
 public final class BCRegistry {
 
+    /** Every {@link BCRegistry} any module has constructed, in construction order. See the 26.x copy of this
+     * class for the full account of why {@link #allCreativeTabEntries()} needs this. */
+    private static final List<BCRegistry> ALL = new ArrayList<>();
+
     private final DeferredRegister<Block> blocks;
     private final DeferredRegister<Item> items;
     private final DeferredRegister<BlockEntityType<?>> blockEntities;
@@ -45,6 +49,7 @@ public final class BCRegistry {
         this.blocks = DeferredRegister.create(ForgeRegistries.BLOCKS, modId);
         this.items = DeferredRegister.create(ForgeRegistries.ITEMS, modId);
         this.blockEntities = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, modId);
+        ALL.add(this);
     }
 
     // ###############
@@ -131,6 +136,17 @@ public final class BCRegistry {
         List<ItemLike> entries = new ArrayList<>(creativeOrder.size());
         for (Supplier<? extends ItemLike> supplier : creativeOrder) {
             entries.add(supplier.get());
+        }
+        return entries;
+    }
+
+    /** Every module's creative-tab contributions combined, in the order their {@link BCRegistry} instances were
+     * constructed. See the 26.x copy of this class for why this is safe despite most modules' registries not
+     * existing yet when {@code BCCoreRegistries} itself first loads. */
+    public static List<ItemLike> allCreativeTabEntries() {
+        List<ItemLike> entries = new ArrayList<>();
+        for (BCRegistry registry : ALL) {
+            entries.addAll(registry.creativeTabEntries());
         }
         return entries;
     }

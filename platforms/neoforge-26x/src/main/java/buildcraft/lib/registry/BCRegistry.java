@@ -51,6 +51,16 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  */
 public final class BCRegistry {
 
+    /** Every {@link BCRegistry} any module has constructed, in construction order. Each BuildCraft module
+     * (core, factory, ...) owns its own private {@code BCRegistry} instance rather than sharing one, so a
+     * single module's {@link #creativeTabEntries()} only ever sees that module's own contributions -- this is
+     * what lets {@link #allCreativeTabEntries()} present all of them together in BuildCraft's one creative tab
+     * without {@code BCCoreRegistries} (where that tab is built) needing a compile-time reference to every
+     * other module's registration holder. Safe precisely because {@code CreativeModeTab}'s {@code displayItems}
+     * callback is only ever invoked lazily, well after every module's {@code register(modBus)} has already run
+     * during mod construction -- by the time anything asks, every module's {@link BCRegistry} already exists. */
+    private static final List<BCRegistry> ALL = new ArrayList<>();
+
     private final DeferredRegister.Blocks blocks;
     private final DeferredRegister.Items items;
     private final DeferredRegister<BlockEntityType<?>> blockEntities;
@@ -62,6 +72,7 @@ public final class BCRegistry {
         this.blocks = DeferredRegister.createBlocks(modId);
         this.items = DeferredRegister.createItems(modId);
         this.blockEntities = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, modId);
+        ALL.add(this);
     }
 
     // ###############
@@ -167,6 +178,18 @@ public final class BCRegistry {
         List<ItemLike> entries = new ArrayList<>(creativeOrder.size());
         for (Supplier<? extends ItemLike> supplier : creativeOrder) {
             entries.add(supplier.get());
+        }
+        return entries;
+    }
+
+    /** Every module's creative-tab contributions combined, in the order their {@link BCRegistry} instances were
+     * constructed (module registration order -- see {@link #ALL}'s own javadoc). {@code BCCoreRegistries#TAB_MAIN}
+     * calls this instead of its own {@code REGISTRY.creativeTabEntries()} so that every module lands in
+     * BuildCraft's single creative tab, not just core's. */
+    public static List<ItemLike> allCreativeTabEntries() {
+        List<ItemLike> entries = new ArrayList<>();
+        for (BCRegistry registry : ALL) {
+            entries.addAll(registry.creativeTabEntries());
         }
         return entries;
     }

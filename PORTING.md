@@ -1526,6 +1526,34 @@ Deliberately not ported, with reasons:
     session -- worth remembering for whoever next needs a long-idle RCON-only verification run on 26.x; 1.20.1
     has no equivalent setting and was unaffected.
 
+- **A real, player-facing bug was found and fixed after real jars were deployed to Prism Launcher and actually
+  played: only `buildcraft.core`'s own blocks/items ever showed up in BuildCraft's creative tab, on both
+  platforms.** `BCCoreRegistries#TAB_MAIN`'s `displayItems` read `REGISTRY.creativeTabEntries()` -- that class's
+  own private `BCRegistry` instance -- but every module (`buildcraft.core`, `buildcraft.factory`, and every one
+  still to come) constructs its **own separate** `BCRegistry`, each with its own private `creativeOrder` list.
+  `buildcraft.factory`'s chute, mining well, pump, tank, and flood gate were all correctly registered (obtainable
+  via `/give`, fully functional in-world) but simply invisible in the tab -- explaining a real player's "I don't
+  seem to be able to do much in the creative menu" experience after trying the mod, even though five working
+  machines existed by that point. Missed by every prior verification pass this port has run because all of them
+  `/give` items directly over RCON and never open the creative-tab UI itself.
+  - Fixed by giving `BCRegistry` a static list of every instance constructed (`ALL`) and a new
+    `allCreativeTabEntries()` that concatenates all of them, in construction order; `TAB_MAIN` now calls that
+    instead of its own module's `REGISTRY`. Safe specifically because `CreativeModeTab#displayItems` is only
+    ever invoked lazily (when something actually needs the tab's contents), by which point every module's
+    `register(modBus)` -- and therefore every module's `BCRegistry` construction -- has already run during mod
+    construction; `BCCoreRegistries` does not need a compile-time reference to `BCFactoryRegistries` or any
+    later module for this to work.
+  - Verified with forced rebuilds on both platforms, the full 25-test suite, and real dedicated-server boots
+    with zero exceptions on both targets (confirming the fix does not disturb ordinary registration/serverside
+    behaviour). **Not independently confirmed with a live, on-screen creative-tab check**: this environment has
+    no input automation to actually open a creative inventory screen and read what is drawn (the same
+    limitation already noted for `BlockFloodGate`'s wrench gesture and for client-side rendering generally,
+    below), and repeated attempts to trigger `displayItems` indirectly by watching `:neoforge-26x:runClient`'s
+    own logs for evidence it had run were inconclusive -- the dev client's automatic world auto-join is not
+    reliably reproducible run to run, so no log signal was ever confirmed either way. The fix itself is a small,
+    mechanical list-concatenation change with a clear, verified-by-reading root cause, but a human should still
+    open a real creative inventory once before trusting this fully.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

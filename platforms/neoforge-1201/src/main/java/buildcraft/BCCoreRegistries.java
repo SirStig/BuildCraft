@@ -179,13 +179,17 @@ public final class BCCoreRegistries {
     public static final RegistryObject<BlockDecoration> DECORATED_LASER_BACK = REGISTRY.addBlockAndItem(
         "decorated_laser_back", () -> new BlockDecoration(decoratedProperties(EnumDecoratedBlock.LASER_BACK)));
 
-    /** BuildCraft's creative tab. {@link BCRegistry} keeps registration order, as the 1.12.2 tabs did. */
+    /** BuildCraft's creative tab. {@link BCRegistry} keeps registration order, as the 1.12.2 tabs did.
+     *
+     * <p>See the 26.x copy of this field for why this reads {@link BCRegistry#allCreativeTabEntries()} rather
+     * than this class's own {@code REGISTRY}: each module owns a separate {@code BCRegistry}, so reading only
+     * core's silently dropped every other module's blocks/items from BuildCraft's one tab. */
     public static final RegistryObject<CreativeModeTab> TAB_MAIN =
         CREATIVE_TABS.register("main", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.buildcraft.main"))
             .icon(() -> GEAR_WOOD.get().getDefaultInstance())
             .displayItems((params, output) -> {
-                for (ItemLike entry : REGISTRY.creativeTabEntries()) {
+                for (ItemLike entry : BCRegistry.allCreativeTabEntries()) {
                     output.accept(entry);
                 }
             })

@@ -184,13 +184,20 @@ public final class BCCoreRegistries {
      * BuildCraft's creative tab. The 1.12.2 build had one tab per module via {@code CreativeTabManager}; modern
      * versions build tabs declaratively, and {@link BCRegistry} keeps registration order so the contents still
      * appear in the order the module declares them.
+     *
+     * <p>Pulls from {@link BCRegistry#allCreativeTabEntries()}, not this class's own {@code REGISTRY}: every
+     * module (core, factory, ...) owns a separate {@code BCRegistry} instance, so reading only this one would
+     * silently drop every other module's blocks/items from the single tab BuildCraft actually has -- this bug
+     * existed from {@code buildcraft.factory}'s very first machine onward, invisible to every RCON-based
+     * verification pass this port has run since none of them ever open the creative-tab UI itself (they
+     * {@code /give} items directly instead).
      */
     public static final DeferredHolder<CreativeModeTab, CreativeModeTab> TAB_MAIN =
         CREATIVE_TABS.register("main", () -> CreativeModeTab.builder()
             .title(Component.translatable("itemGroup.buildcraft.main"))
             .icon(() -> GEAR_WOOD.get().getDefaultInstance())
             .displayItems((params, output) -> {
-                for (ItemLike entry : REGISTRY.creativeTabEntries()) {
+                for (ItemLike entry : BCRegistry.allCreativeTabEntries()) {
                     output.accept(entry);
                 }
             })
