@@ -42,6 +42,10 @@ RELOCATED = {
     "buildcraft/core/block/BlockEngineWood.java": "common/buildcraft/core/block/BlockEngine_BC8.java",
     "buildcraft/core/tile/TileEngineWood.java": "common/buildcraft/core/tile/TileEngineRedstone_BC8.java",
     "buildcraft/core/block/BlockEngineCreative.java": "common/buildcraft/core/block/BlockEngine_BC8.java",
+    "buildcraft/energy/block/BlockEngineStone.java": "common/buildcraft/core/block/BlockEngine_BC8.java",
+    "buildcraft/energy/tile/TileEngineStone.java": "common/buildcraft/energy/tile/TileEngineStone_BC8.java",
+    "buildcraft/energy/container/ContainerEngineStone.java": "common/buildcraft/energy/container/ContainerEngineStone_BC8.java",
+    "buildcraft/energy/gui/GuiEngineStone.java": "common/buildcraft/energy/client/gui/GuiEngineStone_BC8.java",
 }
 
 def upstream_for(path: pathlib.Path):

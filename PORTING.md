@@ -1743,6 +1743,136 @@ Deliberately not ported, with reasons:
     auto-derivation, MJ accumulation/spend, and result production -- all directly, via RCON, bypassing the GUI
     entirely.
 
+- **`buildcraft.energy` — `TileEngineStone`/`BlockEngineStone` (both platforms), the Stirling Engine, and with
+  it the first real fuel-burning machine ported (`buildcraft.core`'s `TileEngineWood`/`TileEngineCreative` are
+  constant/redstone-driven engines, not fuel-burning ones). Reuses both foundations landed earlier this port
+  without change: `buildcraft.lib.engine.TileEngineBase` (the `burn()`/`engineUpdate()`/`isBurning()`/
+  `createConnector()`/`getMaxPower()`/`maxPowerReceived()`/`maxPowerExtracted()`/`explosionRange()`/
+  `getCurrentOutput()` extension points were already there, unused, waiting for exactly this machine) and the
+  auto-workbench batch's `ContainerBCTile`/`SlotBase` GUI foundation -- a single real fuel slot, one `DataSlot`
+  for the flame-level indicator, no phantom slots at all, much smaller than `ContainerAutoCraftItems`.
+  - **New files, both platforms**: `buildcraft.energy.tile.TileEngineStone`, `buildcraft.energy.block.
+    BlockEngineStone`, `buildcraft.energy.container.ContainerEngineStone`, `buildcraft.energy.gui.
+    GuiEngineStone`, `buildcraft.energy.client.BCEnergyClientRegistries`, and a new top-level
+    `buildcraft.BCEnergyRegistries` (mirroring `BCFactoryRegistries` exactly -- its own private `BCRegistry`,
+    `addBlockAndItem`/`addBlockEntity`/`addMenu`, a `registerCapabilities` on 26.x since `TileEngineStone`
+    exposes both its fuel slot and its MJ connector as capabilities). `BuildCraft`'s constructor (both
+    platforms) grew one additive line each for `BCEnergyRegistries.register(modBus)` and, behind the same
+    dist-isolation guard `BCFactoryClientRegistries` already established, `BCEnergyClientRegistries::
+    registerScreens`. The `getCurrentOutput()` PID-like smoothing (`esum`/`clamp`/`MAX_OUTPUT`/`MIN_OUTPUT`/
+    `kp`/`ki`/`eLimit`) is a direct, unchanged port of the original's arithmetic on both platforms -- no
+    redesign needed, exactly as the task brief for this batch already anticipated.
+  - **The fuel slot's `isForceInserting` mechanic is a real, deliberate 1.12.2 quirk, ported faithfully, not
+    incidental behaviour "fixed" along the way.** While a fuel item's leftover container item (e.g. the empty
+    bucket a burning lava bucket leaves behind) is sitting in the fuel slot, the slot's insertion checker accepts
+    *any* item, not just fuel -- `isForceInserting` is set immediately before the container item is force-written
+    with `setStackInSlot` (bypassing the checker entirely) and cleared again only once the player empties the
+    slot (`onSlotChange`). This narrow window where an unrelated item could technically also be piped in is
+    exactly what 1.12.2 itself did; see `TileFloodGate`'s own progress entry above for this port's established
+    precedent of preserving a genuine upstream oddity rather than "fixing" it unasked.
+  - **`explosionRange()` returns `2` (the original constant) and is never called anywhere in the already-ported
+    `TileEngineBase` on either platform -- confirmed, not assumed, by re-reading 1.12.2's own
+    `TileEngineBase_BC8` (~line 469): the one call site (`worldObj.createExplosion(...)`) is commented out in
+    the original source itself.** 1.12.2's own engines never actually explode on overheat despite the plumbing
+    being there. No working explosion mechanic was added; the constant is returned faithfully and stays unused,
+    matching upstream's own dead code exactly.
+  - **Fuel burn-time lookup is a genuine, confirmed-via-decompile platform divergence on 26.x, and the task
+    brief's own starting research needed two real corrections once actually verified.** 1.12.2's
+    `TileEntityFurnace.getItemBurnTime(stack)` has no direct equivalent: fuel value is now the
+    `net.minecraft.world.item.component.CookingFuel` data component (`burnTime()`/`speedMultiplier()`, each a
+    `ResolvableInt`/`ResolvableFloat` needing a `LootContext`), reached the way vanilla's own
+    `AbstractFurnaceBlockEntity#getBurnDuration` does, confirmed by decompiling that class from this target's
+    own sources jar. Since `TileEngineStone` isn't a `Container`/`BaseContainerBlockEntity`, it can't inherit
+    `BaseContainerBlockEntity#getLootContext` and builds its own `LootContext` in `getItemBurnTime`. **First
+    correction**: `LootContextParamSets.CONTAINER_PROCESS` does *not* leave `BLOCK_STATE`/`ORIGIN` as "at least"
+    required with the rest optional, as the task brief's own starting guess put it -- reading its actual
+    registration shows all four of `BLOCK_STATE`, `BLOCK_ENTITY`, `CONTAINER` and `ORIGIN` are `.required(...)`,
+    only `NeoForgeLootContextParams.QUERIED_STACK` is `.optional(...)`, and `LootParams.Builder#create`
+    validates every required key eagerly (`ContextMap.Builder#buildAndValidate`) -- omitting one throws
+    immediately rather than silently defaulting. `LootContextParams.CONTAINER` is typed `ContextKey<SlotProvider>`
+    (a single `getSlot(int)` method), not `Container` as the name suggests, so `TileEngineStone` supplies a
+    trivial no-op `slot -> null` stub -- nothing about a plain burn-time lookup ever queries it. **Second
+    correction**: `ResolvableInt` (and `ResolvableFloat`) live under
+    `net.minecraft.world.level.storage.loot.providers.number.ints` (`.floats` for the latter), not
+    `net.minecraft.util.valueproviders` as the task brief's own starting guess had it -- confirmed by extracting
+    and reading the real class from this target's sources jar. `ResolvableInt.getFromItem(stack,
+    DataComponents.COOKING_FUEL, CookingFuel::burnTime, context, 0)` is the actual one-line resolution call,
+    correctly returning `0` for a stack with no `COOKING_FUEL` component at all.
+  - **The container-item lookup (the empty bucket a burning lava bucket leaves behind) is also a genuine,
+    confirmed divergence on 26.x.** 1.12.2's `fuel.getItem().getContainerItem(fuel)` becomes
+    `ItemStack#getCraftingRemainder()` -- a NeoForge extension default method (`ItemInstanceExtension`, mixed
+    into `ItemStack` via the `ItemInstance` interface) that returns a **nullable `ItemStackTemplate`**, not an
+    `ItemStack` directly; `ItemStackTemplate#create()` produces the real stack. Confirmed by decompiling this
+    target's own `AbstractFurnaceBlockEntity#consumeFuel`, which does exactly this for a burning lava bucket.
+  - **A real defect was found and fixed on 1.20.1 during RCON verification, not by inspection.** The first
+    version of `getItemBurnTime` called `stack.getBurnTime(null)` directly -- the `IForgeItemStack` default
+    method mixed into `ItemStack` itself, which looks like the natural one-line equivalent and compiles fine.
+    It is *not* the resolved lookup: it is the per-item override hook, returning `-1` as a sentinel meaning
+    "this item doesn't override its own burn time, fall back to vanilla's `FurnaceBlockEntity.getFuel()` map" --
+    confirmed by decompiling `net.minecraftforge.common.ForgeHooks#getBurnTime`, which is what actually resolves
+    that sentinel (`int ret = stack.getBurnTime(recipeType); return ForgeEventFactory.getItemBurnTime(stack, ret
+    == -1 ? VANILLA_BURNS.getOrDefault(...) : ret, recipeType)`) and fires the burn-time event. Calling
+    `ItemStack#getBurnTime` directly made every plain vanilla fuel item, coal included, resolve to `-1` --
+    `isValidFuel` never went true (`-1 > 0` is false), so a freshly-placed engine silently refused to accept any
+    fuel at all. Caught on the very first RCON test against a real dedicated server: a coal item written into the
+    fuel slot via `/data modify block ... set value` stayed at `burnTime: -1, totalBurnTime: -1` and the item
+    count never dropped, where the 26.x server (tested moments earlier) had immediately shown the correct
+    `totalBurnTime: 1600`. Fixed by calling `net.minecraftforge.common.ForgeHooks.getBurnTime(stack, null)`
+    instead, which already handles both the `-1` fallback and the empty-stack case (`0`) itself. Recompiled,
+    rebooted, and re-verified with the identical RCON scenario afterward -- see below.
+  - **The recipe is portable and ported, unlike `TilePump`/`TileTank`/`TileFloodGate`'s skipped ones** -- all
+    four ingredients (cobblestone, glass, `buildcraft:gear_stone`, vanilla piston) already exist in this port or
+    are vanilla. Pattern (`www` / `" g "` / `GpG`) and glass/piston handling directly mirror the already-shipped,
+    near-identical `engine_wood.json` recipe (`www` / `" g "` / `GpG` too, just planks/gear_wood instead of
+    cobblestone/gear_stone) -- `g`/`p` are plain item references (`minecraft:glass`, `minecraft:piston` on 26.x;
+    `{"item": ...}` on 1.20.1, matching that same file), and `G` is `buildcraft:gear_stone` the same bare-string
+    way `engine_wood.json` already references `buildcraft:gear_wood`. Cobblestone reuses the exact tag reference
+    `gear_stone.json`'s own recipe already established for this port: `#c:cobblestones` on 26.x,
+    `{"tag": "forge:cobblestone"}` on 1.20.1 -- note the genuine per-platform tag-id divergence (plural
+    `c:cobblestones` vs singular `forge:cobblestone`), already on file in that recipe, not a new finding.
+  - **Dropped from the original GUI, out of scope for this pass, matching the auto-workbench batch's own
+    precedent for dropping pure polish.** 1.12.2's `GuiEngineStone_BC8` wired up the in-GUI help/tooltip
+    framework (`LedgerEngine`, `DummyHelpElement`, two `ElementHelpInfo` fields) -- not ported anywhere in this
+    port yet, on either platform, and out of scope here; noted in `GuiEngineStone`'s own javadoc. 1.12.2's own
+    `deltaFuelLeft`/`DeltaInt`/`deltaManager` GUI-sync mechanism is dropped entirely (not partially ported) in
+    favour of a single container `DataSlot` for the flame-level percentage (`TileEngineStone#
+    getFuelPercentForSync`/`#setFuelPercentForSync`), exactly the `TileAutoWorkbenchBase#getPowerStoredForSync`
+    idiom already established -- no partial-tick interpolation, the flame indicator just reads the last-synced
+    value directly.
+  - **Right-click always opens the GUI**, matching `BlockAutoWorkbenchItems`'s own precedent exactly (re-verified,
+    not just trusted from that entry's own note): `useWithoutItem` on 26.x, the still-unified `use` opening
+    through `NetworkHooks.openScreen` on 1.20.1.
+  - **In-game verification, both platforms, via RCON, against a real dedicated server each, not a clean-boot-only
+    check.** A Stirling Engine was placed with a chute (an already-ported MJ receiver) directly above it (its
+    default `currentDirection` is `UP`) and a redstone block on an adjacent side; 20 coal was written into the
+    fuel slot via a real NBT round trip read back off `/data get block` first, not guessed (`fuel.stacks[0]` on
+    26.x -- the `ValueIOSerializable` shape, a bare list of `{id, count}`, empty slots encoding to `{}`;
+    `inv_manager.fuel.items[0]` on 1.20.1 -- classic `{id, Count}` item NBT nested one level under `inv_manager`,
+    matching `ItemHandlerManager#serializeNBT`'s own per-handler key). On both platforms, watched entirely
+    through real elapsed time (no state was hand-set to "already burning" to skip the natural cycle): `burnTime`/
+    `totalBurnTime` immediately resolved to `1600` (real coal, real vanilla burn time, confirming the platform-
+    specific lookup on both targets independently), the coal stack count dropped from 20 to 19 the instant
+    `burn()` ran, `esum`/`power`/`heat` climbed tick over tick exactly as the PID-like loop and heat-toward-
+    `IDEAL_HEAT` formula predict, `progressPart`/`progress` engaged (the piston-pump state machine inherited from
+    `TileEngineBase`), and — watched across the full cycle, not just its start — burnTime reached the end of the
+    first coal's 1600-tick run and the engine auto-refuelled from the same slot with no external help, the stack
+    count dropping to 18 with a fresh `burnTime: 1600`, confirming the "zero-gap refuel" behaviour inherited
+    unchanged from `TileEngineBase#serverTick`'s call order (`engineUpdate()` before `burn()` each tick). The
+    neighbouring chute's own MJ battery filled to its own capacity over the same window, confirming power
+    actually left the engine and reached a real neighbour, not just accumulated locally. Zero exceptions in
+    either server's log across the whole session, before and after the 1.20.1 `getBurnTime` fix above.
+  - **Verified with forced `--no-build-cache clean` rebuilds on both platforms (before and after the 1.20.1 bug
+    fix), the full 25-test suite, real dedicated-server boots with zero exceptions on both targets, and a real
+    `:neoforge-26x:runClient` boot that reached full texture-atlas stitching and a loaded resource manager
+    (`mod/buildcraft` included) with no `IllegalStateException`/`ClassNotFoundError`/`NoClassDefFoundError`/
+    `BootstrapMethodError` naming `GuiEngineStone`/`ContainerEngineStone`/`BCEnergyClientRegistries` anywhere in
+    the log.** **Not independently verified: the actual on-screen GUI itself** -- this environment has no mouse/
+    keyboard input automation, so the fuel slot's click-to-insert interaction and the flame indicator's on-screen
+    fill cannot be exercised live, the same caveat already on file for every prior GUI-touching entry in this
+    file. What *is* verified live, end to end, is every piece of logic the GUI is a thin skin over: fuel
+    consumption, burn-time countdown, heat/power-stage progression, the PID-like output smoothing, and real MJ
+    delivery to a neighbour -- all directly, via RCON, bypassing the GUI entirely.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1762,7 +1892,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |
-| `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
+| `buildcraft.energy` | 41 | Stirling engine (done). Iron/RF combustion engines, oil, fuel still to come. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
 Within `buildcraft.lib` the hard parts, roughly in dependency order, are: the registration

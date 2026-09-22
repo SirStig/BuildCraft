@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_engine_stone",
+  "pattern": [
+    "www",
+    " g ",
+    "GpG"
+  ],
+  "key": {
+    "w": "#c:cobblestones",
+    "g": "minecraft:glass",
+    "G": "buildcraft:gear_stone",
+    "p": "minecraft:piston"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:engine_stone"
+  }
+}

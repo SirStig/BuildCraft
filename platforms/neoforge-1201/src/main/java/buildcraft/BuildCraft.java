@@ -15,6 +15,7 @@ import net.minecraftforge.fml.loading.FMLLoader;
 
 import buildcraft.api.core.BCDebugging;
 
+import buildcraft.energy.client.BCEnergyClientRegistries;
 import buildcraft.factory.client.BCFactoryClientRegistries;
 
 import org.slf4j.Logger;
@@ -45,14 +46,16 @@ public final class BuildCraft {
 
         BCRegistries.register(modBus);
         BCFactoryRegistries.register(modBus);
+        BCEnergyRegistries.register(modBus);
         BCNetwork.register();
 
         // Screen registration is inherently client-only. Gating the *listener registration itself* (rather than
         // just the body of the method it would call) keeps a dedicated server from ever having to load or verify
-        // BCFactoryClientRegistries -- and, transitively, the client-only Screen classes it references -- at all.
-        // See BCFactoryClientRegistries' own javadoc.
+        // BCFactoryClientRegistries/BCEnergyClientRegistries -- and, transitively, the client-only Screen classes
+        // they reference -- at all. See BCFactoryClientRegistries' own javadoc.
         if (FMLEnvironment.dist.isClient()) {
             modBus.addListener(BCFactoryClientRegistries::registerScreens);
+            modBus.addListener(BCEnergyClientRegistries::registerScreens);
         }
     }
 }
