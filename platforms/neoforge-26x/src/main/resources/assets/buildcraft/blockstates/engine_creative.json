@@ -1,7 +1,27 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "buildcraft:block/engine_creative"
+    },
+    "facing=east": {
+      "model": "buildcraft:block/engine_creative",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "buildcraft:block/engine_creative",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "buildcraft:block/engine_creative",
+      "y": 270
+    },
+    "facing=down": {
+      "model": "buildcraft:block/engine_creative",
+      "x": 90
+    },
+    "facing=up": {
+      "model": "buildcraft:block/engine_creative",
+      "x": 270
     }
   }
 }

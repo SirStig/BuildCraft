@@ -16,9 +16,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 
@@ -104,6 +106,20 @@ import buildcraft.lib.tile.TileBC;
  * <li>{@link #getBiome()}/{@code getBiomeHeat()} are dropped outright: dead code even in 1.12.2 (its own
  *     {@code // TODO: Cache this!} comment on {@code getBiome} is the tell), and neither concrete engine tile
  *     ported here calls either.</li>
+ * <li><b>Facing visibility.</b> Until this was fixed, {@link #currentDirection} lived purely in this tile's own
+ *     NBT -- the placed {@link BlockState} never changed, so wrenching an engine had no visible effect at all even
+ *     though {@link #attemptRotation()} was already updating the real field correctly (a real user report; see
+ *     this fix's own Progress entry in PORTING.md, the same "mechanism already correct, just invisible" shape as
+ *     the mining well's tube-shaft fix before it). {@link #updateFacingBlockState(Direction)} pushes
+ *     {@link BlockStateProperties#FACING} -- reused rather than a BuildCraft-native property, matching
+ *     {@code BuildCraftProperties}'s own preference for an existing vanilla mechanism -- onto the actual placed
+ *     state via {@code level.setBlock}, both from {@link #attemptRotation()} (the wrench path) and
+ *     {@link #onPlacedBy} (so a freshly-placed engine already matches {@link #currentDirection}'s own
+ *     {@link Direction#UP} default from the first tick, not just after the first successful wrench). Each concrete
+ *     engine block declares {@link BlockStateProperties#FACING} via {@code createBlockStateDefinition} and
+ *     registers it defaulting to {@link Direction#UP}; the blockstate/model JSON then rotates a single model per
+ *     {@link Direction} value, the same vanilla mechanism a furnace/piston/observer already uses for their own
+ *     {@code facing} property -- no custom renderer needed.</li>
  * </ul>
  */
 public abstract class TileEngineBase extends TileBC implements IDebuggable, IEngineLikeForLedger {
@@ -180,6 +196,7 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
             if (isFacingReceiver(current)) {
                 if (currentDirection != current) {
                     currentDirection = current;
+                    updateFacingBlockState(current);
                     markDirtyAndSync();
                     if (level != null) {
                         level.updateNeighborsAt(getBlockPos(), getBlockState().getBlock(), null);
@@ -194,6 +211,14 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
 
     private boolean isFacingReceiver(Direction dir) {
         return getReceiverToPower(dir) != null;
+    }
+
+    /** Pushes {@code facing} onto the placed {@link BlockState} itself -- see this class's own javadoc "Facing
+     * visibility" entry. */
+    private void updateFacingBlockState(Direction facing) {
+        if (level != null) {
+            level.setBlock(getBlockPos(), getBlockState().setValue(BlockStateProperties.FACING, facing), Block.UPDATE_ALL);
+        }
     }
 
     protected final boolean canChain() {
@@ -222,6 +247,7 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
     public void onPlacedBy(LivingEntity placer, ItemStack stack) {
         currentDirection = null; // Force rotateIfInvalid to always attempt to rotate
         rotateIfInvalid();
+        updateFacingBlockState(currentDirection);
     }
 
     public double getPowerLevel() {

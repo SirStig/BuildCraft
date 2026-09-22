@@ -20,6 +20,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -43,11 +45,20 @@ import buildcraft.energy.tile.TileEngineStone;
  * (confirmed {@code protected} via {@code javap} against this target's {@code BlockBehaviour}, unlike 1.20.1's
  * still-unified {@code use} -- see the 1.20.1 copy of this class, and {@code BlockAutoWorkbenchItems}'s own
  * javadoc for the fuller account of that split).
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here for exactly the reason {@code BlockEngineWood} declares
+ * it -- see that class's own javadoc and {@code TileEngineBase}'s "Facing visibility" entry for the full account.
  */
 public class BlockEngineStone extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineStone(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override

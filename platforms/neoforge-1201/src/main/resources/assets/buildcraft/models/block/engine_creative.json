@@ -1,7 +1,12 @@
 {
-  "parent": "minecraft:block/cube_column",
+  "parent": "minecraft:block/cube",
   "textures": {
-    "end": "buildcraft:block/engine_creative_back",
-    "side": "buildcraft:block/engine_creative_side"
+    "particle": "buildcraft:block/engine_creative_side",
+    "north": "buildcraft:block/engine_creative_back",
+    "south": "buildcraft:block/engine_creative_side",
+    "east": "buildcraft:block/engine_creative_side",
+    "west": "buildcraft:block/engine_creative_side",
+    "up": "buildcraft:block/engine_creative_side",
+    "down": "buildcraft:block/engine_creative_side"
   }
 }

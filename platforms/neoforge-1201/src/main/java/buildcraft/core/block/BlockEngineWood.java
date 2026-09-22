@@ -19,6 +19,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 import buildcraft.api.blocks.ICustomRotationHandler;
 
@@ -31,11 +33,20 @@ import buildcraft.core.tile.TileEngineWood;
  * the general reasoning. Mirrors the 26.x class of the same name; the one real difference is
  * {@link #neighborChanged}'s signature, which still carries {@code fromPos}/{@code isMoving} on this target rather
  * than 26.x's {@code Orientation}.
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here identically to the 26.x class -- see that class's own
+ * javadoc and {@code TileEngineBase}'s "Facing visibility" entry for the full account of the fix this closes.
  */
 public class BlockEngineWood extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineWood(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override

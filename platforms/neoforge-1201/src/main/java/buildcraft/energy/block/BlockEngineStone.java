@@ -22,6 +22,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.BlockHitResult;
 
 import net.minecraftforge.network.NetworkHooks;
@@ -40,11 +42,21 @@ import buildcraft.energy.tile.TileEngineStone;
  * through {@link NetworkHooks#openScreen(ServerPlayer, net.minecraft.world.MenuProvider, BlockPos)}, which writes
  * the {@code BlockPos} the client needs to look the tile back up automatically -- unlike 26.x, which does that by
  * hand in {@code TileEngineStone#writeClientSideData}.
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here identically to the 26.x class -- see
+ * {@code BlockEngineWood}'s own javadoc and {@code TileEngineBase}'s "Facing visibility" entry for the full
+ * account of the fix this closes.
  */
 public class BlockEngineStone extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineStone(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override

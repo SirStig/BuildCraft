@@ -21,6 +21,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -47,11 +49,20 @@ import buildcraft.core.tile.TileEngineCreative;
  * wrench in 1.12.2 too. Kept in case a future non-rotation-registered wrench, or a change to
  * {@code ItemWrench}'s short-circuiting, ever reaches it; worth flagging for anyone relying on this cycling
  * actually firing from a wrench today.
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here for exactly the reason {@code BlockEngineWood} declares
+ * it -- see that class's own javadoc and {@code TileEngineBase}'s "Facing visibility" entry for the full account.
  */
 public class BlockEngineCreative extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineCreative(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override

@@ -18,6 +18,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.core.Direction;
 
@@ -44,11 +46,24 @@ import buildcraft.core.tile.TileEngineWood;
  * justify the geometry). {@link #setPlacedBy}/{@link #neighborChanged} both call the tile directly, since
  * {@code BlockEntity} lost {@code onPlacedBy}/{@code onNeighbourBlockChanged} entirely -- the same "the block
  * calls the tile's own hook" pattern {@code BlockMarkerVolume} already established.
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here (registered defaulting to {@link Direction#UP},
+ * matching {@link TileEngineWood}'s own {@code currentDirection} default) purely so the blockstate/model JSON can
+ * rotate a single model per facing, the same mechanism a furnace/piston uses for their own {@code facing}
+ * property -- see {@code TileEngineBase}'s own javadoc "Facing visibility" entry for the fix this closes. This
+ * block never reads the property itself; {@code TileEngineBase} pushes it onto the placed state directly whenever
+ * {@code currentDirection} changes.
  */
 public class BlockEngineWood extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineWood(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override

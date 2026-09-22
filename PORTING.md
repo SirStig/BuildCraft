@@ -2384,6 +2384,162 @@ Deliberately not ported, with reasons:
     already exists -- auto-facing, MJ-gated extraction, and the capability wiring that lets an engine find a
     pipe as a receiver at all.
 
+- **The three already-ported engines (`BlockEngineWood`/`TileEngineWood`, `BlockEngineCreative`/`TileEngineCreative`,
+  `BlockEngineStone`/`TileEngineStone`) gain a real, direction-dependent block appearance -- a facing-visibility
+  fix, the same shape as the mining well's tube-shaft fix above, not a gameplay-logic change.** The person
+  actually playing this mod (not just compiling it) reported that wrenching a Creative Engine next to a Mining
+  Well "does nothing" -- they could not tell whether wrenching ever pointed it the right way. Live investigation
+  first, before touching any code: RCON, a fake-player-driven wrench click, and reading `TileEngineBase
+  #attemptRotation()`/`getReceiverToPower()` directly all confirmed the underlying mechanic was already
+  completely correct -- the click reaches `attemptRotation()`, it finds the Mining Well as a valid MJ receiver,
+  it updates `currentDirection`, and power genuinely flows afterward. **The bug was that nothing about the
+  block's own appearance ever changed**: all three engines shared one static `cube_column` model (an "end"
+  texture top/bottom, a "side" texture around the middle) with no facing-dependent variation at all, and
+  `currentDirection` lived purely in tile NBT, invisible to the block's own `BlockState` -- so a player had no
+  way to visually confirm which way an engine pointed, or that wrenching did anything.
+  - **Fix, both platforms, plain static blockstate/model JSON only -- no `BlockEntityRenderer`, no animation.**
+    All three concrete engine blocks now declare vanilla's own `BlockStateProperties.FACING`
+    (`net.minecraft.world.level.block.state.properties.BlockStateProperties`) via `createBlockStateDefinition`
+    (confirmed the exact same method name and signature, `protected void createBlockStateDefinition(
+    StateDefinition.Builder<Block, BlockState> builder)`, on **both** targets -- not the divergence the task
+    brief cautioned might exist versus 1.12.2's own `createBlockState`, confirmed directly against this
+    codebase's own pre-existing `BlockMarkerBase`/`BlockMiningWell` precedent rather than assumed), registered
+    via `registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP))` in each
+    block's constructor -- `Direction.UP` matching `TileEngineBase#currentDirection`'s own existing default, the
+    same "reuse an existing vanilla mechanism rather than invent a BuildCraft-native one" preference this port
+    already applied to gears/tags/etc (see `DyedBlockVariants`'s own javadoc), and a deliberate choice over the
+    codebase's own hand-rolled `BuildCraftProperties.BLOCK_FACING_6` (an `EnumProperty<Direction>` with an
+    identical 6-value shape, already used by `BlockMarkerBase`) precisely because vanilla already ships the
+    identical mechanism under its own name.
+  - **`TileEngineBase#attemptRotation()` (shared base class, both platforms) now pushes the change onto the
+    placed `BlockState` itself, not just its own field.** A new private `updateFacingBlockState(Direction)`
+    calls `level.setBlock(getBlockPos(), getBlockState().setValue(BlockStateProperties.FACING, facing),
+    Block.UPDATE_ALL)` whenever `currentDirection` actually changes -- confirmed identical on both targets via
+    `javap` (`Level#setBlock(BlockPos, BlockState, int)`, `Block.UPDATE_ALL`, `BlockState#setValue` are
+    unchanged in shape from each other). `onPlacedBy` now also calls it unconditionally after `rotateIfInvalid()`
+    (previously it only mutated `currentDirection`), so a freshly-placed engine's `BlockState` matches its
+    tile's own starting facing from the very first tick -- whether that is `Direction.UP` (no receiver found
+    yet) or whatever direction `rotateIfInvalid()`'s own receiver search lands on -- not only after the first
+    successful wrench.
+  - **A genuine, `javap`-confirmed type-level divergence between the two targets, invisible to every line of
+    code this fix actually wrote, since nothing here names the field's static type explicitly.** On 1.20.1,
+    `BlockStateProperties.FACING` is statically typed `net.minecraft.world.level.block.state.properties.
+    DirectionProperty` -- a real, still-present subclass of `EnumProperty<Direction>` (`create(String)`/
+    `create(String, Direction...)`/etc., unchanged in shape from 1.12.2). On 26.x, the `DirectionProperty` class
+    no longer exists at all (`javap`: "class not found") and the identical field is instead typed a plain
+    `EnumProperty<Direction>`. Neither this file nor the three block classes ever spell out the field's static
+    type, so the divergence cost nothing here, but it is exactly the kind of thing a future file that *does*
+    want to declare a `DirectionProperty`-typed field of its own needs to know before assuming the two targets
+    still share that type.
+  - **The blockstate/model JSON change, both platforms, for all three engines: `minecraft:block/cube_column`
+    (`end`/`side` textures) becomes `minecraft:block/cube` with the "back" texture on the model's own north face
+    and the "side" texture on the other five, driven by six `facing=<direction>` blockstate variants using
+    vanilla's own rotation convention.** Confirmed the existing texture-file naming assumption by actually
+    comparing the two images rather than trusting the filename: `engine_wood_back.png` is a wood-framed copper
+    connector fitting -- the classic BuildCraft engine's business/output face -- while `engine_wood_side.png` is
+    a plain wood-plank texture; "back" genuinely is the output face's own texture, matching the brief's own
+    suspicion, for all three engines (`_creative`/`_stone` pairs compared identically). The rotation table itself
+    is not guessed: extracted and read the real vanilla `blockstates/piston.json`/`observer.json` and
+    `models/block/template_piston.json` directly out of the actual game client resources (`client-extra-*.jar`
+    for 1.20.1, `minecraft_26.3_client.jar` for 26.x -- both confirmed byte-identical in the relevant JSON) rather
+    than reasoning about rotation signs from memory: a front-on-north base model needs `facing=north` at
+    identity, `facing=east`/`south`/`west` at `y: 90`/`180`/`270`, and -- the case the task brief specifically
+    flagged as easy to get backwards -- `facing=down` at `x: 90` and `facing=up` at `x: 270`, not the other way
+    around. `minecraft:block/cube`/`minecraft:block/cube_column` themselves are unchanged between the two
+    targets (confirmed identical byte-for-byte between the 1.20.1 and 26.3 client jars).
+  - **In-game verification, both platforms, via RCON against real dedicated servers -- confirming the actual
+    goal: the block's own placed `BlockState` genuinely changes, not just the tile's internal field.** A
+    temporary, self-registering `bcfacingtest` command (`buildcraft.debugtemp.DebugEngineFacingCommand`, its own
+    new file on each platform, deleted along with the whole `debugtemp` package before this fix finished) placed
+    a Creative Engine with a Mining Well to its east and another to its south (both genuine, unconditionally-
+    registered `MjCapabilities.RECEIVER`s, confirmed by re-reading `BCFactoryRegistries#registerCapabilities`
+    rather than assumed), called the real `TileEngineCreative#onPlacedBy` directly (since `/setblock` does not
+    invoke it, the same finding already on file from the pipe batch's own verification), then performed three
+    real wrench right-clicks through a fake player and the actual `ItemWrench#useOn` entry point -- constructing
+    a real `UseOnContext(fakePlayer, InteractionHand.MAIN_HAND, hitResult)` and calling
+    `wrenchStack.getItem().useOn(context)` directly, the real production code path a real client's wrench click
+    reaches, not a re-test of `BlockItem`/network scaffolding underneath it. Self-registered via
+    `@EventBusSubscriber`/`@Mod.EventBusSubscriber(bus = FORGE)` specifically so nothing in either platform's
+    `BuildCraft.java` needed touching at all (that file is out of scope for this task -- a different,
+    concurrently-running task owns pipe-related edits there), confirmed clean afterward: `git status` shows zero
+    changes to either `BuildCraft.java`, and the whole `debugtemp` package left no trace once deleted (never
+    committed, so nothing to `git diff` against). On both platforms, independently, the engine auto-faced east
+    at placement (the first valid receiver in `TileEngineBase`'s own east-south-down-west-north-up cycle order),
+    then ping-ponged south/east/south across the three wrench clicks -- and `currentDirection` and
+    `level.getBlockState(pos).getValue(BlockStateProperties.FACING)`, read directly from the live objects inside
+    the command itself, matched exactly at every single step, on both targets. **Independently re-confirmed
+    through the plain vanilla command interface afterward, with no debug code involved at all**: `/execute if
+    block <pos> buildcraft:engine_creative[facing=south]` succeeded and `[facing=east]`/`[facing=up]` both failed
+    against the same block, on both platforms, exactly matching the tile's own `currentDirection` at that moment
+    -- and the same default-facing check (`buildcraft:engine_wood`/`engine_stone` freshly placed with no explicit
+    facing genuinely default to `facing=up`, confirmed the same way) worked identically for the two engines the
+    debug command's own scripted rig never touched. **A correction to this task's own brief, worth recording for
+    future verification passes**: `/data get block <pos>` does **not** expose a placed block's `BlockState`
+    properties at all -- confirmed directly, on both platforms, against both a plain vanilla `minecraft:dispenser
+    [facing=east]` and the engines themselves: its output is only the block's saved tile NBT plus `id`/`x`/`y`/
+    `z`, never a `Properties`/`state` key of any kind. The real, correct vanilla mechanism for reading a placed
+    block's own state from a command is `/execute if block <pos> <id>[property=value]`, used above instead.
+  - **Verified with forced `--no-build-cache clean` rebuilds on both platforms (before and after the debug
+    command's removal), the full 25-test suite, real dedicated-server boots with zero exceptions on both targets
+    (fresh worlds, deleted and rebooted again after the debug command's removal), and a real
+    `:neoforge-26x:runClient` boot that reached full texture-atlas stitching (including `blocks.png-atlas`) and a
+    loaded resource manager (`mod/buildcraft` included) with no missing-model/missing-sprite warnings for any of
+    the three engines' six new `facing=<direction>` variants each, and no `IllegalStateException`/
+    `ClassNotFoundError`/`NoClassDefFoundError`/`BootstrapMethodError`/`Exception` anywhere in the log.** Not
+    independently verified: the on-screen appearance of the rotated models themselves -- the same rendering
+    caveat as every other entry in this file -- though the model/blockstate JSON itself is not a guess: it is
+    built from real vanilla rotation-convention files extracted from the actual game client, not reasoned about
+    from memory. **A related, but genuinely different-shaped, loose end noticed while working and left for a
+    future batch, not fixed here**: `BlockMiningWell` already carries a real, visible `BuildCraftProperties.
+    BLOCK_FACING` blockstate property that *does* get set correctly at placement time (`getStateForPlacement`)
+    -- unlike the engines' bug, this one is not invisible -- but its own javadoc already documents that nothing
+    ever updates it afterward (`BlockMiningWell` does not implement `ICustomRotationHandler`, so it is not
+    wrench-rotatable at all) and nothing in `TileMiningWell`/`TileMiner` ever reads it back (the well always
+    digs straight down regardless). `BlockPump`, by contrast, was checked and confirmed to have no facing
+    concept at all to be invisible in the first place (it searches multiple directions every tick rather than
+    tracking one persisted facing) -- see that class's own javadoc.
+
+- **`TilePump#getTargetPos()` never extended its tube shaft toward an isolated single-block fluid source, and
+  retracted one position early on any body's very last source block -- a genuine pre-existing bug in the real
+  1.12.2 source, confirmed present there unchanged, not a porting mistake, fixed on both platforms anyway because
+  it directly explains a real user report: "For the water pump it should also have pipes that come down even
+  unpowered as soon as its over a liquid source."** Read `TileMiner#mine()`'s abstract contract and both this
+  port's own `TilePump#mine()`/`nextPos()`/`buildQueue()` and the original `common/buildcraft/factory/tile/
+  TilePump.java`'s copy of the same three methods side by side first: both already run the fluid-search
+  (`buildQueue()`) and tube-shaft placement (`nextPos()` -> `updateLength()`) completely unconditionally every
+  ~30 ticks (`SafeTimeTracker(30)`, confirmed via its own source that the very first call always returns `true`
+  regardless of battery charge -- `Level#getGameTime()` starts near zero and `lastMark` starts at `Long.MIN_
+  VALUE`), gating only the actual fluid-*draining* step behind `battery.extractPower(...)`. This already matched
+  the user's expectation exactly -- so the bug had to be somewhere else.
+  - **Found it live, via RCON, with the simplest possible rig: a single isolated `minecraft:water` source block
+    four blocks under an unpowered (`battery: 0L`) pump, nothing else nearby.** `data get block` on the pump
+    showed `currentPos: [I; ...]` correctly resolving to the water block (proving the unpowered search genuinely
+    ran), yet `wantedLength` stayed `0` forever and no `buildcraft:tube` block ever appeared underneath it.
+  - **Root cause: `getTargetPos()` used `queue.isEmpty()` as its "did we find anything at all" signal, but
+    `queue` is only the not-yet-visited-this-round worklist of source blocks left to drain -- it empties out the
+    instant `nextPos()` dequeues the last (or only) candidate via `queue.removeLast()`, *before* that same
+    position becomes `currentPos` and is actively, validly mid-drain.** For a single isolated source, the queue
+    holds exactly one entry from the moment `buildQueue()` runs, and `nextPos()` immediately drains it to empty
+    in the very same call that is supposed to extend the tube toward it -- so `updateLength()`'s own call to
+    `getTargetPos()` always saw an empty queue and returned `null`, computing a target length of `0`. The same
+    bug bites any body's last remaining source block for the identical reason, one position early.
+  - **Fix: check `paths.isEmpty()` instead.** `paths` holds every position `buildQueue0()`'s breadth-first search
+    ever confirmed reachable for the current fluid body (a strict superset of `queue`, since it also covers
+    flowing, non-source blocks along the way) and is only ever trimmed by `mine()`'s own `paths.remove(
+    currentPos)` on a truly completed, successful full drain -- the correct signal for "nothing left to reach at
+    all", unaffected by `nextPos()`'s own worklist bookkeeping.
+  - **Re-verified live after the fix, same rig plus a full drain-to-completion pass**: the previously-inert
+    single-source rig now shows `wantedLength: 4` and real `buildcraft:tube` blocks (confirmed via `/execute if
+    block ... buildcraft:tube`) filling the full gap down to the water, `battery` still `0L` throughout -- and,
+    powering the same rig with a Creative Engine afterward, the pump fully drained the source (`tank: {amount:
+    1000, id: "minecraft:water"}`), `currentPos` cleared, `wantedLength` correctly dropped back to `0`, and every
+    tube block and the drained source position were confirmed cleared to air -- proving the fix does not regress
+    the "genuinely nothing left to reach" retraction case it was never meant to touch.
+  - Not touched in the original `common/` reference source (read-only, upstream reference) -- this fix applies
+    only to the two ported platforms, the same policy already established for the mining well's tube-visibility
+    fix above.
+  - Verified with a forced `--no-build-cache clean` rebuild on both platforms and the full 25-test suite.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

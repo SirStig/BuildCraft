@@ -18,9 +18,11 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.util.LazyOptional;
@@ -56,6 +58,16 @@ import buildcraft.lib.tile.TileBC;
  *     {@code MjCapabilities.CONNECTOR} against the block entity <em>type</em> in
  *     {@code RegisterCapabilitiesEvent}. The {@link LazyOptional} also has to be invalidated in
  *     {@link #invalidateCaps()}, which has no 26.x equivalent.</li>
+ * <li><b>Facing visibility</b> is fixed identically on this target -- see the 26.x class's own javadoc "Facing
+ *     visibility" entry for the full account (a real user report: wrenching an engine had no visible effect
+ *     because the placed {@link BlockState} never changed, only this tile's own {@link #currentDirection} field).
+ *     {@link #updateFacingBlockState(Direction)} is byte-identical in shape to the 26.x copy: both targets already
+ *     ship {@code BlockStateProperties.FACING}/{@code level.setBlock}/{@code Block.UPDATE_ALL} unchanged from each
+ *     other -- confirmed via {@code javap} -- the only real difference is 1.20.1's own field type,
+ *     {@code DirectionProperty} (a real subclass of {@code EnumProperty<Direction>} still present on this target),
+ *     where 26.x's {@code DirectionProperty} class no longer exists at all and {@code FACING} is typed a plain
+ *     {@code EnumProperty<Direction>} instead -- invisible to this file either way, since neither platform's code
+ *     names the field's static type explicitly.</li>
  * </ul>
  */
 public abstract class TileEngineBase extends TileBC implements IDebuggable, IEngineLikeForLedger {
@@ -151,6 +163,7 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
             if (isFacingReceiver(current)) {
                 if (currentDirection != current) {
                     currentDirection = current;
+                    updateFacingBlockState(current);
                     markDirtyAndSync();
                     if (level != null) {
                         level.updateNeighborsAt(getBlockPos(), getBlockState().getBlock());
@@ -165,6 +178,14 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
 
     private boolean isFacingReceiver(Direction dir) {
         return getReceiverToPower(dir) != null;
+    }
+
+    /** Pushes {@code facing} onto the placed {@link BlockState} itself -- see this class's own javadoc "Facing
+     * visibility" entry. */
+    private void updateFacingBlockState(Direction facing) {
+        if (level != null) {
+            level.setBlock(getBlockPos(), getBlockState().setValue(BlockStateProperties.FACING, facing), Block.UPDATE_ALL);
+        }
     }
 
     protected final boolean canChain() {
@@ -193,6 +214,7 @@ public abstract class TileEngineBase extends TileBC implements IDebuggable, IEng
     public void onPlacedBy(LivingEntity placer, ItemStack stack) {
         currentDirection = null; // Force rotateIfInvalid to always attempt to rotate
         rotateIfInvalid();
+        updateFacingBlockState(currentDirection);
     }
 
     public double getPowerLevel() {

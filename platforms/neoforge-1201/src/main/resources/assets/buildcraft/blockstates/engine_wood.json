@@ -1,7 +1,27 @@
 {
   "variants": {
-    "": {
+    "facing=north": {
       "model": "buildcraft:block/engine_wood"
+    },
+    "facing=east": {
+      "model": "buildcraft:block/engine_wood",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "buildcraft:block/engine_wood",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "buildcraft:block/engine_wood",
+      "y": 270
+    },
+    "facing=down": {
+      "model": "buildcraft:block/engine_wood",
+      "x": 90
+    },
+    "facing=up": {
+      "model": "buildcraft:block/engine_wood",
+      "x": 270
     }
   }
 }

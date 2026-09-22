@@ -270,9 +270,19 @@ public class TilePump extends TileMiner {
         updateLength();
     }
 
+    /** <b>Deviates from 1.12.2, which checked {@code queue.isEmpty()} here instead of {@link #paths}.</b> {@code
+     * queue} is only the not-yet-visited-this-round worklist of source blocks left to drain, so it empties out the
+     * instant {@link #nextPos()} dequeues the last (or only) candidate -- including the moment it becomes {@code
+     * currentPos} and is actively mid-drain, still perfectly valid. Checking it here meant the tube shaft never
+     * extended at all toward an isolated single-block source (confirmed live: an unpowered pump above one lone
+     * water source resolved a correct {@code currentPos} but kept reporting {@code wantedLength: 0} forever), and
+     * would retract one position early on any body's very last source block. {@link #paths} instead holds every
+     * position {@link #buildQueue0} confirmed reachable and is only trimmed via {@link #mine()}'s own {@code
+     * paths.remove(currentPos)} on a truly completed drain -- the right signal for "nothing left to reach at all".
+     */
     @Override
     protected BlockPos getTargetPos() {
-        if (queue.isEmpty()) {
+        if (paths.isEmpty()) {
             return null;
         }
         return targetPos;

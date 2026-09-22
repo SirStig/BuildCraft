@@ -21,6 +21,8 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.BlockHitResult;
 
 import buildcraft.api.blocks.ICustomRotationHandler;
@@ -37,11 +39,21 @@ import buildcraft.core.tile.TileEngineCreative;
  * a block's own interaction hook ever runs. The one real difference from the 26.x class is that 1.20.1 keeps a
  * single {@link #use} rather than the {@code useItemOn}/{@code useWithoutItem} split, and
  * {@link #neighborChanged} still carries {@code fromPos}/{@code isMoving} rather than an {@code Orientation}.
+ *
+ * <p>{@link BlockStateProperties#FACING} is declared here identically to the 26.x class -- see
+ * {@code BlockEngineWood}'s own javadoc and {@code TileEngineBase}'s "Facing visibility" entry for the full
+ * account of the fix this closes.
  */
 public class BlockEngineCreative extends BlockBCTile implements ICustomRotationHandler {
 
     public BlockEngineCreative(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING, Direction.UP));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(BlockStateProperties.FACING);
     }
 
     @Override
