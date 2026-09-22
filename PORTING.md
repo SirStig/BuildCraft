@@ -1006,6 +1006,85 @@ Deliberately not ported, with reasons:
   standalone-API-jar mechanism that no longer exists. Where a package needed real
   documentation it got a new one, such as `buildcraft.api.core`.
 
+- **`buildcraft.factory` — started: `BlockChute`/`TileChute` (both platforms), the first file this port has
+  touched in this module, and the first machine anywhere in the port with a real, working item inventory other
+  blocks can insert into and extract from.** Landing it closes a loop several sessions old:
+  `buildcraft.lib.tile.item.ItemHandlerManager#getHandlerForFace(Direction)` had no caller until now, and its own
+  class javadoc named "a tile's `RegisterCapabilitiesEvent` lookup function" as exactly the thing that would
+  eventually call it -- `BCFactoryRegistries`' new `registerCapabilities` listener is that caller. Verified with
+  forced rebuilds, the full test suite, real dedicated-server boots on both targets, **and real, observed
+  gameplay via RCON on both**: a dropped item summoned above a placed chute was pulled in and pushed into a
+  neighbouring hopper -- confirmed by reading the hopper's `Items` NBT afterward (`minecraft:diamond` on 26.x,
+  `minecraft:netherite_ingot` on 1.20.1) and confirming the dropped item entity was gone and never reappeared
+  anywhere nearby. `data get block` on the placed chute also confirmed `ItemHandlerManager`/`ItemHandlerSimple`'s
+  NBT round-trip is correct on both targets (`inv: {stacks: [...]}` on 26.x's `ValueInput`/`ValueOutput` shape,
+  `inv_manager: {inv: {items: [...]}}` on 1.20.1's `CompoundTag` shape), and that the battery-driven progress
+  timer ticks and resets correctly in real time.
+  - **New capability: `buildcraft.api.inventory.ItemTransactorCapabilities`, one per target, declaring only the
+    BuildCraft-native `IItemTransactor` half of 1.12.2's `CapUtil.CAP_ITEM_TRANSACTOR`/`CAP_ITEMS` pair.** The
+    vanilla-interop half does not need declaring on either target: checked via `javap` against the real
+    NeoForge universal jar, 26.x already ships `Capabilities.Item.BLOCK`
+    (`BlockCapability<ResourceHandler<ItemResource>, Direction>`) and `Capabilities.Item.ENTITY`/
+    `ENTITY_AUTOMATION` (the entity-capability equivalents) as its own built-in tokens -- confirmed by reading
+    `CapabilityHooks` in the NeoForge sources jar, which registers `Capabilities.Item.BLOCK` for every vanilla
+    container block entity (chests, hoppers, furnaces, ...) and `Capabilities.Item.ENTITY_AUTOMATION` for
+    minecart-type entities already. `ItemHandlerManager#getHandlerForFace` already returns exactly that
+    `ResourceHandler<ItemResource>` shape (confirmed by its own return type), so 26.x never needed an
+    `IItemHandler`-shaped bridge at all -- the port's earlier engine-subsystem finding that NeoForge dropped
+    `IItemHandler` in favour of `ResourceHandler<T>`/`Transaction` turned out to apply to items exactly as it did
+    to energy, with NeoForge itself supplying the "vanilla items" half of the pair this time, not just BuildCraft's
+    own MJ-to-RF bridge. On 1.20.1 the vanilla-interop half is `ForgeCapabilities.ITEM_HANDLER`, already used by
+    that target's `ItemHandlerManager`. `ItemTransactorCapabilities` (1.20.1) still needs an
+    `event.register(IItemTransactor.class)` call wired into `BCFactoryRegistries.register`, matching
+    `MjCapabilities`' own precedent for why 1.20.1 needs an explicit declaration where 26.x does not
+    (`@CapabilityInject` is gone).
+  - **`ItemTransactorHelper` (both platforms) is a trimmed port**: only `getTransactor`/`move`, all
+    `TileChute` calls. `getInjectable`/`wrapInjectable`/`insertAllBypass` are dropped -- they exist only for
+    `buildcraft.api.transport.IInjectable`/`PipeApi`, both belonging to the entirely unported `transport` module,
+    the same "not needed for this task's real caller" scope note `ItemMarkerConnector` already established for
+    its own deferred sub-feature. `createDroppingTransactor` is dropped for the same reason (no caller anywhere
+    in this port). On 26.x, 1.12.2's single `getTransactor(ICapabilityProvider, EnumFacing)` had to split into two
+    overloads -- `getTransactor(Level, BlockPos, Direction)` for a neighbouring block entity (the same
+    `level.getCapability(BlockCapability, BlockPos, Direction)` idiom `TileEngineBase#getReceiverToPower` already
+    established) and `getTransactor(Entity, Direction)` for a neighbouring entity (`Entity#getCapability
+    (EntityCapability, Direction)`, confirmed via `javap`) -- because there is no common `ICapabilityProvider`
+    supertype left for both to share. 1.20.1 keeps the original single signature unchanged, since both
+    `BlockEntity` and `Entity` still extend `CapabilityProvider` there (confirmed via `javap`). `move`'s
+    `boolean simulate` parameter is rebuilt on nested `Transaction`s on 26.x, the same "peek in a throwaway
+    transaction, then commit only what really moved" trick `AbstractInvItemTransactor` already uses for its own
+    all-or-nothing insert; 1.20.1's copy keeps 1.12.2's shape unchanged, `boolean simulate` included.
+  - **`TileChute`'s `hasInventoryAtPosition` and `BlockChute`'s per-side `CONNECTED_MAP` blockstate are dropped
+    outright, not ported.** 1.12.2's `CONNECTED_MAP` was a purely cosmetic "this face visually touches an
+    inventory" indicator synthesised in `getActualState`, which no longer exists at all (see the structural-
+    changes list) -- and, unlike `TileMarkerVolume`'s `ACTIVE` property (which mattered for connection *logic*),
+    nothing reads `CONNECTED_MAP` for gameplay purposes and there is no renderer to show the visual distinction
+    either way, so it is dropped rather than reproduced as an always-pushed real blockstate. `hasInventoryAtPosition`
+    was `CONNECTED_MAP`'s only caller and goes with it.
+  - **`onBlockActivated`'s GUI is dropped -- the first genuinely new kind of GUI deferral in this port.** Nothing
+    ported so far has a GUI/container framework at all (`buildcraft.lib.gui` is entirely unported), so every
+    earlier GUI-adjacent deferral (`ItemMarkerConnector`'s volume-box editor, `TileEngineCreative`'s wrench-cycle
+    feature) never actually needed one either. A chute is the first block that would have. Right-clicking one is
+    simply a no-op for now -- no override at all, rather than a `InteractionResult.PASS` stand-in that implies a
+    GUI is coming back soon.
+  - **No custom `VoxelShape`, despite the real 1.12.2 model being a genuine stepped funnel, not a cube.** The
+    model (`buildcraft_resources/assets/buildcraftfactory/models/block/chute.json`, seven stacked boxes) is
+    ported faithfully as a real block model. But nothing in this pass needs collision fidelity to match: item
+    pickup scans an `AABB` sitting *above* the block (`BoundingBoxUtil.extrudeFace`), never the block's own
+    volume, so a full-cube collision/light-occlusion shape costs nothing functionally, and a faithful rotated
+    composite shape across all six facings would be real extra engineering for a purely cosmetic gap with no
+    Java renderer to show it off either way -- the same call `BlockEngineWood` already made for its own non-cube
+    1.12.2 render type. `BlockBehaviour.Properties#noOcclusion()`, set where the block is registered, keeps the
+    one non-cosmetic half of 1.12.2's `isOpaqueCube() -> false` (light does not treat the block as a full
+    occluder) without needing the shape override.
+  - Registered in a new `BCFactoryRegistries` (mirroring `BCCoreRegistries`'s structure exactly) on both
+    platforms, wired into each platform's `BuildCraft.java` mod constructor alongside the existing
+    `BCRegistries.register(modBus)` call (a new top-level registration entry point, since `buildcraft.factory`
+    has never needed one before). Textures/models/blockstate/loot table/lang/recipe pulled or written from
+    `buildcraft_resources/assets/buildcraftfactory/`, following `BlockPowerConsumerTester`/`BlockEngineWood`'s
+    established pattern -- same `buildcraft:chute` single-mod-id convention every other block in this port
+    already uses, even though the source assets still live under the old per-module `buildcraftfactory`
+    resource tree.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1024,7 +1103,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 49 | Pump, mining well, tank, autoworkbench. |
+| `buildcraft.factory` | 49 | Chute (done). Pump, mining well, tank, autoworkbench. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
@@ -1315,6 +1394,8 @@ These are the traps when porting a file to both at once.
 | Wearable/armor items | `ArmorItem` doesn't exist (confirmed via `javap`); a helmet is a plain `Item` carrying a `DataComponents.EQUIPPABLE` (`Equippable`) component, which has no defense field at all -- defense needs a separate, opt-in `ItemAttributeModifiers` component that `ItemGoggles` simply never adds | `ArmorItem`/`ArmorMaterial` still exist; `ArmorMaterial` is a plain interface (`getDefenseForType`/`getDurabilityForType`/...) `ArmorItem`'s constructor reads to build its `Attributes.ARMOR` modifiers -- Forge's old `ISpecialArmor` side interface is gone (confirmed via `javap`: class not found), so a zero-defense item implements `ArmorMaterial` itself with every value zeroed instead of overriding a side hook |
 | World-gen `Feature` shape | interface, implemented directly by a record carrying its own config + `codec()`; `ConfiguredFeature` class is gone (confirmed via `javap`: class not found). `Registries.FEATURE_TYPE` (static) holds the codec, `Registries.FEATURE` (datapack) holds the configured instance | classic `Feature<FC>` abstract class + separate `ConfiguredFeature<FC, Feature<FC>>` datapack wrapper. `Registries.FEATURE` (static) holds the bare `Feature<FC>`, `Registries.CONFIGURED_FEATURE` (datapack) holds the type+config pair |
 | Biome-modifier registry/type namespace | `net.neoforged.neoforge.common.world.BiomeModifiers`; registry key `neoforge:biome_modifier`; stock "add features" type id `neoforge:add_features` | `net.minecraftforge.common.world.ForgeBiomeModifiers`; registry key `forge:biome_modifier`; stock "add features" type id `forge:add_features` |
+| Vanilla-interop item capability | `Capabilities.Item.BLOCK` (block entity) / `Capabilities.Item.ENTITY_AUTOMATION` (entity) -- both `ResourceHandler<ItemResource>`-shaped, NeoForge's own tokens, auto-registered for every vanilla container and minecart-type entity (confirmed via `CapabilityHooks` in the NeoForge sources jar) | `ForgeCapabilities.ITEM_HANDLER` -- one token, `IItemHandler`-shaped, works identically for a `BlockEntity` or an `Entity` since both still implement `ICapabilityProvider` |
+| Neighbour capability lookup | `Level#getCapability(BlockCapability<T,C>, BlockPos, C)` for a block position; `Entity#getCapability(EntityCapability<T,C>, C)` for an entity -- two different call shapes, no common supertype | `provider.getCapability(Capability<T>, Direction)` (returns `LazyOptional<T>`) -- one shape, works on both `BlockEntity` and `Entity` |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

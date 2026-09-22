@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_chute",
+  "pattern": [
+    "ici",
+    "igi",
+    " i "
+  ],
+  "key": {
+    "i": {
+      "item": "minecraft:iron_ingot"
+    },
+    "c": {
+      "item": "minecraft:chest"
+    },
+    "g": {
+      "item": "buildcraft:gear_stone"
+    }
+  },
+  "result": {
+    "item": "buildcraft:chute",
+    "count": 1
+  }
+}

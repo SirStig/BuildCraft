@@ -39,6 +39,7 @@ public final class BuildCraft {
         LOGGER.info("BuildCraft {} starting up.", container.getModInfo().getVersion());
 
         BCRegistries.register(modBus);
+        BCFactoryRegistries.register(modBus);
         modBus.addListener(BCNetwork::register);
     }
 }
