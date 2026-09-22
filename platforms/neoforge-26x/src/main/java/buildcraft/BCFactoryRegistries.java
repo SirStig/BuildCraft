@@ -17,11 +17,18 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 
+import buildcraft.api.inventory.ItemTransactorCapabilities;
 import buildcraft.api.mj.MjCapabilities;
+import buildcraft.api.tiles.TilesAPI;
+
+import buildcraft.lib.inventory.AutomaticProvidingTransactor;
+import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.factory.block.BlockChute;
+import buildcraft.factory.block.BlockMiningWell;
+import buildcraft.factory.block.BlockTube;
 import buildcraft.factory.tile.TileChute;
-import buildcraft.lib.registry.BCRegistry;
+import buildcraft.factory.tile.TileMiningWell;
 
 /**
  * Registrations belonging to the old {@code buildcraftfactory} module -- the first ones. Mirrors
@@ -49,6 +56,29 @@ public final class BCFactoryRegistries {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileChute>> CHUTE_TYPE =
         REGISTRY.addBlockEntity("chute", TileChute::new, CHUTE);
 
+    /** Same default properties as {@link #CHUTE} -- see that field's own javadoc. */
+    public static final DeferredBlock<BlockMiningWell> MINING_WELL = REGISTRY.addBlockAndItem("mining_well", BlockMiningWell::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileMiningWell>> MINING_WELL_TYPE =
+        REGISTRY.addBlockEntity("mining_well", TileMiningWell::new, MINING_WELL);
+
+    /** No {@code BlockItem} ({@link BCRegistry#addBlock}, not {@code addBlockAndItem}) and an empty loot table --
+     * see {@link BlockTube}'s own javadoc for why. {@code strength(-1.0F, ...)} matches
+     * {@code BlockSpringWater}'s "always unbreakable" precedent; {@code noOcclusion()} keeps the one non-cosmetic
+     * half of 1.12.2's {@code isOpaqueCube()}/{@code isFullCube() -> false}. */
+    public static final DeferredBlock<BlockTube> TUBE = REGISTRY.addBlock("tube", BlockTube::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(-1.0F, 6_000_000.0F)
+            .sound(SoundType.METAL)
+            .noOcclusion()
+            .noLootTable());
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCFactoryRegistries::registerCapabilities);
@@ -64,5 +94,12 @@ public final class BCFactoryRegistries {
         event.registerBlockEntity(Capabilities.Item.BLOCK, CHUTE_TYPE.get(), (tile, side) -> tile.itemManager.getHandlerForFace(side));
         event.registerBlockEntity(MjCapabilities.RECEIVER, CHUTE_TYPE.get(), (tile, side) -> tile.mjReceiver);
         event.registerBlockEntity(MjCapabilities.READABLE, CHUTE_TYPE.get(), (tile, side) -> tile.mjReceiver);
+
+        event.registerBlockEntity(MjCapabilities.RECEIVER, MINING_WELL_TYPE.get(), (tile, side) -> tile.mjReceiver);
+        event.registerBlockEntity(MjCapabilities.READABLE, MINING_WELL_TYPE.get(), (tile, side) -> tile.mjReceiver);
+        // See TileMiner's own javadoc for why this reads the isComplete() method, not a mirrored field.
+        event.registerBlockEntity(TilesAPI.HAS_WORK, MINING_WELL_TYPE.get(), (tile, side) -> () -> !tile.isComplete());
+        event.registerBlockEntity(ItemTransactorCapabilities.ITEM_TRANSACTOR, MINING_WELL_TYPE.get(),
+            (tile, side) -> AutomaticProvidingTransactor.INSTANCE);
     }
 }

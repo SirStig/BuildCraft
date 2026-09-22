@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_mining_well",
+  "pattern": [
+    "iri",
+    "igi",
+    "ipi"
+  ],
+  "key": {
+    "i": "minecraft:iron_ingot",
+    "r": "minecraft:redstone",
+    "g": "buildcraft:gear_iron",
+    "p": "minecraft:iron_pickaxe"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:mining_well"
+  }
+}

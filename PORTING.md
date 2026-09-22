@@ -1085,6 +1085,117 @@ Deliberately not ported, with reasons:
     already uses, even though the source assets still live under the old per-module `buildcraftfactory`
     resource tree.
 
+- **`buildcraft.factory` — `BlockMiningWell`/`TileMiner`/`TileMiningWell` and the cosmetic `BlockTube` shaft it
+  digs through (both platforms), plus a trimmed `buildcraft.lib.misc.BlockUtil` and `InventoryUtil#addToBestAcceptor`
+  built specifically to support them.** The mining well digs straight down from its own position, one block at a
+  time, powered by MJ, laying `tube` blocks behind it and inserting whatever it digs up into the best nearby
+  inventory. Verified with forced rebuilds, the full test suite, real dedicated-server boots on both targets, and
+  a real, observed, full dig-and-deposit cycle via RCON on **both**: a well placed above a solid stone column with
+  its battery hand-filled via `data merge block` dug six full blocks down in real time, laying six `tube` blocks
+  behind it, and deposited six `minecraft:cobblestone` into a neighbouring hopper (confirmed by reading the
+  hopper's `Items` NBT afterward) -- and, on both targets, breaking the mining well itself afterward
+  (`setblock ... minecraft:air destroy`) correctly turned every one of those six `tube` blocks back to air,
+  confirming the shaft-retraction hook fires (and reaches the right tile) on each platform's own real removal
+  path. Real-time RCON testing against an idle dedicated server (no player connected) is workable but has a hard
+  practical limit worth recording for next time: the world ticks close to real-time for a few seconds after any
+  RCON command lands, then the server goes fully idle and `time query gametime` freezes solid -- `/tick query`
+  still reports "running normally" throughout, so it is not a freeze the game itself reports; the fix that worked
+  here was re-sending `data merge block ... {battery:...}` in a loop from the test script rather than trying to
+  wait out a single long sleep.
+  - **`BlockUtil` is a ~550-line-to-4-method trim, same discipline as `ItemTransactorHelper`'s own trim**:
+    `computeBlockBreakPower`, `isUnbreakableBlock`, `getFluidWithFlowing` and `breakBlockAndGetDrops` are the only
+    four `TileMiner`/`TileMiningWell` actually call; nothing else came along for the ride.
+    `breakBlockAndGetDrops` loses its `GameProfile owner`/`boolean grabAll` parameters and the entire
+    `FakePlayer`/`BreakEvent`/`getFakePlayerWithTool` apparatus 1.12.2 built around them: confirmed by decompiling
+    the real `Level#destroyBlock`/`Block#getDrops` out of the merged jar (via Vineflower, extracted to scratch
+    space, never into the repo), modern `Block.getDrops(state, serverLevel, pos, blockEntity, breakingEntity,
+    tool)` computes a block's loot straight from a `LootParams` built out of the position and tool -- no player
+    object, fake or otherwise, required at all -- so `breakBlockAndGetDrops` is now just "compute drops, then
+    `level.destroyBlock(pos, false)`" (`false` so vanilla does not *also* spawn the drops as item entities; the
+    caller already has the `List<ItemStack>` and inserts it directly via `addToBestAcceptor`). The one real
+    behavioural loss: no `BreakEvent` is posted any more, so a protection mod that only listens for that event
+    cannot see or cancel a mining well digging through a claim -- accepted for this pass rather than building
+    mod-compat event plumbing nothing in this port needs yet. `getFluidWithFlowing` returns a real
+    `net.minecraft.world.level.material.FluidState` instead of reconstructing 1.12.2's Forge `Fluid`: a position's
+    fluid (source or flowing, either one) is just `BlockState#getFluidState()` now, no `IFluidBlock`/
+    `BlockFluidBase` abstraction to rebuild; the viscosity number `TileMiningWell#canBreak` gates flowing-lava on
+    is `fluidState.getType().getFluidType().getViscosity(fluidState, level, pos)`, confirmed via `javap` on both
+    targets (`net.neoforged.neoforge.fluids.FluidType`/`net.minecraftforge.fluids.FluidType`, both carrying a
+    position-aware `getViscosity` overload). `isUnbreakableBlock` drops its owner parameter along with the
+    player-relative-hardness detour it existed for, collapsing to `state.getDestroySpeed(level, pos) < 0` --
+    1.12.2's own bottom-line check for bedrock and friends, reached directly instead of through a fake player.
+  - **`InventoryUtil#addToBestAcceptor` lands, correcting that class's own stale "not ported yet" javadoc note**
+    (it named the missing `ItemTransactorHelper`/`CapUtil` this session's chute pass already built). Only does
+    the `IItemHandler`-equivalent half of 1.12.2's version -- the `IInjectable` (pipe) half is not ported, since
+    `buildcraft.transport` itself is not ported at all yet, the same gap `ItemTransactorHelper`'s own javadoc
+    already noted for its dropped `getInjectable`/`wrapInjectable`.
+  - **`TileMiner`/`TileMiningWell` drop every render-only field from 1.12.2's `TileMiner`** (`currentLength`,
+    `lastLength`, `getLength`, `getPercentFilledForRender`, `hasFastRenderer`, both render-distance overrides,
+    and the whole `world.isRemote` client-interpolation branch that opened `update()`) -- there is no renderer in
+    this port yet to consume any of them, the same "no renderer to serve it" call already made for
+    `TileEngineBase`'s dropped progress animation. `wantedLength` survives as a plain server-side field, since
+    `updateLength()` still needs it to notice when the dig target moved. `IdAllocator`/`TileBC_Neptune.IDS`/
+    `NET_LED_STATUS`/`NET_WANTED_Y` and the `onLoad` random stagger they needed are dropped with the id-tagged
+    payload system, matching `TileEngineWood`'s own precedent. `migrateOldNBT` is not ported -- no old saves to
+    migrate from.
+  - **A real, verified bug fix, not just a straight port: `TilesAPI.HAS_WORK`'s capability instance now reads
+    `!isComplete()` (the method) instead of reproducing 1.12.2's `() -> !isComplete` (the *field*).** On the
+    server, 1.12.2's `isComplete` field was only ever written by a client-only network handler
+    (`readPayload`) -- nothing server-side ever assigned it, so it stayed permanently `false`, and the capability
+    lambda was therefore permanently `true` regardless of whether the miner had actually finished digging. Almost
+    certainly an artifact of the field/method name collision with `isComplete()` (the method), which computed the
+    real, server-authoritative answer (`currentPos == null`) but was never what the capability actually read.
+    Dropping the now-pointless client-mirror field and wiring the capability to the method instead is a
+    correction, not a divergence -- worth a human double-check given the reasoning is inferred from reading the
+    code rather than from an upstream changelog admitting the bug.
+  - **`IWorldEventListener`/`WorldEventListenerAdapter` (`TileMiningWell`'s `worldEventListener`, 1.12.2's
+    "wake up instantly on any block change anywhere" optimization on top of its periodic `SafeTimeTracker` poll)
+    has no cheap modern replacement and is dropped outright, not reproduced.** Confirmed via `javap`: `Level`
+    carries no `addListener`/`EventListener` method of any kind on either target any more, and neither
+    NeoForge/Forge nor vanilla exposes a global "any block changed" bus event to hook once in its place (only
+    per-position hooks like `neighborChanged`, which would need registering on every block type in the game to
+    reproduce the old behaviour). The periodic `SafeTimeTracker(256)` poll already there as the real fallback
+    either way covers the same ground, just with up to ~12.8 more seconds of latency noticing a block manually
+    placed or removed in the miner's own dig column -- not a functional regression.
+  - **`BlockTube#removedByPlayer` doesn't exist on either target any more at all** -- confirmed via `javap`
+    against both `Block` and `BlockBehaviour` on both the 26.x and 1.20.1 merged jars: zero matches, the hook is
+    gone outright, not renamed. 1.12.2 layered two mechanisms: `setBlockUnbreakable()` (hardness -1, blocking
+    survival breaking) and `removedByPlayer` additionally refusing creative-mode insta-mine specifically while a
+    `TileMiner` still stood above the shaft (insta-mine bypasses hardness). With the conditional half's hook
+    gone, this port collapses to the unconditional half alone (`strength(-1.0F, ...)`, matching
+    `BlockSpringWater`'s "always unbreakable" precedent) -- accepted because `TileMiner`'s own shaft-retraction
+    logic (next bullet) already guarantees a tube block is never left orphaned (with no `TileMiner` above it) in
+    normal play, the only case the dropped conditional half ever actually mattered for. `tube` also carries no
+    `BlockItem` at all -- the first block in this port registered that way, via a new `BCRegistry#addBlock`
+    (additive alongside `addBlockAndItem`) -- and an empty loot table via `Properties#noLootTable()` rather than
+    a JSON file, since a player is never meant to obtain it directly.
+  - **1.12.2's `TileMiner#onRemove()`/`BlockBCTile_Neptune#breakBlock` (the shaft-retraction hook) reaches two
+    genuinely different modern hooks per platform, not the same one with a different name.** Confirmed by
+    decompiling the real `LevelChunk#setBlockState` out of each merged jar (Vineflower, scratch space only): on
+    26.x, `BlockEntity#preRemoveSideEffects(BlockPos, BlockState)` is a hook that did not exist at all on 1.20.1
+    -- it fires directly on the tile, while it is still valid, and is called *before* the block entity is removed
+    from the level, which is exactly where 1.12.2's `TileBC_Neptune#onRemove()` used to fire from. On 1.20.1,
+    there is no such `BlockEntity` hook; `Block#onRemove(state, level, pos, newState, movedByPiston)` still
+    exists (confirmed unchanged via `javap`) and still runs while the old block entity is still valid, so
+    `BlockMiningWell#onRemove` calls the tile's cleanup method directly instead -- the same `Block`-drives-
+    `BlockEntity` shape 1.12.2's own `BlockBCTile_Neptune#breakBlock`/`TileBC_Neptune#onRemove()` pair used, just
+    now needed only on the one platform that lost the tile-level hook. This divergence was already flagged in
+    the "Things that differ between our two targets" table below the previous chute session added it for a
+    different reason -- confirmed still accurate and now has a second, independent real caller.
+  - No `owner` field on `TileMiningWell`, unlike `TileChute`/`TileEngineWood`: 1.12.2's `getOwner()` fed a
+    `GameProfile` into `breakBlockAndGetDrops` purely to build a `FakePlayer`, and this port's version needs no
+    such thing (see above) -- there is no advancement to unlock and no fake player to attribute the break to, so
+    there is nothing left for an owner field to feed. A deliberate divergence from the pattern the task briefing
+    suggested, made after confirming the technical need it existed for is gone, not a shortcut.
+  - Registered in the existing `BCFactoryRegistries` (additive, mirroring `CHUTE`'s registration exactly for
+    `mining_well`; `tube` has no item and no ticker). Textures/models/blockstate/loot table/lang/recipe pulled
+    from `buildcraft_resources/assets/buildcraftfactory/`. One real asset finding worth flagging: the shipped
+    1.12.2 `tube.json` block model is a degenerate zero-size element (`"from": [8,8,8], "to": [8,8,8]`) textured
+    with plain `minecraft:blocks/stone` -- i.e. the tube block was never actually visible in 1.12.2 either
+    (underground, in a hole its own removal destroys almost immediately, so nobody noticed). Ported faithfully
+    rather than "fixed" with the unused `mining_well/tube.png`/`pump/tube.png` art assets sitting in
+    `buildcraft_resources` but referenced by no model anywhere in the shipped resource pack.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1103,7 +1214,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 49 | Chute (done). Pump, mining well, tank, autoworkbench. |
+| `buildcraft.factory` | 49 | Chute, mining well + tube (done). Pump, tank, autoworkbench. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
@@ -1396,6 +1507,7 @@ These are the traps when porting a file to both at once.
 | Biome-modifier registry/type namespace | `net.neoforged.neoforge.common.world.BiomeModifiers`; registry key `neoforge:biome_modifier`; stock "add features" type id `neoforge:add_features` | `net.minecraftforge.common.world.ForgeBiomeModifiers`; registry key `forge:biome_modifier`; stock "add features" type id `forge:add_features` |
 | Vanilla-interop item capability | `Capabilities.Item.BLOCK` (block entity) / `Capabilities.Item.ENTITY_AUTOMATION` (entity) -- both `ResourceHandler<ItemResource>`-shaped, NeoForge's own tokens, auto-registered for every vanilla container and minecart-type entity (confirmed via `CapabilityHooks` in the NeoForge sources jar) | `ForgeCapabilities.ITEM_HANDLER` -- one token, `IItemHandler`-shaped, works identically for a `BlockEntity` or an `Entity` since both still implement `ICapabilityProvider` |
 | Neighbour capability lookup | `Level#getCapability(BlockCapability<T,C>, BlockPos, C)` for a block position; `Entity#getCapability(EntityCapability<T,C>, C)` for an entity -- two different call shapes, no common supertype | `provider.getCapability(Capability<T>, Direction)` (returns `LazyOptional<T>`) -- one shape, works on both `BlockEntity` and `Entity` |
+| Fluid viscosity (1.12.2's `Fluid#getViscosity()`) | `net.neoforged.neoforge.fluids.FluidType#getViscosity(FluidState, BlockAndLightGetter, BlockPos)`, reached via `fluid.getType().getFluidType()` | `net.minecraftforge.fluids.FluidType#getViscosity(FluidState, BlockAndTintGetter, BlockPos)`, same shape, reached the same way -- only the package and the `BlockGetter` supertype name differ |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

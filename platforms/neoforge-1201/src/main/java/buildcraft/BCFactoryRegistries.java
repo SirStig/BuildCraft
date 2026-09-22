@@ -17,9 +17,13 @@ import net.minecraftforge.registries.RegistryObject;
 
 import buildcraft.api.inventory.ItemTransactorCapabilities;
 
-import buildcraft.factory.block.BlockChute;
-import buildcraft.factory.tile.TileChute;
 import buildcraft.lib.registry.BCRegistry;
+
+import buildcraft.factory.block.BlockChute;
+import buildcraft.factory.block.BlockMiningWell;
+import buildcraft.factory.block.BlockTube;
+import buildcraft.factory.tile.TileChute;
+import buildcraft.factory.tile.TileMiningWell;
 
 /**
  * Registrations belonging to the old {@code buildcraftfactory} module -- the first ones. Mirrors
@@ -50,6 +54,29 @@ public final class BCFactoryRegistries {
 
     public static final RegistryObject<BlockEntityType<TileChute>> CHUTE_TYPE =
         REGISTRY.addBlockEntity("chute", TileChute::new, CHUTE);
+
+    /** Same default properties as {@link #CHUTE} -- see that field's own javadoc. */
+    public static final RegistryObject<BlockMiningWell> MINING_WELL = REGISTRY.addBlockAndItem("mining_well", () -> new BlockMiningWell(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileMiningWell>> MINING_WELL_TYPE =
+        REGISTRY.addBlockEntity("mining_well", TileMiningWell::new, MINING_WELL);
+
+    /** No {@code BlockItem} ({@link BCRegistry#addBlock}, not {@code addBlockAndItem}) and an empty loot table --
+     * see {@link BlockTube}'s own javadoc for why. {@code strength(-1.0F, ...)} matches
+     * {@code BlockSpringWater}'s "always unbreakable" precedent; {@code noOcclusion()} keeps the one non-cosmetic
+     * half of 1.12.2's {@code isOpaqueCube()}/{@code isFullCube() -> false}. */
+    public static final RegistryObject<BlockTube> TUBE = REGISTRY.addBlock("tube", () -> new BlockTube(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(-1.0F, 6_000_000.0F)
+            .sound(SoundType.METAL)
+            .noOcclusion()
+            .noLootTable()));
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);

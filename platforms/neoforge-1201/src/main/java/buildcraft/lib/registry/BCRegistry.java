@@ -79,6 +79,13 @@ public final class BCRegistry {
         return block;
     }
 
+    /** Registers a block with no {@code BlockItem} at all -- see the 26.x copy of this class for why
+     * {@code buildcraft.factory.block.BlockTube} needs this rather than {@link #addBlockAndItem}. Not added to
+     * the creative tab, for the same reason. */
+    public <B extends Block> RegistryObject<B> addBlock(String name, Supplier<? extends B> factory) {
+        return blocks.register(name, factory);
+    }
+
     // ###############
     //
     // Block entities

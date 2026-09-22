@@ -106,6 +106,20 @@ public final class BCRegistry {
         return addBlockAndItem(name, factory, UnaryOperator.identity());
     }
 
+    /** Registers a block with no {@code BlockItem} at all -- the 1.12.2 {@code addBlock} half of
+     * {@code RegistrationHelper} that {@code addBlockAndItem} always paired with an item. First needed by
+     * {@code buildcraft.factory.block.BlockTube}: a purely cosmetic shaft segment a player is never meant to
+     * obtain directly, so registering an item for it would just be dead weight (and a spurious creative-tab/
+     * recipe-book entry for something {@code noLootTable()} already guarantees never drops). Not added to the
+     * creative tab, for the same reason. */
+    public <B extends Block> DeferredBlock<B> addBlock(
+        String name,
+        Function<BlockBehaviour.Properties, ? extends B> factory,
+        UnaryOperator<BlockBehaviour.Properties> properties
+    ) {
+        return blocks.registerBlock(name, factory, properties);
+    }
+
     // ###############
     //
     // Block entities
