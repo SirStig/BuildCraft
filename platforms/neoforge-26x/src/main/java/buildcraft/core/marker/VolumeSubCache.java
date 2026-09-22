@@ -19,9 +19,12 @@ import net.minecraft.core.Direction.Axis;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 
+import buildcraft.lib.client.render.laser.LaserData_BC8.LaserType;
 import buildcraft.lib.marker.MarkerCache;
 import buildcraft.lib.marker.MarkerSubCache;
 import buildcraft.lib.net.MessageMarker;
+
+import buildcraft.core.client.BuildCraftLaserManager;
 
 /** Per-dimension state for volume markers.
  *
@@ -40,8 +43,8 @@ import buildcraft.lib.net.MessageMarker;
  * {@link BlockPos#relative(Direction, int)}. {@link MessageMarker}'s 1.12.2 mutable fields are this record's
  * accessors now -- see that class' own javadoc.
  *
- * <p>{@code getPossibleLaserType()} is dropped, not overridden -- the abstract method it used to override no
- * longer exists on {@link MarkerSubCache} at all (dropped there in an earlier pass; see that class' javadoc). */
+ * <p>{@link #getPossibleLaserType()} is back (see {@link MarkerSubCache}'s javadoc), returning the same
+ * {@code BuildCraftLaserManager} constant 1.12.2 did. */
 public class VolumeSubCache extends MarkerSubCache<VolumeConnection> {
     public VolumeSubCache(Level level) {
         super(level, MarkerCache.CACHES.indexOf(VolumeCache.INSTANCE));
@@ -110,6 +113,11 @@ public class VolumeSubCache extends MarkerSubCache<VolumeConnection> {
             }
         }
         return valids.build();
+    }
+
+    @Override
+    public LaserType getPossibleLaserType() {
+        return BuildCraftLaserManager.MARKER_VOLUME_POSSIBLE;
     }
 
     @Override

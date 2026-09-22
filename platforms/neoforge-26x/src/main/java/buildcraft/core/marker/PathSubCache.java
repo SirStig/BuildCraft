@@ -15,9 +15,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 
+import buildcraft.lib.client.render.laser.LaserData_BC8.LaserType;
 import buildcraft.lib.marker.MarkerCache;
 import buildcraft.lib.marker.MarkerSubCache;
 import buildcraft.lib.net.MessageMarker;
+
+import buildcraft.core.client.BuildCraftLaserManager;
 
 /** Per-dimension state for path markers.
  *
@@ -38,8 +41,8 @@ import buildcraft.lib.net.MessageMarker;
  * {@code BlockPos.distanceSq} is {@link BlockPos#distSqr(net.minecraft.core.Vec3i)} now.
  * {@link MessageMarker}'s 1.12.2 mutable fields are this record's accessors now -- see that class' own javadoc.
  *
- * <p>{@code getPossibleLaserType()} is dropped, not overridden -- the abstract method it used to override no
- * longer exists on {@link MarkerSubCache} at all (dropped there in an earlier pass; see that class' javadoc). */
+ * <p>{@link #getPossibleLaserType()} is back (see {@link MarkerSubCache}'s javadoc), returning the same
+ * {@code BuildCraftLaserManager} constant 1.12.2 did. */
 public class PathSubCache extends MarkerSubCache<PathConnection> {
     private static final int MARKER_MAX_DISTANCE = 64;
 
@@ -105,6 +108,11 @@ public class PathSubCache extends MarkerSubCache<PathConnection> {
             }
         }
         return list.build();
+    }
+
+    @Override
+    public LaserType getPossibleLaserType() {
+        return BuildCraftLaserManager.MARKER_PATH_POSSIBLE;
     }
 
     @Override

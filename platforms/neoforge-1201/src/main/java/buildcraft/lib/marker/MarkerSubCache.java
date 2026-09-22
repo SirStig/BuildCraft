@@ -33,6 +33,7 @@ import buildcraft.BCNetwork;
 import buildcraft.api.core.BCDebugging;
 import buildcraft.api.core.BCLog;
 
+import buildcraft.lib.client.render.laser.LaserData_BC8.LaserType;
 import buildcraft.lib.net.MessageMarker;
 import buildcraft.lib.tile.TileMarker;
 
@@ -43,10 +44,10 @@ import buildcraft.lib.tile.TileMarker;
  * ({@link ResourceKey}&lt;{@link Level}&gt;) now, and {@code World.isRemote} is {@link Level#isClientSide()}.
  * {@code EntityPlayerMP} is {@link ServerPlayer}.
  *
- * <p>{@link MarkerSubCache}'s 1.12.2 abstract {@code getPossibleLaserType()} returned a
- * {@code buildcraft.lib.client.render.laser.LaserData_BC8.LaserType}. Neither the rendering package nor a
- * renderer to call it for is ported yet, so the method is dropped outright rather than carried over with
- * nothing to call it -- it comes back with the rendering pass, alongside {@code LaserData_BC8} itself.
+ * <p>{@link #getPossibleLaserType()} is back, with the laser-rendering pass (it was dropped in the first marker pass
+ * for having nothing to call it). It was {@code @SideOnly(Side.CLIENT)} in 1.12.2; it needs no side guard here,
+ * because {@link LaserType} is a plain value class holding only {@code Identifier}s/{@code ResourceLocation}s and
+ * numbers -- naming one from common code never loads a client-only class.
  *
  * <p>1.12.2's {@code MessageManager.sendTo}/{@code sendToDimension} become
  * {@code PacketDistributor.PLAYER.with(...)}/{@code PacketDistributor.DIMENSION.with(...)} plus
@@ -280,6 +281,10 @@ public abstract class MarkerSubCache<C extends MarkerConnection<C>> {
     public abstract boolean canConnect(BlockPos a, BlockPos b);
 
     public abstract ImmutableList<BlockPos> getValidConnections(BlockPos from);
+
+    /** The laser drawn between two markers of this type that <em>could</em> be connected, while a player holds a
+     * marker connector -- see {@code buildcraft.core.client.render.RenderMarkerConnections}. */
+    public abstract LaserType getPossibleLaserType();
 
     public final void handleMessageMain(MessageMarker message) {
         if (handleMessage(message)) {

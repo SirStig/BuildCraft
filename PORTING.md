@@ -3676,6 +3676,151 @@ Deliberately not ported, with reasons:
   through the south face, crossed the cobblestone pipe and landed in the far chest, none went north, zero
   exceptions; 25/25 tests.
 
+- **The shared laser-rendering foundation (`buildcraft.lib.client.render.laser`, both platforms) and its first
+  consumer: marker lasers -- volume boxes, path lines, volume-marker "signals", and the marker connector's
+  "possible connection" preview.** 1.12.2's laser package (~1100 lines: `LaserData_BC8`, `LaserRenderer_BC8`,
+  `LaserContext`, `LaserBoxRenderer`, `CompiledLaserType`/`CompiledLaserRow`, `LaserCompiledList`/
+  `LaserCompiledBuffer`, `ILaserRenderer`) was the largest unported shared rendering dependency; the quarry, mining
+  well, builder and silicon laser all draw through it. Not transliterated -- its display-list/VBO/`BufferBuilder`
+  half has no counterpart on either target -- but the *geometry* it produced is reproduced quad-for-quad, the same
+  "re-express the legacy quad framework, keep the real output" call `RenderTileTank` made.
+  - **The API later consumers use** (identical shape on both platforms, only the draw call differs).
+    `LaserData_BC8(type, start, end, scale[, minBlockLight])` -- immutable value type with real
+    `equals`/`hashCode`, absolute world `Vec3` endpoints; `minBlockLight >= 15` is full-bright, exactly 1.12.2's
+    meaning. `LaserData_BC8.LaserType`/`LaserRow`/`LaserSide` keep 1.12.2's structure (cap-start / start /
+    cycling middle variations with per-side validity / end / cap-end rows, pixel rects on a 16px sprite, and the
+    "same layout, other sprite" copy constructor), except a row's sprite is now a plain block-atlas id
+    (`Identifier`/`ResourceLocation`) instead of a `SpriteHolderRegistry` `ISprite` -- so a `LaserType` is
+    common-safe and can be named from server code (`MarkerSubCache#getPossibleLaserType()` is back, returning
+    one). `LaserRenderer_BC8.compile(data)` -> `CompiledLaser` (world-light and atlas UVs resolved, positions stored
+    as `float` offsets from a `double` origin to avoid far-from-origin precision loss, world-space `bounds` for
+    frustum culling), cached exactly like 1.12.2's `COMPILED_STATIC_LASERS` (same key, same 5 s
+    expire-after-write, which also refreshes the baked light). Then 26.x:
+    `LaserRenderer_BC8.submit(SubmitNodeCollector, PoseStack, List<CompiledLaser>, Vec3 origin)` (one
+    `submitCustomGeometry` call); 1.20.1: `LaserRenderer_BC8.render(PoseStack, MultiBufferSource,
+    List<CompiledLaser>, Vec3 origin)`. `origin` is wherever the pose stack sits: the block entity's own
+    position in a `BlockEntityRenderer`, the camera position in a level event. On 26.x `compile` must run in
+    `extractRenderState` (it reads the level), `submit` in `submit`. `LaserBoxRenderer.makeLaserBox(Box|min,max,
+    type, center)` returns the (up to) 12 edge lasers. `buildcraft.core.client.BuildCraftLaserManager` declares
+    all 13 of 1.12.2's laser types with their exact row layouts (markers, stripes, the four animated power
+    colours) -- only the marker ones have a consumer yet.
+  - **Geometry, traced through the real compiled code** (a throwaway harness in the scratchpad calling
+    `CompiledLaser.compile` with an identity-UV sprite, not a hand simulation). 1.12.2's local frame is kept
+    exactly -- `rotZ(angleY)` then `rotY(angleZ)` from `LaserContext`, not an arbitrary basis, because the frame's
+    roll decides which face is TOP/BOTTOM/LEFT/RIGHT and the path laser puts different rows on different sides.
+    `MARKER_VOLUME_CONNECTED`, (0,0,0) -> (1,0,0), scale 1/16: length 16px, `lengthForMiddle = max(0, 16 - 16 -
+    16) = 0` so no middle segment, `lengthEnds = 16` split 8/8. 10 quads / 40 vertices: start cap at x=0 (normal
+    -X, corners (0, +-0.0625, +-0.0625), UV = the 2x2px cap rect 0..0.125), end cap at x=1 (normal +X, UV
+    0.875..1); four long faces x=0..0.5 at y/z = +-0.0625 (normals +Y, -Y, -Z, +Z) textured with the *right* half
+    of the start row (u 0.5..1, v 0..0.125); four faces x=0.5..1 with the *left* half of the end row (u 0..0.5,
+    v 0.875..1). A beam 2px square in cross-section, centred on the line. Re-run for +Z, -X, -Y and a
+    (3,2,1) diagonal at the real 1/16.05 marker scale: every cap normal is exactly -/+ the beam direction
+    (diagonal: (-0.8018, -0.5345, -0.2673)), middle segments tile every 16/16.05 = 0.997 blocks cycling rows
+    2..14px, bounds hug the line to +-0.0623.
+  - **Lighting and render type.** Per-vertex light is 1.12.2's `computeLightmap` using its non-smooth-lighting
+    branch (max of each light layer over the 3x3x3 blocks round the vertex) unconditionally -- deliberate: the
+    smooth branch sampled only the vertex's own block, so an edge running *through* terrain drew black. Memoised
+    per block during a compile. Drawn with the non-culling alpha-cutout entity type over the block atlas --
+    26.x `RenderTypes.entityCutout` (`RenderPipelines.ENTITY_CUTOUT`: `withCull(false)`, `ALPHA_CUTOUT 0.1`,
+    `PER_FACE_LIGHTING`), 1.20.1 `RenderType.entityCutoutNoCull` (both `javap`-confirmed). Every laser sprite
+    was checked pixel-by-pixel: alpha is only ever 0 or 255, so cutout reproduces 1.12.2's alpha-test draw.
+    **Simplified, deliberately:** 1.12.2 baked a per-face grey "diffuse" into the vertex colour; here the vertex
+    colour is white and real per-face normals drive the entity shader's own directional shading (baking both
+    would double-darken), and the `enableDiffuse`/`doubleFace` flags are gone (no-cull makes `doubleFace` moot).
+    The sprite's own U/V ranges are interpolated by hand (`getU0 + (getU1 - getU0) * f`) because
+    `TextureAtlasSprite#getU` changed meaning between the targets: 26.x takes a 0..1 fraction, 1.20.1 still
+    takes 0..16 (`javap`/decompiled source on both).
+  - **Getting non-model textures into the block atlas -- the classic silent failure.** Since 1.19.3 the atlas is
+    data-driven on both targets: `SpriteSourceList.load` (26.x; `SpriteResourceLoader` on 1.20.1) reads
+    `atlases/blocks.json` in the *atlas's* namespace via `ResourceManager#getResourceStack`, so a mod's
+    `assets/minecraft/atlases/blocks.json` is *merged* with vanilla's, not a replacement. Both platforms ship one
+    listing the 13 sprites as `{"type": "minecraft:single", "resource": "buildcraft:lasers/<name>"}` --
+    `single` rather than a `directory` source so no other mod's `textures/lasers/` gets pulled in; the JSON is
+    identical on both (1.20.1's `SpriteSources.TYPE_CODEC` is a `ResourceLocation` codec, so `minecraft:single`
+    parses there too; 26.x's `SingleFile.MAP_CODEC` keeps the same `resource` field). A registration event was
+    not needed (NeoForge's `RegisterSpriteSourcesEvent` only adds new source *types*). The 13 PNGs + 4 animation
+    `.mcmeta` files are byte-for-byte (`cmp`) copies of `buildcraft_resources/assets/buildcraftcore/textures/
+    lasers/`, now at `assets/buildcraft/textures/lasers/`. A post-stitch check (26.x `TextureAtlasStitchedEvent`,
+    1.20.1 `TextureStitchEvent.Post`) warns for any laser sprite that resolves to the missing sprite and logs
+    `[lib.laser] 13/13 laser sprites present in minecraft:textures/atlas/blocks.png` -- seen on both clients.
+  - **Render hooks, per platform, and why two different kinds.** Connection lasers (boxes, paths, the connector
+    preview) are drawn from a level-render event, as 1.12.2 did (`RenderWorldLastEvent` via `DetachedRenderer`/
+    `MarkerRenderer`/`RenderTickListener`): a connection isn't owned by one marker -- a box has up to 8 corners,
+    any of which may be in an unloaded chunk while the client cache still holds the connection -- so hanging it
+    off one marker's block entity would make it vanish whenever that one marker's section was culled. 26.x:
+    `ExtractLevelRenderStateEvent` (fired from `LevelExtractor`; gives the `ClientLevel`, `Camera`, `Frustum`)
+    compiles and frustum-culls, parks the list on the `LevelRenderState` under a `ContextKey`
+    (`BaseRenderState#setRenderData`), and `SubmitCustomGeometryEvent` (fired from `LevelRenderer#submitFeatures`
+    right after block entities/particles, with a fresh camera-relative `PoseStack`) submits it -- the same pair
+    NeoForge's own `BlockEntityRenderBoundsDebugRenderer` uses. `RenderLevelStageEvent` still exists on 26.x but
+    now hands out an already-open `RenderPass` and its own javadoc points custom geometry at
+    `SubmitCustomGeometryEvent`. 1.20.1: `RenderLevelStageEvent`, `Stage.AFTER_BLOCK_ENTITIES`, pose stack =
+    camera rotation only (origin = `event.getCamera().getPosition()`), into `renderBuffers().bufferSource()`
+    followed by an explicit `endBatch(renderType)`. Signal lasers stay a `BlockEntityRenderer`
+    (`RenderMarkerVolume`), exactly like 1.12.2's TESR: they belong to one loaded tile. 1.12.2's
+    `isGlobalRenderer`/`getMaxRenderDistanceSquared = 64*4*64` map to `shouldRenderOffScreen` and
+    `getViewDistance() = 128` on both; the render box is NeoForge's `IBlockEntityRendererExtension#
+    getRenderBoundingBox` on 26.x (sized to the 64-block reach) and needs nothing on 1.20.1, where Forge's
+    default `IForgeBlockEntity#getRenderBoundingBox` is already `INFINITE_EXTENT_AABB` for a block with an empty
+    collision shape (markers are `noCollission()`) -- which also means the 1.20.1 `TileMarkerVolume` javadoc's
+    "getRenderBoundingBox gone" is only true of 26.x. This BER is the first real exercise of the laser API through
+    both `BlockEntityRenderer` contracts, the shape the quarry/mining well/silicon laser will use.
+  - **Client sync -- a real gap found and closed.** `MessageMarker` already mirrored every marker/connection
+    *change* into the client cache, but `MarkerCache.onPlayerJoinWorld`/`onWorldUnload` had no caller at all: a
+    client only knew about connections made while it was watching (relog and every box was gone), and one world's
+    client cache survived into the next world joined with the same dimension key. New
+    `buildcraft.lib.marker.MarkerCacheEvents` (both dists, `@EventBusSubscriber`) ports 1.12.2's
+    `BCLibEventDist#onEntityJoinWorld`/`#onWorldUnload` onto `EntityJoinLevelEvent` (for a `ServerPlayer`, using
+    the event's level) and `LevelEvent.Unload`. 1.12.2 delayed the join send a tick; not needed now -- read in the
+    real `PlayerList`/`ServerPlayer` on both targets, `ServerLevel#addPlayer` (which fires the event) always runs
+    after the `ClientboundLoginPacket`/`ClientboundRespawnPacket` that creates the client level. Client-only
+    classes are registered with `@EventBusSubscriber(value = Dist.CLIENT)`; FML reads `value` from scan data
+    before `Class.forName` (`javap -c` on 26.x `AutomaticEventSubscriber`, which also routes each method to the
+    mod or game bus by `IModBusEvent`; 1.20.1's `Mod.EventBusSubscriber` has one `bus()` per class, so the atlas
+    check is a nested `bus = MOD` class there). The 1.20.1 server's debug log shows `MarkerCacheEvents`
+    auto-subscribed and `RenderMarkerConnections` absent; the client's shows both.
+  - **Verified in-game on both platforms, including on screen.** RCON against real dedicated servers (26.x on
+    the shared `run/server`; 1.20.1 from a private directory, see below), with a temporary self-registering debug
+    command (deleted -- `git status` clean of it) driving the real interactions through a `FakePlayer`: three
+    `buildcraft:marker_volume` at (1000,100,1000)/(1004,100,1000)/(1000,100,1003) linked by the real
+    `BlockMarkerVolume` use path (`onManualConnectionAttempt`) -> one connection, box 1000..1004 x 1000..1003, 4
+    edge lasers `(1000.5625,100.5,1000.5)->(1004.4375,100.5,1000.5)` etc. (flat box: `center` mode skips Y);
+    three `buildcraft:marker_path` linked by two real `ItemMarkerConnector#use` calls with the fake player
+    aimed along each pair -> one 3-marker path; a fourth volume marker's `showSignals: 0b` -> `1b` from a
+    `/setblock` redstone block (the real `neighborChanged` path); `[active=true]` on the interacted markers;
+    `save-all flush` then the gzipped `buildcraft_marker_{volume,path}.dat` decoded by hand showing exactly those
+    groupings -- identical results on both platforms. Then a real client (the Gradle run's own JVM command line,
+    re-run from a scratch game directory with `--quickPlayMultiplayer`) joined each server *after* all of that:
+    a temporary client hook (deleted) logged the client cache holding all 4+3 markers, both connections and
+    `signals=true` -- i.e. delivered purely by the new join sync -- and 6 connection lasers / 416 vertices
+    submitted per frame on 26.x; screenshots (`Screenshot.grab`, player `/tp`'d into view) show the red volume
+    box, the green path line and the six blue signal beams on both 26.x and 1.20.1, and with a marker connector in
+    hand the yellow/blue "possible" laser between two unlinked markers. Zero exceptions in all four logs; no
+    `Missing sprite` for any laser texture. **Environment finding**: 1.20.1's `BootstrapLauncher` dev run
+    discovers the mod from the `MOD_CLASSES` environment variable (`loader-47.2.2` reads it), not from
+    `-Dfml.modFolders` -- setting `MOD_CLASSES` to the same value makes a private-directory 1.20.1 server/client
+    load BuildCraft (the transport batch above saw the mod silently absent without it).
+  - **Not verified / scope cuts.** Fine visual fidelity against 1.12.2 side by side (no 1.12.2 client here) --
+    the screenshots show the right shapes, colours and placement, not a pixel comparison; the per-vertex light
+    in a dark area; performance with many large boxes. Not ported: `ItemMapLocation`'s held-item lasers (the item
+    isn't ported), the quarry/builder/filler/mining-well/silicon-laser consumers (they now only need a
+    renderer), 1.12.2's AO-dependent light branch and baked diffuse (above). Known pre-existing gap, untouched:
+    markers joined by `onManualConnectionAttempt` other than the clicked one don't get `ACTIVE` refreshed
+    (documented in `TileMarkerVolume`'s javadoc) -- the lasers don't depend on it.
+  - **Files, both platforms.** New: `lib/client/render/laser/{LaserData_BC8,CompiledLaser,LaserRenderer_BC8,
+    LaserBoxRenderer}.java`, `core/client/{BuildCraftLaserManager,BCCoreClientRegistries}.java`,
+    `core/client/render/{RenderMarkerVolume,RenderMarkerConnections}.java`, `lib/marker/MarkerCacheEvents.java`,
+    `assets/minecraft/atlases/blocks.json`, `assets/buildcraft/textures/lasers/*` (13 PNG + 4 mcmeta). Modified:
+    `lib/marker/MarkerSubCache` (`getPossibleLaserType` back, javadoc), `core/marker/{Volume,Path}SubCache`
+    (implement it), `core/marker/VolumeConnection` (`MARKER_MAX_DISTANCE` public, javadoc),
+    `core/marker/PathConnection` (javadoc), `BuildCraft.java` (one line in the client-only block,
+    `modBus.addListener(buildcraft.core.client.BCCoreClientRegistries::registerRenderers);`, fully qualified so
+    no import line was needed). Nothing in `buildcraft.transport`/`energy`/`factory` touched.
+  - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` (in an
+    `rsync` snapshot of the working tree, as the transport batch did, since `clean` in the shared tree would
+    delete the `build/classes` other agents' running dev servers load from), the full 25-test suite (25/25 in
+    both the snapshot and the shared tree), plus the server/client runs above.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

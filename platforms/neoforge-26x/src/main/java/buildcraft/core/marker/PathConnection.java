@@ -23,9 +23,12 @@ import buildcraft.lib.marker.MarkerSubCache;
  *
  * <p>{@code Vec3d} is {@link net.minecraft.world.phys.Vec3} elsewhere in this port, but this file no longer needs
  * it at all: {@link #renderInWorld()}, {@code renderLaser} and {@code offset} were the only methods that touched
- * it, and all three were pure rendering. {@link #renderInWorld()} is an empty override instead, not the
- * laser-drawing 1.12.2 had: {@code buildcraft.lib.client.render.laser} and
- * {@code buildcraft.core.client.BuildCraftLaserManager} are both unported rendering code. See
+ * it, and all three were pure rendering. {@link #renderInWorld()} is an empty override instead: the path lasers
+ * (1.12.2's {@code renderLaser}/{@code offset}, reproduced exactly) are drawn by
+ * {@code buildcraft.core.client.render.RenderMarkerConnections} from {@link #getMarkerPositions()} -- which already
+ * repeats the first position at the end for a loop, so consecutive pairs of it are exactly the segments 1.12.2's
+ * {@code renderInWorld} drew, closing segment included. See {@code VolumeConnection}'s javadoc for why the drawing
+ * lives in that one client-only class rather than here. See
  * {@link MarkerConnection#renderInWorld()}'s own class javadoc for why this method exists as a plain (not
  * {@code @SideOnly}) override at all. */
 public class PathConnection extends MarkerConnection<PathConnection> {
@@ -207,6 +210,6 @@ public class PathConnection extends MarkerConnection<PathConnection> {
 
     @Override
     public void renderInWorld() {
-        // Rendering deferred -- see the class javadoc.
+        // Drawn by buildcraft.core.client.render.RenderMarkerConnections -- see the class javadoc.
     }
 }

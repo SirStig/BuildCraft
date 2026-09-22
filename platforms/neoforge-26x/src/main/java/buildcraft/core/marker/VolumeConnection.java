@@ -29,15 +29,19 @@ import buildcraft.lib.misc.data.Box;
  * old Forge {@code Property}/{@code Configuration} API redesigned before it can be ported (see PORTING.md's
  * deferred-config entry) -- {@code 64} is that config's own 1.12.2 default
  * ({@code config.get(general, "markerMaxDistance", 64)}), not a new value chosen for this port.
- * {@link VolumeSubCache#getValidConnections(BlockPos)} needs the same constant, so it stays package-visible
- * rather than private.
+ * {@link VolumeSubCache#getValidConnections(BlockPos)} and the client-side signal-laser renderer
+ * ({@code buildcraft.core.client.render.RenderMarkerVolume}, which draws exactly this far) both need the same
+ * constant, so it is public rather than private.
  *
- * <p>{@link #renderInWorld()} is an empty override, not the laser-drawing 1.12.2 had: {@code
- * buildcraft.lib.client.render.laser} and {@code buildcraft.core.client.BuildCraftLaserManager} are both
- * unported rendering code. See {@link MarkerConnection#renderInWorld()}'s own class javadoc for why this method
- * exists as a plain (not {@code @SideOnly}) override at all. */
+ * <p>{@link #renderInWorld()} stays an empty override: this connection's box lasers are drawn by
+ * {@code buildcraft.core.client.render.RenderMarkerConnections}, which reads {@link #getBox()} from the client-side
+ * cache during level render-state extraction. A per-connection "render yourself now" call has no modern equivalent
+ * (on 26.x there is no "now": geometry is extracted first and submitted later), so the drawing lives in that one
+ * client-only class instead, keeping this common class free of client types. See
+ * {@link MarkerConnection#renderInWorld()}'s own class javadoc for why this method exists as a plain (not
+ * {@code @SideOnly}) override at all. */
 public class VolumeConnection extends MarkerConnection<VolumeConnection> {
-    static final int MARKER_MAX_DISTANCE = 64;
+    public static final int MARKER_MAX_DISTANCE = 64;
 
     private final Set<BlockPos> makeup = new HashSet<>();
     private final Box box = new Box();
@@ -177,6 +181,6 @@ public class VolumeConnection extends MarkerConnection<VolumeConnection> {
 
     @Override
     public void renderInWorld() {
-        // Rendering deferred -- see the class javadoc.
+        // Drawn by buildcraft.core.client.render.RenderMarkerConnections -- see the class javadoc.
     }
 }
