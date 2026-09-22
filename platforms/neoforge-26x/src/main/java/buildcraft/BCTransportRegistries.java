@@ -18,6 +18,7 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 
+import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.transport.pipe.PipeApi;
 import buildcraft.api.transport.pipe.PipeDefinition;
 import buildcraft.api.transport.pipe.PipeFlowType;
@@ -28,6 +29,7 @@ import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
 
@@ -86,6 +88,16 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The wooden pipe's own {@link PipeDefinition} -- this batch's proof of this class's own "a future pipe
+     * material is just another {@code PipeDefinition} plus another {@code ItemPipeHolder} instance" claim above.
+     * {@code canBeColoured} is {@code false} for the identical reason {@link #PIPE_COBBLESTONE} already gives. */
+    public static final PipeDefinition PIPE_WOOD = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("wood")
+        .logic(PipeBehaviourWood::new, PipeBehaviourWood::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block, the same reasoning already worked out for {@code BlockDecoration}/{@code BlockEngineWood}/
      * {@code BlockChute} -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
@@ -114,6 +126,13 @@ public final class BCTransportRegistries {
     public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_COBBLESTONE = REGISTRY.addItem(
         "pipe_item_cobblestone",
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_COBBLESTONE)
+    );
+
+    /** The wooden pipe's own placeable item, tagged with {@link #PIPE_WOOD}. No new block/tile code was needed
+     * for this -- see this class's own javadoc. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_WOOD = REGISTRY.addItem(
+        "pipe_item_wood",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_WOOD)
     );
 
     public static void register(IEventBus modBus) {
@@ -145,5 +164,24 @@ public final class BCTransportRegistries {
         event.registerBlockEntity(PipeApi.CAP_PIPE_HOLDER, PIPE_HOLDER_TYPE.get(), (tile, side) -> tile);
         event.registerBlockEntity(PipeApi.CAP_PIPE, PIPE_HOLDER_TYPE.get(), (tile, side) -> tile.getPipe());
         event.registerBlockEntity(PipeApi.CAP_PLUG, PIPE_HOLDER_TYPE.get(), (tile, side) -> tile.getPluggable(side));
+
+        // The wooden pipe's own MJ capabilities -- see PipeBehaviourWood's own javadoc for why this batch has to
+        // register these here by hand rather than through MjCapabilityHelper.registerAll (which is keyed by
+        // BlockEntityType and cannot distinguish "this particular pipe happens to be wood" on the one shared
+        // TilePipeHolder type). Registered unconditionally on the shared tile type, the same as the item
+        // capability above -- TilePipeHolder#getCapability already falls through to null for every other pipe
+        // material's behaviour, exactly like it does for a capability token no behaviour/flow answers at all.
+        event.registerBlockEntity(
+            MjCapabilities.CONNECTOR, PIPE_HOLDER_TYPE.get(),
+            (tile, side) -> tile.getCapability(MjCapabilities.CONNECTOR, side)
+        );
+        event.registerBlockEntity(
+            MjCapabilities.RECEIVER, PIPE_HOLDER_TYPE.get(),
+            (tile, side) -> tile.getCapability(MjCapabilities.RECEIVER, side)
+        );
+        event.registerBlockEntity(
+            MjCapabilities.REDSTONE_RECEIVER, PIPE_HOLDER_TYPE.get(),
+            (tile, side) -> tile.getCapability(MjCapabilities.REDSTONE_RECEIVER, side)
+        );
     }
 }

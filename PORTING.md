@@ -2246,6 +2246,144 @@ Deliberately not ported, with reasons:
     rendering exists in this batch at all, per its own scope (see above), the same caveat already on file for
     every prior entry in this document.
 
+- **`buildcraft.transport` -- the Wooden Pipe (`PipeBehaviourWood`), the port's first *active* pipe.** Where the
+  cobblestone pipe only ever moves an item something else pushes into it, a wooden pipe reaches out and pulls
+  items from an adjacent inventory on its own -- but, confirmed by re-reading `common/buildcraft/transport/
+  pipe/behaviour/PipeBehaviourWood.java` directly rather than assumed from another BuildCraft version, only
+  when it has MJ to spend, at a flat cost of one MJ per item. This is the first batch to combine an
+  already-ported engine, an already-ported pipe, and an already-ported inventory into one real, self-powered
+  automation loop, with no hopper or other push mechanism anywhere in it.
+  - **New files, both platforms**: `buildcraft.transport.pipe.behaviour.{PipeBehaviourDirectional,
+    PipeBehaviourWood}`. `PipeBehaviourDirectional` (1.12.2's own base class `PipeBehaviourWood` extends) had
+    no ported equivalent yet, so it is a real, if trimmed, port in its own right -- see below for what was cut.
+    `BCTransportRegistries` (both platforms) grew a `PIPE_WOOD` `PipeDefinition` and a `PIPE_ITEM_WOOD` item,
+    the same shape `PIPE_COBBLESTONE`/`PIPE_ITEM_COBBLESTONE` already established.
+  - **The previous batch's "a future pipe material is just another `PipeDefinition` plus another
+    `ItemPipeHolder` instance, never a new block or tile class" claim holds for the block/tile layer on both
+    targets, and holds for capability *registration* too on 1.20.1, but needed a small, honest amendment on
+    26.x.** No new block or tile class was needed on either target -- confirmed live, the same
+    `BlockPipeHolder`/`TilePipeHolder` pair serves both materials unchanged. On 1.20.1, nothing else needed
+    touching either: `TilePipeHolder#getCapability` already falls through generically to `pipe.getCapability`,
+    so `PipeBehaviourWood`'s own `MjCapabilityHelper`-backed `getCapability` override is reached with zero
+    changes to `TilePipeHolder`/`BCTransportRegistries`'s capability wiring. **On 26.x, three additional lines
+    were needed in `BCTransportRegistries#registerCapabilities`** (`MjCapabilities.CONNECTOR`/`RECEIVER`/
+    `REDSTONE_RECEIVER`, each registered against the shared `PIPE_HOLDER_TYPE` the same way the item-transfer
+    capability already is) -- a real, if small, correction to "just a `PipeDefinition` plus an item": a brand
+    new *capability* a pipe material wants to expose still needs registering once, on 26.x specifically, the
+    same way the previous batch's own `CAP_PIPE_HOLDER`/`CAP_PIPE`/`CAP_PLUG` entry already had to. The
+    registration itself needed no new dispatch machinery -- it reuses `TilePipeHolder#getCapability`'s existing
+    generic delegation to `Pipe#getCapability` -> `PipeBehaviour#getCapability`, exactly like the vanilla-interop
+    item capability already does.
+  - **A genuine, confirmed-not-guessed platform divergence: `buildcraft.api.mj.MjCapabilityHelper`'s two copies
+    are no longer interchangeable in shape, and this batch is the first to actually need the one class
+    `PipeBehaviourWood` in both 1.12.2 and this port's own `TileEngineWood`/`TileEngineStone` lean on.** On
+    1.20.1, `MjCapabilityHelper` is still the instance-based `ICapabilityProvider` delegate 1.12.2 had --
+    `PipeBehaviourWood` holds one (`new MjCapabilityHelper(this)`) and forwards `getCapability` straight to it,
+    a direct, unchanged reuse. On 26.x, `MjCapabilityHelper` was restructured earlier in this port into a
+    static `registerAll(RegisterCapabilitiesEvent, BlockEntityType)` registrar that resolves which MJ
+    interfaces to expose by an `instanceof` check against the *block entity itself* -- confirmed, by grepping
+    the whole 26.x source tree, to have **zero real callers anywhere in this codebase**, even for the two
+    already-ported real `IMjReceiver`s (`TilePowerConsumerTester` in `BCCoreRegistries`, and the two engines'
+    own `MjCapabilities.CONNECTOR` registration) -- both register their capability by hand instead. That shape
+    cannot apply to a wooden pipe at all: `TilePipeHolder` is one shared block entity type for every pipe
+    material, so `instanceof IMjReceiver` against the *tile* could never distinguish "this particular pipe
+    happens to be wood" from any other material sharing the same tile class. `PipeBehaviourWood` (26.x) instead
+    exposes itself directly (`capability == MjCapabilities.RECEIVER ? (T) this : ...`, the identical
+    identity-check-and-cast idiom `PipeFlowItems#getCapability` already established for its own item capability
+    in the previous batch), and `BCTransportRegistries` registers those tokens against the shared tile type by
+    hand -- see the entry above.
+  - **`PipeBehaviourDirectional` is a real but deliberately trimmed port of 1.12.2's own class of the same
+    name -- the auto-facing-selection logic (`onTick`'s `canFaceDirection`/`advanceFacing` fallback) is ported
+    for real, since it is what lets a wooden pipe work at all with zero new player-interaction plumbing.**
+    Dropped, all deliberate scope cuts, not oversights:
+    - **Wrench-driven facing selection** (`onPipeActivate`, the `EnumPipePart` hit-part parameter, and the
+      `EntityUtil.getWrenchHand` branch) -- needs real "which face of a multi-part pipe block did the player
+      click" hit-detection this port has never built for pipes (the pipe skeleton batch's own scope notes
+      already deferred all pipe interaction). Not load-bearing: `advanceFacing()`'s fallback already picks a
+      valid facing the moment one exists.
+    - **`addActions`/`onActionActivate`** (`BCTransportStatements.ACTION_PIPE_DIRECTION`) -- gates/statements
+      are out of scope for this whole module, matching `PipeFlowItems`'s own `addTriggers` drop for the
+      identical reason.
+    - **`getTextureData`/`writePayload`/`readPayload`** -- no client rendering or network sync exists in this
+      batch, the same "no renderer yet" deferral already established throughout this module.
+    - **The face-cycling order** (`OrderedEnumMap`/`VanillaRotationHandlers.ROTATE_FACING`) -- neither is
+      ported, and nothing in this batch's scope needs a *specific* order any more, now that the only thing
+      that ever cared about the order (a player cycling faces by hand) is dropped above.
+      `advanceFacing()`'s fallback iterates `Direction.values()` in plain ordinal order instead --
+      functionally equivalent for auto-selection, confirmed live in both RCON rigs below (see "Honest
+      limitation").
+  - **`BCTransportConfig.mjPerItem` becomes a plain `private static final long MJ_PER_ITEM = MjAPI.MJ;` on
+    `PipeBehaviourWood` itself, not a ported config class.** `BCTransportConfig` (187 lines) is a whole 1.12.2
+    Forge `Configuration`-file system with no equivalent anywhere in this port; only the one numeric value this
+    behaviour actually reads is kept, at its 1.12.2 default. `mjPerMillibucket` is not needed at all, since the
+    fluid-extraction branch is dropped outright below.
+  - **The fluid-extraction branch of `extract(power, simulate)` is dropped outright, not stubbed with a dead
+    `instanceof`.** No fluid pipe of any kind is registered anywhere in this port yet, so
+    `pipe.getFlow() instanceof IFlowFluid` could never be true here; writing it anyway would be less honest
+    than simply not porting it. The `fluidSideCheck` `@PipeEventHandler`, which only ever mattered to a
+    fluid-flow pipe, goes with it.
+  - **A real, newly-surfaced defect, found by re-reading the shared block's own loot table rather than by
+    testing, and left unfixed as a documented limitation, not silently patched around.** `pipe_holder.json`'s
+    loot table (both platforms) unconditionally drops `buildcraft:pipe_item_cobblestone` -- correct when
+    cobblestone was the only registered pipe material, but now genuinely wrong for a wooden pipe: breaking one
+    in survival would hand the player back a cobblestone pipe item instead. Fixing this properly needs a loot
+    mechanism that reads the tile's own `pipe.def` NBT to pick an item id dynamically, which vanilla's loot
+    table JSON has no built-in way to do and which this batch's scope does not include building. Left as a
+    known, real gap for whichever future batch adds a third pipe material and finally makes a proper per-material
+    loot table worth building.
+  - **Recipe skipped, matching the cobblestone batch's own precedent for the identical reason, re-checked for
+    wood specifically rather than assumed to carry over.** `buildcraft_resources/assets/buildcrafttransport/
+    recipes/` still holds no JSON recipe for any material pipe, wood included -- confirmed by listing the
+    directory fresh for this batch, not reused from the earlier finding.
+  - **Assets**: `wood_item_clear.png` (16x16, confirmed via `file`) is reused unchanged as both the block's
+    `cube_all` texture (`pipe_wood.json`, a new model alongside the shared `pipe_holder.json`, since the wood
+    item's icon must not show the cobblestone texture the shared block model is hard-wired to) and the item's
+    icon, the same "one flat texture, no renderer yet" shape the cobblestone batch established.
+    `wood_item_filled.png` (the "has an active facing" cosmetic state) is real but unrenderable in this batch,
+    so it is not ported, matching the brief exactly. The lang key departs from 1.12.2's own literal string
+    (`"Wooden Transport Pipe"`) in favour of this port's own already-established short naming convention (see
+    `pipe_item_cobblestone` -> "Cobblestone Pipe"): `pipe_item_wood` -> **"Wooden Pipe"**.
+  - **In-game verification, both platforms, via RCON against real dedicated servers -- this batch's actual
+    goal, proven end to end, not by inspection.** Two independently-designed rigs (different items, different
+    left/right layout, different platforms), each: a Creative Engine (default `currentDirection = UP`, no
+    wrench needed) with a redstone block on one of its side faces (triggering `onNeighbourBlockChanged` via
+    ordinary vanilla neighbour-update propagation, exactly the way the Stirling Engine batch's own rig already
+    proved `isRedstonePowered` gets set for real); a wooden pipe directly above the engine; a source chest
+    touching the wood pipe's only other real neighbour; a cobblestone pipe continuing the run; a destination
+    chest at the far end. As with the cobblestone batch's own precedent, a dedicated server with no connected
+    player can't right-click a pipe into place, so the same temporary `RegisterCommandsEvent` debug command
+    (`bcdebug placepipe <pos> <item>`, `net.neoforged.neoforge.common.util.FakePlayerFactory`/
+    `net.minecraftforge.common.util.FakePlayerFactory`) drove `TilePipeHolder#onPlacedBy` directly for both the
+    wood and cobblestone pipe placements -- the placement logic itself, not a re-test of already-verified
+    scaffolding. Everything downstream of that is unassisted: on 26.x, 10 diamonds written into a source chest
+    via `/data merge block` (`{count, id}` shape, verified round-trip via `/data get block` first) were
+    entirely gone from that chest and entirely present in the destination chest (`{count: 10, id:
+    "minecraft:diamond"}`) after nothing but real elapsed game ticks (`time query gametime` climbing from 355
+    to 1283 between checks); on 1.20.1, a mirrored rig (source chest on the pipe's *other* side, engine and
+    redstone block swapped left-right) moved 7 gold ingots the same way (`{Count: 7b, id:
+    "minecraft:gold_ingot"}` shape), gone from the source and present in the destination between gametime 366
+    and 643. Both pipes' `con` bitmasks were hand-decoded and cross-checked against each rig's actual layout
+    (matching the two-bits-per-face encoding already on file from the cobblestone batch), confirming each wood
+    pipe's real neighbour set, not just trusted. **The auto-pick behavioural gap documented above was directly
+    observed, not just theorised**: each rig's wood pipe had three real neighbours (the engine below, an
+    inventory to one side, a pipe to the other), and in both cases `beh.currentDir` came back set to exactly
+    the one side that was actually a `ConnectedType.TILE` (`"WEST"` in the 26.x rig, `"EAST"` in the mirrored
+    1.20.1 rig) with no player interaction at all -- the engine below never qualified as a facing candidate in
+    either rig, since `PipeFlowItems#canConnect` correctly refuses to mark a non-item-capable neighbour (the
+    engine) as a `TILE` connection in the first place, so there was never any ambiguity between "the inventory"
+    and "the engine" for `advanceFacing()` to get wrong. Zero exceptions in either server's log across both
+    sessions. The debug command was fully removed from both platforms' `BuildCraft.java` before finishing,
+    confirmed via `git diff` showing each file byte-identical to its pre-batch state, and every verification
+    step (forced `--no-build-cache clean` rebuild, the full 25-test suite, fresh dedicated-server boots, and a
+    real `:neoforge-26x:runClient` boot reaching full texture-atlas stitching with no missing-model/
+    missing-sprite warnings for `pipe_wood`/`pipe_item_wood` and no `IllegalStateException`/
+    `ClassNotFoundError`/`NoClassDefFoundError`/`BootstrapMethodError` anywhere in the log) was re-run afterward,
+    against the final code, on both targets. **Honest limitation, same category as every prior RCON-verified
+    batch in this file**: the real right-click placement interaction, end to end through a real connected
+    client, remains unverified; what is verified directly is every piece of this batch's own logic once a pipe
+    already exists -- auto-facing, MJ-gated extraction, and the capability wiring that lets an engine find a
+    pipe as a receiver at all.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -2261,7 +2399,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Straight-run cobblestone item pipe (done). Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Cobblestone (passive) and wooden (MJ-powered active extraction) item pipes done. Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |

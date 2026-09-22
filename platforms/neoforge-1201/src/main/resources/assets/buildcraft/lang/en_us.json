@@ -28,6 +28,7 @@
   "item.buildcraft.marker_connector": "Marker Connector",
   "item.buildcraft.paintbrush": "Paintbrush",
   "item.buildcraft.pipe_item_cobblestone": "Cobblestone Pipe",
+  "item.buildcraft.pipe_item_wood": "Wooden Pipe",
   "item.buildcraft.wrench": "Wrench",
   "itemGroup.buildcraft.main": "BuildCraft"
 }

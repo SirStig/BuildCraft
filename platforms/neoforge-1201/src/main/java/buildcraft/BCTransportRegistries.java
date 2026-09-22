@@ -31,6 +31,7 @@ import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
 
@@ -67,6 +68,16 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The wooden pipe's own {@link PipeDefinition} -- see the 26.x copy of this class's own javadoc for the
+     * full account of why no new block/tile code was needed for this, and why {@code canBeColoured} is
+     * {@code false}. */
+    public static final PipeDefinition PIPE_WOOD = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("wood")
+        .logic(PipeBehaviourWood::new, PipeBehaviourWood::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
      * {@code BlockTank}/{@code BlockPump}'s own "no renderer yet" precedent. No {@code addBlockAndItem}: this
@@ -92,6 +103,15 @@ public final class BCTransportRegistries {
     public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_COBBLESTONE = REGISTRY.addItem(
         "pipe_item_cobblestone",
         () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_COBBLESTONE)
+    );
+
+    /** The wooden pipe's own placeable item, tagged with {@link #PIPE_WOOD}. No capability-registration changes
+     * were needed for this on 1.20.1 -- {@code TilePipeHolder#getCapability} already falls through generically
+     * to {@code pipe.getCapability}, which is how {@code PipeBehaviourWood}'s own {@code MjCapabilityHelper}
+     * gets reached with zero changes here. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_WOOD = REGISTRY.addItem(
+        "pipe_item_wood",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_WOOD)
     );
 
     public static void register(IEventBus modBus) {
