@@ -7,9 +7,13 @@
  */
 package buildcraft;
 
+import java.util.EnumMap;
+import java.util.Map;
+
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.block.SoundType;
@@ -31,6 +35,7 @@ import buildcraft.core.block.BlockPowerConsumerTester;
 import buildcraft.core.block.BlockSpringWater;
 import buildcraft.core.item.ItemGoggles;
 import buildcraft.core.item.ItemMarkerConnector;
+import buildcraft.core.item.ItemPaintbrush;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.marker.PathCache;
 import buildcraft.core.marker.VolumeCache;
@@ -72,6 +77,29 @@ public final class BCCoreRegistries {
         REGISTRY.addItem("marker_connector", () -> new ItemMarkerConnector(new Item.Properties()));
     public static final RegistryObject<ItemGoggles> GOGGLES =
         REGISTRY.addItem("goggles", () -> new ItemGoggles(new Item.Properties()));
+
+    /**
+     * The 17 "looks" of 1.12.2's single metadata-subtyped {@code ItemPaintbrush_BC8} (one colourless plus one
+     * per {@code EnumDyeColor}) -- see {@link ItemPaintbrush}'s own javadoc for why each is its own registry
+     * entry, the same "several looks -> several registry entries" convention {@link #DECORATED_DESTROY} and its
+     * five siblings already established for blocks. {@link #PAINTBRUSH} is the colourless variant; {@link
+     * #PAINTBRUSHES} holds the 16 coloured ones, keyed by {@link DyeColor}, registered as {@code
+     * paintbrush_<colour>} (e.g. {@code paintbrush_white}) using {@link DyeColor#getSerializedName()}, matching
+     * {@link buildcraft.api.blocks.DyedBlockVariants}'s own {@code <colour>_<suffix>} naming convention.
+     */
+    public static final RegistryObject<ItemPaintbrush> PAINTBRUSH =
+        REGISTRY.addItem("paintbrush", () -> new ItemPaintbrush(new Item.Properties(), null));
+
+    public static final Map<DyeColor, RegistryObject<ItemPaintbrush>> PAINTBRUSHES = registerPaintbrushes();
+
+    private static Map<DyeColor, RegistryObject<ItemPaintbrush>> registerPaintbrushes() {
+        Map<DyeColor, RegistryObject<ItemPaintbrush>> map = new EnumMap<>(DyeColor.class);
+        for (DyeColor colour : DyeColor.values()) {
+            map.put(colour, REGISTRY.addItem("paintbrush_" + colour.getSerializedName(),
+                () -> new ItemPaintbrush(new Item.Properties(), colour)));
+        }
+        return map;
+    }
 
     // --- Markers ------------------------------------------------------------------
     private static BlockBehaviour.Properties markerProperties() {

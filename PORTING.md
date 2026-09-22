@@ -1873,6 +1873,130 @@ Deliberately not ported, with reasons:
     consumption, burn-time countdown, heat/power-stage progression, the PID-like output smoothing, and real MJ
     delivery to a neighbour -- all directly, via RCON, bypassing the GUI entirely.
 
+- **`buildcraft.core` -- `ItemPaintbrush`, the Paintbrush**, a right-click-on-block tool that recolours a
+  vanilla dyeable block (wool, concrete, terracotta, stained glass, ...) to a chosen `DyeColor`, or -- held as
+  the plain/colourless variant -- attempts to strip an existing colour back to plain. The hard part was already
+  done by an earlier batch: `buildcraft.api.blocks.CustomPaintHelper`/`DyedBlockVariants` (both platforms)
+  already implement the actual "find the colour-family a block belongs to and swap it" logic, including the
+  `<colour>_<suffix>` registry-naming fallback that covers most vanilla dyeable blocks for free. This batch is
+  only the item wrapping that call, tracking its own durability.
+  - **New files, both platforms**: `buildcraft.core.item.ItemPaintbrush` -- one shared class, not 17, taking a
+    `@Nullable DyeColor` constructor argument (`null` for the colourless variant). `BCCoreRegistries` grew one
+    `PAINTBRUSH` field (the colourless variant) plus a `PAINTBRUSHES` field, an `EnumMap<DyeColor,
+    DeferredItem<ItemPaintbrush>>`/`EnumMap<DyeColor, RegistryObject<ItemPaintbrush>>` populated by a real
+    runtime loop over `DyeColor.values()`, registered as `paintbrush_<colour>` (e.g. `paintbrush_white`) using
+    `DyeColor#getSerializedName()` -- the task's own suggested shape, and consistent with `DyedBlockVariants`'
+    own `<colour>_<suffix>` naming convention. No new module holder needed; `buildcraft.core` already has
+    `BCCoreRegistries`, unlike the auto-workbench/Stirling-engine batches which needed brand-new
+    `BCFactoryRegistries`/`BCEnergyRegistries` holders. 17 sets of item-definition JSON (26.x only)/model JSON/
+    texture PNG were added under `assets/buildcraft/{items,models/item,textures/item}/paintbrush*`, copied from
+    `buildcraft_resources/assets/buildcraftcore/textures/items/paintbrush/` (the modern `DyeColor`-matching
+    filenames -- `light_blue.png`/`light_gray.png` -- not the legacy `lightblue.png`/`silver.png` duplicates
+    sitting alongside them from an old pre-1.12 dye-colour naming scheme), and one shared lang entry,
+    `item.buildcraft.paintbrush = "Paintbrush"`, added to both platforms' `en_us.json`.
+  - **17 metadata sub-items become 17 separate registry entries, following `BlockDecoration`'s own precedent for
+    the identical "several looks, one 1.12.2 class" situation, just items instead of blocks.** 1.12.2's
+    `ItemPaintbrush_BC8` packed `usesLeft`/`colour` into a metadata value plus a "damage" NBT byte, with
+    hand-rolled `getDamage`/`setDamage`/`isDamaged`/`showDurabilityBar`/`getDurabilityForDisplay` overrides
+    simulating a vanilla durability bar on top -- metadata was the only way 1.12.2 had to give "the same item,
+    several looks". Confirmed via `javap` against both platforms' real jars that `ItemStack#isDamageableItem()`/
+    `getDamageValue()`/`setDamageValue(int)`/`getMaxDamage()` are identical, stable, pre-data-component vanilla
+    API on both targets (durability predates data components entirely; 1.20.1 has no
+    `net.minecraft.core.component.DataComponentType` at all), so each of the 17 entries is a plain
+    `Item.Properties().durability(64).stacksTo(1)` damageable tool needing none of 1.12.2's own hand-rolled
+    overrides -- `stack.hurtAndBreak(...)` replaces `usesLeft--` directly.
+  - **The colourless variant is a real, distinct tool, not a placeholder, ported faithfully guard and all.**
+    1.12.2's own guard, `if (colour != null && usesLeft <= 0) return false;`, short-circuits false and is
+    skipped entirely when `colour == null` -- the colourless brush is never blocked by its own uses-left count.
+    Reproduced exactly in `ItemPaintbrush#useOn`. Durability is still spent identically for every variant,
+    including the colourless one, on every successful paint -- matching a genuine 1.12.2 quirk (the counter was
+    decremented even though the colourless guard above never consulted it) rather than "fixing" it, the same
+    precedent `TileFloodGate`'s and the Stirling Engine's own entries already established for preserving a
+    genuine upstream oddity unasked.
+  - **The colourless brush's "clear paint" action is currently a no-op against every plain vanilla block, and
+    this is honest, current platform behaviour inherited from an earlier batch, not a defect in this one.**
+    `CustomPaintHelper.INSTANCE.attemptPaintBlock(..., null)` reaches a block-specific `ICustomPaintHandler` if
+    one is registered for that block (none are, yet, for any vanilla block), but its generic
+    `defaultAttemptPaint` fallback returns `FAIL` immediately for `paint == null` ("Clearing paint has no
+    generic form: there is no way to know which colour is the 'plain' one") -- already-existing, already-ported
+    behaviour this batch did not touch and is not responsible for changing.
+  - **One real, deliberate behavioural difference from 1.12.2, a direct and unavoidable consequence of the
+    17-separate-items redesign, not of any change to the painting logic itself.** 1.12.2's single
+    shared-metadata item downgraded a spent coloured brush in place to the colourless variant (metadata 0)
+    rather than destroying it, since metadata was just a rewritable value on the same `ItemStack`. With 17
+    separate registry entries there is no equivalent in-place "downgrade" -- `hurtAndBreak` instead runs
+    vanilla's own tool-break behaviour: a coloured brush that reaches its 64th successful use is consumed like
+    any other vanilla tool (confirmed live via RCON below: `damage=0/0 consumed=true name=Air`), rather than
+    turning into a fresh colourless one. This is the natural, expected consequence of the durability-based
+    design this task's own brief specified, not something silently changed along the way.
+  - **Dropped: `ParticleUtil.showChangeColour`.** `ParticleUtil` is not ported to either platform (client-side
+    particle rendering is deferred generally, matching every other client-rendering caveat already on file in
+    this document), and porting it just for this single call would be new client-rendering infrastructure out of
+    scope for this batch. `SoundUtil.playChangeColour(Level, BlockPos, DyeColor)`, already ported identically on
+    both targets from an earlier batch, is kept and called on every successful paint.
+  - **Tooltip/display name uses `ColourUtil#getTextFullTooltip(DyeColor)`, not `#getTextFullTooltipSpecial`,
+    which 1.12.2 used for the same purpose.** `getTextFullTooltipSpecial` emits a private escape sequence meant
+    for `SpecialColourFontRenderer`, which is not ported on either platform (deferred with the rest of client
+    rendering) -- using it here would have embedded unrenderable characters in the item's name for every colour
+    except `BLACK`/`BLUE` (that method's own special-cased pair). `getTextFullTooltip` is the safe, already-
+    ported equivalent that only ever emits standard `ChatFormatting` codes. Confirmed via `javap` that
+    `Item#getDescriptionId()` is `final` on 26.x, so the shared base name (`item.buildcraft.paintbrush`, one lang
+    entry for all 17 variants, per the task's own spec) is built directly in `ItemPaintbrush#getName(ItemStack)`
+    rather than through a per-registry-entry description id override.
+  - **The modern item-use-on-block hook, confirmed via `javap` against `Item` on both platforms' real jars, is
+    identical in name and signature on both targets**: `InteractionResult useOn(UseOnContext)` -- the same hook
+    `ItemWrench#useOn` already established a precedent for. `UseOnContext#getClickLocation()` already returns
+    the absolute world-space hit position 1.12.2 built by hand (`VecUtil.add(new Vec3d(hitX, hitY, hitZ), pos)`),
+    so no equivalent helper call is needed. The one real per-platform divergence inside the method body is
+    `InteractionResult` itself (already on file as API-migration-reference item 14, re-verified fresh for this
+    class): a success check is `instanceof InteractionResult.Success` on 26.x, `== InteractionResult.SUCCESS` on
+    1.20.1. `ItemStack#hurtAndBreak` also has a narrower overload set on 1.20.1 -- confirmed via `javap` that only
+    the generic `<T extends LivingEntity> hurtAndBreak(int, T, Consumer<T>)` form exists there (26.x additionally
+    has a direct `hurtAndBreak(int, LivingEntity, InteractionHand)` convenience overload), so 1.20.1's callback
+    calls `LivingEntity#broadcastBreakEvent(InteractionHand)` itself.
+  - **In-game verification, both platforms, via a real dedicated server each, RCON, plus a temporary throwaway
+    debug entry point -- and an honest account of what that does and does not prove.** There is no input
+    automation in this environment to right-click as a real player, and a real dedicated server has no `Player`
+    entity at all until a client actually connects (confirmed: `/give`, `/execute as @a`, and every other
+    player-targeted command fail with "No player was found" against zero connected clients; the vanilla command
+    surface on both targets was checked via `/help` and has no `/player`-style fake-interaction command on either
+    release). Rather than settle for only re-confirming `CustomPaintHelper` (already known-good from an earlier
+    batch), a temporary `RegisterCommandsEvent` debug command was added to each platform's `BuildCraft.java`
+    (`net.neoforged.neoforge.common.util.FakePlayerFactory`/`net.minecraftforge.common.util.FakePlayerFactory`
+    -- both present on the real loader jars, confirmed via `javap`/jar listing -- construct a genuine, if fake,
+    `ServerPlayer`), which built a real `UseOnContext` around that fake player and called
+    `stack.getItem().useOn(context)` directly -- i.e. it called `ItemPaintbrush#useOn` itself, the actual new
+    code this batch added, not a re-test of already-known-good infrastructure underneath it. Both platforms were
+    exercised identically and gave identical results: a red paintbrush on `white_wool` recoloured it to
+    `red_wool` (`result=SUCCESS`/`Success[...]`, `damage=1/64`); the same brush against the now-red wool failed
+    without spending a use (`result=FAIL`, `damage=0/64`, matching `CustomPaintHelper`'s own "already this
+    colour" `FAIL`-not-`PASS` behaviour); the colourless brush against `blue_concrete` failed cleanly
+    (`result=FAIL`), confirming the "no-op against plain vanilla blocks" note above live, not just by reading the
+    code; a creative-mode fake player painted `blue_concrete` to `green_concrete` without spending durability
+    (`damage=0/64` unchanged); and a brush pre-set to `damage=63` (its last use) painted successfully once more
+    and was then genuinely consumed (`damage=0/0 consumed=true name=Air` -- `stack.getItem()` on an emptied stack
+    resolves to `Items.AIR`), confirming the deliberate tool-break-at-max-damage behaviour documented above
+    actually happens rather than throwing or leaving a broken-but-present stack. The same scenario set was also
+    run against `white_terracotta` to confirm the recolour path isn't wool-specific. The temporary debug command
+    and its `BuildCraft.java` hook were fully removed before this batch finished -- confirmed by `git status`
+    showing no diff against either `BuildCraft.java` afterward -- and every verification step below (clean
+    rebuild, tests, server boots, `runClient`) was re-run *after* that removal, against the final code, not
+    against the code with the debug command still present. **Honest limitation, same as every prior
+    RCON-verified batch in this file: the real right-click interaction itself, end to end through a real
+    connected client's input, remains unverified** -- what is verified, directly, is that `ItemPaintbrush#useOn`
+    itself (not a stand-in, not just the painting logic underneath it) dispatches correctly, decrements
+    durability correctly, respects creative mode correctly, and breaks the tool correctly, on both platforms
+    independently.
+  - **Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite, real
+    dedicated-server boots with zero exceptions on both targets (both worlds deleted and rebooted fresh after
+    the debug command's removal), and a real `:neoforge-26x:runClient` boot that reached full texture-atlas
+    stitching (including `textures/atlas/items.png-atlas`) and a loaded resource manager (`mod/buildcraft`
+    included) with no missing-model/missing-sprite warnings for any `paintbrush*` entry and no
+    `IllegalStateException`/`ClassNotFoundError`/`NoClassDefFoundError`/`BootstrapMethodError` anywhere in the
+    log.** Not independently verified: the on-screen appearance of the 17 item textures/models themselves --
+    same rendering caveat as every other entry in this file -- and the real right-click interaction, per the
+    paragraph above.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1887,7 +2011,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | --- | --- | --- |
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
-| `buildcraft.core` | 85 | Gears (done), wrench, markers, engines, map location. |
+| `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |

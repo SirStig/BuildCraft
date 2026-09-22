@@ -46,6 +46,7 @@ RELOCATED = {
     "buildcraft/energy/tile/TileEngineStone.java": "common/buildcraft/energy/tile/TileEngineStone_BC8.java",
     "buildcraft/energy/container/ContainerEngineStone.java": "common/buildcraft/energy/container/ContainerEngineStone_BC8.java",
     "buildcraft/energy/gui/GuiEngineStone.java": "common/buildcraft/energy/client/gui/GuiEngineStone_BC8.java",
+    "buildcraft/core/item/ItemPaintbrush.java": "common/buildcraft/core/item/ItemPaintbrush_BC8.java",
 }
 
 def upstream_for(path: pathlib.Path):
