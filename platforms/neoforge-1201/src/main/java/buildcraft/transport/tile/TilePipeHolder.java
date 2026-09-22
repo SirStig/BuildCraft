@@ -45,9 +45,11 @@ import buildcraft.lib.tile.TileBC;
 
 import buildcraft.BCTransportRegistries;
 import buildcraft.transport.block.BlockPipeHolder;
+import buildcraft.transport.block.EnumPipeActiveFace;
 import buildcraft.transport.block.EnumPipeMaterial;
 import buildcraft.transport.pipe.Pipe;
 import buildcraft.transport.pipe.PipeEventBus;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDirectional;
 
 /**
  * The single shared block entity every pipe kind uses -- implements the already-ported {@link IPipeHolder}. See
@@ -158,6 +160,7 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         BlockState state = getBlockState();
         BlockState newState = state
             .setValue(BlockPipeHolder.MATERIAL, material)
+            .setValue(BlockPipeHolder.ACTIVE, activeFaceOf(forPipe))
             .setValue(BlockStateProperties.NORTH, connectionTypes.containsKey(Direction.NORTH))
             .setValue(BlockStateProperties.SOUTH, connectionTypes.containsKey(Direction.SOUTH))
             .setValue(BlockStateProperties.EAST, connectionTypes.containsKey(Direction.EAST))
@@ -263,7 +266,37 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
     @Override
     public void scheduleNetworkUpdate(PipeMessageReceiver... parts) {
         if (parts.length > 0) {
+            for (PipeMessageReceiver part : parts) {
+                if (part == PipeMessageReceiver.BEHAVIOUR) {
+                    updateActiveFaceBlockState();
+                    break;
+                }
+            }
             markDirtyAndSync();
+        }
+    }
+
+    /** See the 26.x copy of this method. */
+    private static EnumPipeActiveFace activeFaceOf(IPipe forPipe) {
+        if (forPipe.getBehaviour() instanceof PipeBehaviourDirectional directional) {
+            return EnumPipeActiveFace.fromFacing(directional.getCurrentDir());
+        }
+        return EnumPipeActiveFace.NONE;
+    }
+
+    /** Re-pushes only {@link BlockPipeHolder#ACTIVE} whenever a directional behaviour changes its face outside a
+     * connection recompute -- see the 26.x copy of this method for the full account. */
+    private void updateActiveFaceBlockState() {
+        if (level == null || level.isClientSide() || pipe == null) {
+            return;
+        }
+        BlockState state = getBlockState();
+        if (!state.hasProperty(BlockPipeHolder.ACTIVE)) {
+            return;
+        }
+        BlockState newState = state.setValue(BlockPipeHolder.ACTIVE, activeFaceOf(pipe));
+        if (newState != state) {
+            level.setBlock(worldPosition, newState, Block.UPDATE_CLIENTS);
         }
     }
 

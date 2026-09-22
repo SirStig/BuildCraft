@@ -10,6 +10,8 @@ package buildcraft.transport.block;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -26,6 +28,7 @@ import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 
+import buildcraft.api.blocks.ICustomRotationHandler;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.PipeDefinition;
 
@@ -33,6 +36,7 @@ import buildcraft.lib.block.BlockBCTile;
 
 import buildcraft.BCTransportRegistries;
 import buildcraft.transport.item.ItemPipeHolder;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDirectional;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -55,9 +59,12 @@ import buildcraft.transport.tile.TilePipeHolder;
  * direction -- the same "the block never reads its own property, {@code Pipe} pushes it onto the placed state
  * directly" pattern {@code BlockEngineWood}'s own {@code FACING} declaration already established for the engine
  * facing-visibility batch. See {@code TilePipeHolder#updateConnectionBlockState}/{@code Pipe#updateConnections}
- * for where the real values actually get pushed.
+ * for where the real values actually get pushed. {@link #ACTIVE} (the directional pipes' "filled" face) follows
+ * the same pattern -- see its own javadoc.
+ *
+ * <p><b>Wrench rotation</b> ({@link ICustomRotationHandler}): see {@link #attemptRotation}.
  */
-public class BlockPipeHolder extends BlockBCTile {
+public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler {
 
     /** New, port-only: see this class's own "Connection-shape rendering" javadoc entry above. Not a vanilla
      * property -- nothing in {@code BlockStateProperties} fits a five-value pipe-material enum, matching this
@@ -66,10 +73,20 @@ public class BlockPipeHolder extends BlockBCTile {
      * own javadoc for why). */
     public static final EnumProperty<EnumPipeMaterial> MATERIAL = EnumProperty.create("material", EnumPipeMaterial.class);
 
+    /** New, port-only: the active face of a {@link PipeBehaviourDirectional} pipe (wood, iron), or
+     * {@link EnumPipeActiveFace#NONE} -- always {@code NONE} for every other material. Pushed by
+     * {@code TilePipeHolder#updateConnectionBlockState} exactly like {@link #MATERIAL}; {@code pipe_holder.json}
+     * uses it to swap that one direction's arm onto the material's {@code _filled} arm model, reproducing
+     * 1.12.2's clear/filled face textures. Multiplies the state count by 7 (9 materials x 64 connection
+     * combinations x 7 = 4032 states) -- acceptable for a single block, and far simpler than a custom baked
+     * model. */
+    public static final EnumProperty<EnumPipeActiveFace> ACTIVE = EnumProperty.create("active", EnumPipeActiveFace.class);
+
     public BlockPipeHolder(BlockBehaviour.Properties properties) {
         super(properties);
         registerDefaultState(defaultBlockState()
             .setValue(MATERIAL, EnumPipeMaterial.COBBLESTONE)
+            .setValue(ACTIVE, EnumPipeActiveFace.NONE)
             .setValue(BlockStateProperties.NORTH, false)
             .setValue(BlockStateProperties.SOUTH, false)
             .setValue(BlockStateProperties.EAST, false)
@@ -81,7 +98,7 @@ public class BlockPipeHolder extends BlockBCTile {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(
-            MATERIAL, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
+            MATERIAL, ACTIVE, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
             BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
         );
     }
@@ -154,5 +171,41 @@ public class BlockPipeHolder extends BlockBCTile {
             }
         }
         return super.getDrops(state, params);
+    }
+
+    // ICustomRotationHandler
+
+    /**
+     * Cycles a directional pipe's (wood, iron) active face with a wrench -- 1.12.2's
+     * {@code PipeBehaviourDirectional#onPipeActivate} wrench branch, reached through a different door. Confirmed by
+     * reading the real call chain rather than assumed: {@code ItemWrench#useOn} calls
+     * {@code CustomRotationHelper.INSTANCE.attemptRotateBlock}, whose first check is
+     * {@code block instanceof ICustomRotationHandler} -> {@code attemptRotation}, and the vanilla
+     * {@code ServerPlayerGameMode#useItemOn} only reaches {@code Item#useOn} at all because this block keeps the
+     * default {@code useItemOn} ({@code TRY_WITH_EMPTY_HAND}) and {@code useWithoutItem} ({@code PASS}) -- so this
+     * is the one hook a wrench right-click actually lands on, without touching {@code ItemWrench} itself. Same
+     * route {@code BlockEngineWood}/{@code BlockEngineCreative} already use.
+     *
+     * <p>{@code sideWrenched} is ignored: every wrench use cycles (see {@link PipeBehaviourDirectional}'s own
+     * javadoc for why the "click an arm to pick that face" branch cannot be reproduced on a full-cube block).
+     * Returns {@code PASS} for every non-directional pipe (and a tile with no {@code Pipe} at all), so the wrench
+     * does nothing and plays no sound there. Client side, a directional pipe answers {@code SUCCESS} without
+     * mutating anything (the arm swings; the server decides the new face and syncs it back), matching the usual
+     * vanilla "predict success, let the server act" shape rather than letting the client's own, never-ticked
+     * copy of the pipe guess at connections.
+     */
+    @Override
+    public InteractionResult attemptRotation(Level level, BlockPos pos, BlockState state, Direction sideWrenched) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        IPipe pipe = holder.getPipe();
+        if (pipe == null || !(pipe.getBehaviour() instanceof PipeBehaviourDirectional directional)) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        return directional.advanceFacing() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
     }
 }

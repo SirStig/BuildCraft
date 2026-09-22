@@ -33,10 +33,14 @@ import buildcraft.lib.registry.BCRegistry;
 import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourClay;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourGold;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourIron;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourQuartz;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourVoid;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
@@ -110,6 +114,42 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The golden pipe's own {@link PipeDefinition} -- the speed-boost material. See the 26.x copy of this class for the
+     * real 1.12.2 builder call this mirrors and why {@code canBeColoured} is {@code false}. */
+    public static final PipeDefinition PIPE_GOLD = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("gold")
+        .logic(PipeBehaviourGold::new, PipeBehaviourGold::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The iron pipe's own {@link PipeDefinition} -- the one-way, wrench-selected output valve. See the 26.x copy of this class for the
+     * real 1.12.2 builder call this mirrors and why {@code canBeColoured} is {@code false}. */
+    public static final PipeDefinition PIPE_IRON = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("iron")
+        .logic(PipeBehaviourIron::new, PipeBehaviourIron::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The clay pipe's own {@link PipeDefinition} -- prefers inventories over pipes. See the 26.x copy of this class for the
+     * real 1.12.2 builder call this mirrors and why {@code canBeColoured} is {@code false}. */
+    public static final PipeDefinition PIPE_CLAY = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("clay")
+        .logic(PipeBehaviourClay::new, PipeBehaviourClay::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The void pipe's own {@link PipeDefinition} -- destroys items. See the 26.x copy of this class for the
+     * real 1.12.2 builder call this mirrors and why {@code canBeColoured} is {@code false}. */
+    public static final PipeDefinition PIPE_VOID = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("void")
+        .logic(PipeBehaviourVoid::new, PipeBehaviourVoid::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
      * {@code BlockTank}/{@code BlockPump}'s own "no renderer yet" precedent. No {@code addBlockAndItem}: this
@@ -162,6 +202,30 @@ public final class BCTransportRegistries {
     public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_QUARTZ = REGISTRY.addItem(
         "pipe_item_quartz",
         () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_QUARTZ)
+    );
+
+    /** The golden pipe's own placeable item, tagged with {@link #PIPE_GOLD}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_GOLD = REGISTRY.addItem(
+        "pipe_item_gold",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_GOLD)
+    );
+
+    /** The iron pipe's own placeable item, tagged with {@link #PIPE_IRON}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_IRON = REGISTRY.addItem(
+        "pipe_item_iron",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_IRON)
+    );
+
+    /** The clay pipe's own placeable item, tagged with {@link #PIPE_CLAY}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_CLAY = REGISTRY.addItem(
+        "pipe_item_clay",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_CLAY)
+    );
+
+    /** The void pipe's own placeable item, tagged with {@link #PIPE_VOID}. */
+    public static final RegistryObject<ItemPipeHolder> PIPE_ITEM_VOID = REGISTRY.addItem(
+        "pipe_item_void",
+        () -> new ItemPipeHolder(PIPE_HOLDER.get(), new Item.Properties(), PIPE_VOID)
     );
 
     public static void register(IEventBus modBus) {

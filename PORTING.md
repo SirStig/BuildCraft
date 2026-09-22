@@ -3480,6 +3480,186 @@ Deliberately not ported, with reasons:
     transit above, and real `runClient` boots on both platforms reaching a fully stitched texture atlas with
     zero exceptions and zero missing-model warnings.
 
+- **`buildcraft.transport` -- four more item-pipe materials (gold, void, clay, iron), wrench cycling of a
+  directional pipe's active face (wood + iron), the active face rendered with its own "filled" texture, and two
+  real pre-existing bugs fixed along the way (a wooden pipe losing its whole `Pipe` on every restart; every pipe
+  item on 1.20.1 being named plain "Pipe").** Nine item-pipe materials now exist. No new block/tile code, per the
+  established one-block-many-items architecture: each material is a `PipeBehaviour` subclass plus a
+  `PipeDefinition`/`ItemPipeHolder` pair in `BCTransportRegistries`, with the full rendering treatment
+  (`EnumPipeMaterial` value, multipart entries, core/arm/cube/item models, lang, texture).
+  - **The four behaviours, each re-read in full from `common/buildcraft/transport/pipe/behaviour/`, identical
+    source on both platforms.** `PipeBehaviourGold` (32 lines): one static `ModifySpeed` handler,
+    `modifyTo(0.25, 0.07)`, extending plain `PipeBehaviour` exactly as the original does -- so, unlike
+    stone/cobblestone/quartz (`PipeBehaviourSeparate`), gold connects to any other material. `PipeBehaviourVoid`
+    (62 lines): `ReachCenter` sets the stack count to `0`, which `PipeFlowItems#onItemReachCenter` already
+    short-circuits on (`if (reachCenter.getStack().isEmpty()) return;`, confirmed present in this port, not
+    assumed). `PipeBehaviourClay` (53 lines): `SideCheck#increasePriority(face, 100)` for every
+    `ConnectedType.TILE` face. `PipeBehaviourIron` (66 lines): extends `PipeBehaviourDirectional`,
+    `canFaceDirection` = `pipe.isConnected(dir)` (null-guarded), `SideCheck#disallowAllExcept(activeFace)` (or
+    `disallowAll()` with no active face), static `TryBounce#canBounce = true`. Dropped, with the same reasoning
+    `PipeBehaviourWood` already gave for its own `fluidSideCheck`: every `PipeEventFluid` handler (void's
+    `OnMoveToCentre` -- whose sound block was already commented out in 1.12.2 itself -- clay's second
+    `orderSides`, iron's `fluidSideCheck`/`fluidInsert`), since no fluid flow exists in this port; iron's
+    `getTextureIndex` too (it is `@Deprecated` on this port's `PipeBehaviour` and nothing reads it, matching
+    wood's `getTextureData` drop -- the filled face is rendered through the blockstate instead, below).
+  - **Builder calls, checked against the real 1.12.2 `BCTransportPipes#preInit`, not assumed.** Gold/clay/void
+    are plain `idTex("<m>_item").flowItem()`; iron repeats wood's exact shape (`texSuffixes("_clear",
+    "_filled")`, `itemTex(0, 0, 1)`, `idTexPrefix("iron_item")`). Deliberate deviations, all pre-existing
+    precedents: ids drop the `_item` suffix (`buildcraft:gold`, like `buildcraft:cobblestone`);
+    `disableColouring()` on all four even though the real shared builder's `enableColouring()` makes every one
+    of them colourable in 1.12.2; `texSuffixes`/`itemTex` are not set, because nothing in this port reads
+    `PipeDefinition#textures` (grepped: its only reference is its own constructor) -- the clear/filled split is
+    reproduced by the blockstate instead. `void_fluid`/`clay_fluid`/`iron_fluid` are not registered.
+  - **The real wrench dispatch path, read end to end rather than assumed, and why `ItemWrench` needed no
+    change.** `ItemWrench#useOn` (both platforms) calls `CustomRotationHelper.INSTANCE.attemptRotateBlock`, whose
+    very first check is `block instanceof ICustomRotationHandler custom -> custom.attemptRotation(level, pos,
+    state, sideWrenched)`. `ItemWrench#useOn` itself is only reached because the pipe block keeps vanilla's
+    defaults, confirmed in the decompiled sources of both jars: 26.3's `ServerPlayerGameMode#useItemOn` calls
+    `state.useItemOn(...)` first (`BlockBehaviour` default: `InteractionResult.TRY_WITH_EMPTY_HAND`), then
+    `useWithoutItem` (default `PASS`), then `itemStack.useOn(context)`; 1.20.1-Forge's calls `BlockState#use`
+    (default `PASS`) then `useOn`. So `BlockPipeHolder` now `implements ICustomRotationHandler` -- the exact route
+    `BlockEngineWood`/`BlockEngineCreative` already use -- and forwards to `PipeBehaviourDirectional#advanceFacing()`
+    when the tile's pipe behaviour is directional, `PASS` otherwise (so a wrench on any other material does
+    nothing and `SoundUtil.playSlideSound` plays nothing -- its first line returns on `Pass`). Client side it
+    answers `SUCCESS` without mutating (the server picks the face and syncs it), rather than letting the client's
+    never-ticked copy of the pipe guess. Per-platform: `InteractionResult` is a sealed interface on 26.x
+    (`ItemWrench` tests `instanceof InteractionResult.Success`) and a plain enum on 1.20.1 (`ItemWrench` tests
+    `== InteractionResult.SUCCESS`), so the plain `SUCCESS` constant is what both copies return.
+    `sideWrenched` is ignored: 1.12.2's `onPipeActivate` also let a wrench on one *arm* jump straight to that
+    face, but that needs per-part hit detection this full-cube block does not have, and treating every face click
+    as an arm click would make cycling impossible (clicking the already-active face is a no-op there), so every
+    use cycles, exactly like 1.12.2's own centre click.
+  - **`PipeBehaviourDirectional` (both platforms) gets the wood batch's dropped pieces back, reshaped.** The cycle
+    order is 1.12.2's `VanillaRotationHandlers.ROTATE_FACING` (east, south, down, west, north, up), inline as a
+    `public static final OrderedEnumMap<Direction> ROTATION_ORDER`, the same approach `TileEngineBase` already
+    takes; `advanceFacing()` is 1.12.2's own loop again (`ROTATION_ORDER.next(current)` six times), and drives
+    the tick-time fallback too, as in 1.12.2, replacing the wood batch's plain `Direction.values()` order. A
+    faithful quirk kept: `OrderedEnumMap#indexOf(null)` reads index 0's slot (`DOWN`, position 2), so a pipe with
+    no active face starts searching at `WEST` -- observed live below (a fresh iron pipe picked `WEST`, its hopper
+    side). `getCurrentDir()` widened from `protected` to `public` so the tile can read it for the blockstate.
+    `writePayload`/`readPayload` stay dropped: `setCurrentDir` -> `scheduleNetworkUpdate(BEHAVIOUR)` ->
+    `TilePipeHolder#markDirtyAndSync()` already resyncs the whole tile NBT (`beh.currentDir` included).
+  - **A real, reproduced, pre-existing bug: every wooden pipe with an active face lost its `Pipe` on restart.**
+    `PipeBehaviourDirectional`'s NBT constructor called `setCurrentDir(...)`, whose
+    `pipe.getHolder().getPipeLevel().isClientSide()` dereferences a level that is still `null` during a disk
+    chunk load (the same load-before-`setLevel` ordering the earlier `PipeFlowItems` reload fix documented).
+    Reproduced live on 26.x against the unmodified tree before any edit in this batch: a wood pipe next to a
+    chest (`beh: {currentDir: "EAST"}`), `save-all flush`, `stop`, restart -> `Failed to load data for block
+    entity ... java.lang.NullPointerException: Cannot invoke "net.minecraft.world.level.Level.isClientSide()"
+    because the return value of "buildcraft.api.transport.pipe.IPipeHolder.getPipeLevel()" is null at
+    PipeBehaviourDirectional.setCurrentDir(PipeBehaviourDirectional.java:113) ... <init>(...:61) ...
+    PipeBehaviourWood.<init> ... TilePipeHolder.loadAdditional`, and `/data get block` afterwards showed a bare
+    tile with no `pipe` tag at all. The earlier reload re-verification never caught it because a wood pipe with
+    no inventory neighbour has `currentDir` `null`, and `setCurrentDir(null)` returns before touching the level.
+    Fixed by assigning `currentDir` directly in the NBT constructor; re-verified below with the exact same
+    scenario (wood *and* iron, both with a wrench-set face).
+  - **The active face renders ("filled" texture), via one small blockstate property -- it stayed clean, so it is
+    in.** New `buildcraft.transport.block.EnumPipeActiveFace` (`none` + the six directions, `StringRepresentable`,
+    transport-local for the same single-consumer reason as `EnumPipeMaterial`) and `BlockPipeHolder.ACTIVE`,
+    pushed by `TilePipeHolder#updateConnectionBlockState` alongside `MATERIAL`, plus a new
+    `updateActiveFaceBlockState()` called from `scheduleNetworkUpdate` whenever `BEHAVIOUR` is among the parts --
+    which is what `setCurrentDir` sends, so a wrench cycle or a tick-time re-pick updates the state immediately
+    even when `Pipe#updateConnections` does not run. Always `none` for non-directional materials. In
+    `pipe_holder.json` each wood/iron arm is split into two entries: `{"material": "wood", "north": "true",
+    "active": "!north"}` -> `pipe_holder_arm_wood`, `{..., "active": "north"}` -> the new
+    `pipe_holder_arm_wood_filled` (same geometry, `#all` = `block/pipe_wood_filled`). The `!` negation was
+    confirmed in both jars' real `KeyValueCondition` source, not assumed: 26.3's `Term#parse` (`value.startsWith
+    ("!")`) and 1.20.1's `flag = !s.isEmpty() && s.charAt(0) == '!'`. The whole file (both platforms,
+    byte-identical, now 75 entries: 9 centre cubes + 7 x 6 plain arms + 2 x 6 x 2 clear/filled arms) is
+    generated by a script that was first checked to reproduce the previous 35-entry file byte-for-byte, so the
+    diff for the five old materials is exactly wood's arm split and nothing else. Cost: the block now has
+    9 x 64 x 7 = 4032 states -- acceptable for one block, and far simpler than a custom baked model.
+  - **Assets, both platforms, following the established provenance exactly.** Textures are byte-identical copies
+    of `buildcraft_resources/assets/buildcrafttransport/textures/pipes/`: `pipe_gold.png` = `gold_item.png`,
+    `pipe_void.png` = `void_item.png`, `pipe_clay.png` = `clay_item.png`, `pipe_iron.png` =
+    `iron_item_clear.png`, `pipe_iron_filled.png` = `iron_item_filled.png`, `pipe_wood_filled.png` =
+    `wood_item_filled.png` (the existing `pipe_wood.png` is already `wood_item_clear.png`, `md5` `5aa2611c...`).
+    Core/arm/cube models are string-substituted from wood's own files (models directories remain identical
+    across platforms); item models use each platform's own format (26.x `items/pipe_item_<m>.json`, 1.20.1
+    `models/item/pipe_item_<m>.json`). Lang, following the port's short-name convention (1.12.2: "Golden
+    Transport Pipe" etc.): "Golden Pipe", "Iron Pipe", "Clay Pipe", "Void Pipe". No recipes (none exist for any
+    pipe yet, same as every prior pipe batch).
+  - **A second real, pre-existing bug, 1.20.1 only: every pipe item was named "Pipe".** Caught by the drops check
+    below: on 1.20.1 the dropped `pipe_item_gold` entity reported its name as `Pipe`. 1.20.1's
+    `BlockItem#getDescriptionId()` returns `getBlock().getDescriptionId()` (decompiled source), so all nine
+    `ItemPipeHolder`s used `block.buildcraft.pipe_holder` and every `item.buildcraft.pipe_item_*` lang key was
+    dead. Fixed in the 1.20.1 `ItemPipeHolder` with `getDescriptionId() { return getOrCreateDescriptionId(); }`
+    (`protected` on `Item`, confirmed via `javap` against `forge-1.20.1-47.1.106-merged.jar`) -- exactly what a
+    plain `Item` returns. 26.x never had this bug: a 26.x item's description id comes from its
+    `Item.Properties` (`ITEM_DESCRIPTION_ID` unless `useBlockDescriptionPrefix()`, which `BCRegistry#addItem`
+    does not call), and its drops were already named "Golden Pipe"/"Void Pipe"/... live.
+  - **In-game verification, both platforms, real dedicated servers over RCON.** Rig as established:
+    `/forceload`, `/setblock buildcraft:pipe_holder` + `/data merge block {pipe:{def:"buildcraft:<m>"}}`, vanilla
+    hoppers feeding, vanilla chests catching, `/execute if block ...[...]` for `BlockState`. Wrench driven through
+    a temporary self-registering (`@EventBusSubscriber`) `/bctmpwrench <pos>` command that put a real
+    `ItemWrench` stack in a `FakePlayerFactory.getMinecraft(level)` player's hand and called the real
+    `player.gameMode.useItemOn(...)` -- the full vanilla `ServerPlayerGameMode` path (block hooks, then
+    `ItemWrench#useOn`), not a direct `useOn` call; deleted before hand-back, `grep` and `git status` show no
+    trace. Results were identical on 26.x and 1.20.1:
+    - *Gold vs cobblestone*: two parallel 4-pipe lines (hopper -> 4 pipes -> chest), one emerald inserted into
+      each hopper in the same game tick. Arrival in the chest: **gold 111 ticks, cobblestone 455 ticks** (both
+      platforms, same numbers). Mid-transit NBT shows the ramp exactly: gold `speed: 0.01d` in -> `0.08d` out
+      of pipe 1 -> `0.15000000000000002d` out of pipe 2 (`timeToDest` 75 -> 7 -> 4), cobblestone `0.01d`
+      throughout (`timeToDest` 50).
+    - *Void*: hopper -> void -> chest, 3 diamonds. Caught in transit (`side: "WEST", toCenter: 1b` x3), then after
+      1500 ticks: hopper `[]`, chest `[]`, `execute if entity @e[type=item,...]` -> `Test failed` (nothing
+      dropped either).
+    - *Clay vs control*: hopper -> junction pipe with a chest on one side and a cobblestone pipe (-> a second
+      chest) on another, 16 cobblestone each. Clay junction: **16 / 0** (inventory / pipe branch), both
+      platforms. Identical cobblestone-junction control: 10 / 6 on 26.x, 8 / 8 on 1.20.1 (random split).
+    - *Iron*: hopper west, chests north/east/south, all four connected (`con: 2720`). Auto-picked face `WEST`
+      (the `indexOf(null)` quirk above). `/bctmpwrench` -> `useItemOn=Success[...] before=west after=north
+      state=...[active=north,...,material=iron,...]` (1.20.1: `useItemOn=SUCCESS`); 4 iron ingots -> **north
+      4, east 0, south 0**. Wrench again (`north` -> `up` skipped, not connected -> `east`), 4 gold ingots ->
+      **east 4**, north still exactly its 4 iron, south 0.
+    - *Wood*: chests east and north; auto-picked `NORTH`; wrench -> `east` (`active=east`), wrench -> `north`
+      (`active=north`), `/execute if block` confirming the blockstate after each. Wrench on the clay pipe ->
+      `useItemOn=Pass[]` (1.20.1 `PASS`), `active=none` unchanged.
+    - *Blockstate*: `material=gold/void/clay/iron` plus the expected connection booleans and `active=` values all
+      `Test passed`.
+    - *Save/reload*: iron (wrenched), wood (wrenched), gold, clay, void placed; `save-all flush`, `stop`, restart
+      the same world. Afterwards every `def` intact, iron `beh: {currentDir: "NORTH"}` + `[active=north]`
+      (26.x) / `"EAST"` + `[active=east]` (1.20.1), wood's face and `active=` intact -- the exact scenario that
+      crashed before the fix -- zero exceptions in either log. On 26.x, 2 more ingots through the reloaded iron
+      pipe still went only north.
+    - *Drops*: `/setblock ... air destroy` on each new material ->
+      `buildcraft:pipe_item_gold`/`_void`/`_clay`/`_iron`, both platforms; entity names "Golden Pipe"/"Void Pipe"/
+      "Clay Pipe"/"Iron Pipe" on 26.x, and on 1.20.1 after the naming fix (before it: "Pipe").
+  - **Concurrency note for this batch's rig.** Other agents were running `runServer`/`runClient` against the
+    shared `platforms/*/run/` directories at the same time, so part of the 26.x verification (the reload and drops
+    checks, and the 26.x `runClient`) ran the exact JVM command line of a Gradle-launched run
+    (`/proc/<pid>/cmdline`: `net.neoforged.devlaunch.Main` + `-Dfml.modFolders=...`) from a private working
+    directory with its own `server.properties` (ports 25591/25592) -- same classes, same launcher, different
+    world. The same trick does *not* work for 1.20.1's `BootstrapLauncher` (the mod was silently absent from the
+    private server; the Gradle run evidently passes something outside the command line), so all 1.20.1 checks
+    used the real `runServer`.
+  - **Boots.** Every dedicated-server log above: zero exceptions (the only ones seen all batch were the pre-fix
+    reproduction and one aborted launch that hit another agent's world `session.lock`). Real `runClient` boots
+    on both platforms reached full atlas stitching (`2048x2048x4 minecraft:textures/atlas/blocks.png-atlas` on
+    26.x, `1024x512x4` on 1.20.1) with zero exceptions and no missing-model/missing-texture/blockstate-parse
+    warnings of any kind, i.e. the 14 new block models, 4 new item models, the regenerated multipart with its
+    `!` conditions, and the 6 new textures all resolved.
+  - **Not verified**: on-screen appearance (no display automation -- the filled/clear arm swap, the new textures
+    and the item icons are verified only to load cleanly and to be selected by the right `BlockState`); a real
+    player's right-click (the fake-player call drives the same `ServerPlayerGameMode#useItemOn` a real click
+    reaches, minus the network packet); the client-side `SUCCESS` prediction branch. Out of scope: fluid flow
+    (so no fluid variants/handlers), colouring, gates/statements (`addActions`/`onActionActivate`), arm-click
+    face selection.
+  - **Files, both platforms.** New: `transport/pipe/behaviour/PipeBehaviour{Gold,Void,Clay,Iron}.java`,
+    `transport/block/EnumPipeActiveFace.java`; models `block/pipe_{gold,iron,clay,void}.json`,
+    `block/pipe_holder_core_{gold,iron,clay,void}.json`, `block/pipe_holder_arm_{gold,iron,clay,void}.json`,
+    `block/pipe_holder_arm_{wood,iron}_filled.json`, item models for the four; textures
+    `block/pipe_{gold,void,clay,iron,iron_filled,wood_filled}.png`. Modified: `BCTransportRegistries`,
+    `BlockPipeHolder` (`ACTIVE`, `ICustomRotationHandler`), `EnumPipeMaterial` (4 appended values),
+    `TilePipeHolder` (`ACTIVE` push), `PipeBehaviourDirectional` (cycle order, NBT-load fix, public getter,
+    javadoc), `PipeBehaviourWood` (javadoc only), `blockstates/pipe_holder.json`, `lang/en_us.json`; 1.20.1 only:
+    `ItemPipeHolder` (`getDescriptionId`). `ItemWrench`, `BuildCraft.java` and everything outside
+    `buildcraft.transport` untouched.
+  - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` (run in
+    a private snapshot copy of the working tree, since `clean` in the shared tree would have deleted the
+    `build/classes` other agents' running dev servers were loading from), the full 25-test suite (25/25, both in
+    the shared tree and in the snapshot), and the server/client boots above.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -3495,7 +3675,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier) item pipes done, plus the `pipe_holder` per-material loot-drop fix. Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood item pipes, colours, wires, gates, pluggables, fluid/power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves). |

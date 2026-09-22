@@ -10,6 +10,8 @@ package buildcraft.transport.block;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -25,6 +27,7 @@ import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 
+import buildcraft.api.blocks.ICustomRotationHandler;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.PipeDefinition;
 
@@ -32,6 +35,7 @@ import buildcraft.lib.block.BlockBCTile;
 
 import buildcraft.BCTransportRegistries;
 import buildcraft.transport.item.ItemPipeHolder;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDirectional;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -44,17 +48,23 @@ import buildcraft.transport.tile.TilePipeHolder;
  * instances via {@code javap} against the real 1.20.1-Forge-fork universal jar) plus {@link #MATERIAL}, a new
  * {@link EnumPipeMaterial} property, both declared here and pushed onto the real placed state from
  * {@code TilePipeHolder#updateConnectionBlockState}/{@code Pipe#updateConnections}, never read by this block
- * itself.
+ * itself. {@link #ACTIVE} (the directional pipes' "filled" face) follows the same pattern.
+ *
+ * <p><b>Wrench rotation</b> ({@link ICustomRotationHandler}): see {@link #attemptRotation}.
  */
-public class BlockPipeHolder extends BlockBCTile {
+public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler {
 
     /** See the 26.x copy of this class's own javadoc for {@link #MATERIAL}. */
     public static final EnumProperty<EnumPipeMaterial> MATERIAL = EnumProperty.create("material", EnumPipeMaterial.class);
+
+    /** See the 26.x copy of this class's own javadoc for {@link #ACTIVE}. */
+    public static final EnumProperty<EnumPipeActiveFace> ACTIVE = EnumProperty.create("active", EnumPipeActiveFace.class);
 
     public BlockPipeHolder(BlockBehaviour.Properties properties) {
         super(properties);
         registerDefaultState(defaultBlockState()
             .setValue(MATERIAL, EnumPipeMaterial.COBBLESTONE)
+            .setValue(ACTIVE, EnumPipeActiveFace.NONE)
             .setValue(BlockStateProperties.NORTH, false)
             .setValue(BlockStateProperties.SOUTH, false)
             .setValue(BlockStateProperties.EAST, false)
@@ -66,7 +76,7 @@ public class BlockPipeHolder extends BlockBCTile {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(
-            MATERIAL, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
+            MATERIAL, ACTIVE, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
             BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
         );
     }
@@ -125,5 +135,32 @@ public class BlockPipeHolder extends BlockBCTile {
             }
         }
         return super.getDrops(state, params);
+    }
+
+    // ICustomRotationHandler
+
+    /**
+     * Cycles a directional pipe's (wood, iron) active face with a wrench -- see the 26.x copy of this method for
+     * the full account. The dispatch chain is the same on this target, confirmed against the real 1.20.1-Forge
+     * sources rather than assumed: {@code ServerPlayerGameMode#useItemOn} tries {@code BlockState#use} first,
+     * which this block leaves at {@code BlockBehaviour}'s default {@code PASS}, so the wrench's own
+     * {@code ItemWrench#useOn} runs next and calls {@code CustomRotationHelper#attemptRotateBlock}, whose
+     * {@code instanceof ICustomRotationHandler} check lands here. {@link InteractionResult} is a plain enum on this
+     * target, and this target's {@code ItemWrench} tests {@code == InteractionResult.SUCCESS} exactly, so the
+     * plain {@code SUCCESS} constant (not {@code sidedSuccess}/{@code CONSUME}) is what gets returned.
+     */
+    @Override
+    public InteractionResult attemptRotation(Level level, BlockPos pos, BlockState state, Direction sideWrenched) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        IPipe pipe = holder.getPipe();
+        if (pipe == null || !(pipe.getBehaviour() instanceof PipeBehaviourDirectional directional)) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        return directional.advanceFacing() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
     }
 }

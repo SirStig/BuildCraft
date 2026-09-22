@@ -31,10 +31,14 @@ import buildcraft.lib.registry.BCRegistry;
 import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.PipeRegistry;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourClay;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourGold;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourIron;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourQuartz;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourVoid;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.tile.TilePipeHolder;
@@ -137,6 +141,55 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The golden pipe's own {@link PipeDefinition} -- the speed-boost material (see {@link PipeBehaviourGold}).
+     * 1.12.2's real builder call is a plain {@code builder.idTex("gold_item").flowItem().define()} after
+     * {@code logic(PipeBehaviourGold::new, ...)}: no texture suffixes, default item texture -- so this is the same
+     * shape as every other single-texture material here. {@code canBeColoured} is {@code false} for the same
+     * reason as every other material (the real 1.12.2 golden pipe inherits the shared builder's
+     * {@code enableColouring()} and <em>is</em> colourable -- see this class's own javadoc). */
+    public static final PipeDefinition PIPE_GOLD = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("gold")
+        .logic(PipeBehaviourGold::new, PipeBehaviourGold::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The iron pipe's own {@link PipeDefinition} -- the one-way, wrench-selected output valve (see
+     * {@link PipeBehaviourIron}). 1.12.2's real builder call is wood's exact shape:
+     * {@code texSuffixes("_clear", "_filled")} plus {@code itemTex(0, 0, 1)}, then
+     * {@code idTexPrefix("iron_item")}. The two-texture split is reproduced by the {@code active} blockstate
+     * property and the {@code pipe_holder_arm_iron}/{@code pipe_holder_arm_iron_filled} model pair rather than
+     * by {@code PipeDefinition}'s own texture-suffix fields, which nothing in this port reads (the same reason
+     * {@link #PIPE_WOOD} never set them either). {@code canBeColoured} is {@code false} for the same reason as
+     * every other material. */
+    public static final PipeDefinition PIPE_IRON = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("iron")
+        .logic(PipeBehaviourIron::new, PipeBehaviourIron::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The clay pipe's own {@link PipeDefinition} -- prefers inventories over pipes (see
+     * {@link PipeBehaviourClay}). 1.12.2: {@code builder.idTex("clay_item").flowItem().define()}, no suffixes.
+     * {@code canBeColoured} is {@code false} for the same reason as every other material. */
+    public static final PipeDefinition PIPE_CLAY = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("clay")
+        .logic(PipeBehaviourClay::new, PipeBehaviourClay::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The void pipe's own {@link PipeDefinition} -- destroys items (see {@link PipeBehaviourVoid}). 1.12.2:
+     * {@code builder.idTex("void_item").flowItem().define()}, no suffixes; its {@code void_fluid} sibling is not
+     * registered, since no fluid flow exists in this port. {@code canBeColoured} is {@code false} for the same
+     * reason as every other material. */
+    public static final PipeDefinition PIPE_VOID = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("void")
+        .logic(PipeBehaviourVoid::new, PipeBehaviourVoid::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block, the same reasoning already worked out for {@code BlockDecoration}/{@code BlockEngineWood}/
      * {@code BlockChute} -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
@@ -190,6 +243,30 @@ public final class BCTransportRegistries {
     public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_QUARTZ = REGISTRY.addItem(
         "pipe_item_quartz",
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_QUARTZ)
+    );
+
+    /** The golden pipe's own placeable item, tagged with {@link #PIPE_GOLD}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_GOLD = REGISTRY.addItem(
+        "pipe_item_gold",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_GOLD)
+    );
+
+    /** The iron pipe's own placeable item, tagged with {@link #PIPE_IRON}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_IRON = REGISTRY.addItem(
+        "pipe_item_iron",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_IRON)
+    );
+
+    /** The clay pipe's own placeable item, tagged with {@link #PIPE_CLAY}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_CLAY = REGISTRY.addItem(
+        "pipe_item_clay",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_CLAY)
+    );
+
+    /** The void pipe's own placeable item, tagged with {@link #PIPE_VOID}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_VOID = REGISTRY.addItem(
+        "pipe_item_void",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_VOID)
     );
 
     public static void register(IEventBus modBus) {

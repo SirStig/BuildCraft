@@ -42,6 +42,38 @@
     },
     {
       "when": {
+        "material": "gold"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_gold"
+      }
+    },
+    {
+      "when": {
+        "material": "iron"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_iron"
+      }
+    },
+    {
+      "when": {
+        "material": "clay"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_clay"
+      }
+    },
+    {
+      "when": {
+        "material": "void"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_void"
+      }
+    },
+    {
+      "when": {
         "material": "cobblestone",
         "north": "true"
       },
@@ -102,7 +134,8 @@
     {
       "when": {
         "material": "wood",
-        "north": "true"
+        "north": "true",
+        "active": "!north"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood"
@@ -111,7 +144,18 @@
     {
       "when": {
         "material": "wood",
-        "east": "true"
+        "north": "true",
+        "active": "north"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled"
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "east": "true",
+        "active": "!east"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood",
@@ -121,7 +165,19 @@
     {
       "when": {
         "material": "wood",
-        "south": "true"
+        "east": "true",
+        "active": "east"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "south": "true",
+        "active": "!south"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood",
@@ -131,7 +187,19 @@
     {
       "when": {
         "material": "wood",
-        "west": "true"
+        "south": "true",
+        "active": "south"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "west": "true",
+        "active": "!west"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood",
@@ -141,7 +209,19 @@
     {
       "when": {
         "material": "wood",
-        "up": "true"
+        "west": "true",
+        "active": "west"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "up": "true",
+        "active": "!up"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood",
@@ -151,10 +231,33 @@
     {
       "when": {
         "material": "wood",
-        "down": "true"
+        "up": "true",
+        "active": "up"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "down": "true",
+        "active": "!down"
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_wood",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "down": "true",
+        "active": "down"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood_filled",
         "x": 90
       }
     },
@@ -332,6 +435,313 @@
       },
       "apply": {
         "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold"
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "gold",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "north": "true",
+        "active": "!north"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron"
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "north": "true",
+        "active": "north"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled"
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "east": "true",
+        "active": "!east"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "east": "true",
+        "active": "east"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "south": "true",
+        "active": "!south"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "south": "true",
+        "active": "south"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "west": "true",
+        "active": "!west"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "west": "true",
+        "active": "west"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "up": "true",
+        "active": "!up"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "up": "true",
+        "active": "up"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "down": "true",
+        "active": "!down"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "iron",
+        "down": "true",
+        "active": "down"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_iron_filled",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay"
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "clay",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_clay",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void"
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "void",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_void",
         "x": 90
       }
     }

@@ -49,10 +49,11 @@ import buildcraft.lib.inventory.filter.StackFilter;
  * ({@code MjAPI.MJ}, i.e. a full Minecraft Joule per item). {@code mjPerMillibucket} is not needed at all, since
  * the fluid branch above is not ported.
  *
- * <p><b>Wrench-driven facing selection, {@code addActions}/{@code onActionActivate}, and
- * {@code getTextureData}/network payload sync are all dropped</b> -- see {@link PipeBehaviourDirectional}'s own
- * javadoc for the first two (inherited from there, not re-explained here), and this module's established
- * "no renderer yet" precedent for the third.
+ * <p><b>{@code addActions}/{@code onActionActivate} and {@code getTextureData}/network payload sync stay
+ * dropped</b> -- see {@link PipeBehaviourDirectional}'s own javadoc for all of them (the active face now reaches
+ * the client through whole-tile NBT sync plus the {@code active} blockstate property instead, which is also what
+ * renders the "filled" face {@code getTextureData} used to pick). Wrench-driven facing selection, dropped by this
+ * class's own first batch, is back (as a wrench cycle) -- also inherited from {@link PipeBehaviourDirectional}.
  *
  * <p><b>{@code MjCapabilityHelper} cannot be reused here as a black box on this target, despite the real 1.12.2
  * class holding one as a field and delegating straight to it.</b> On 26.x, {@code buildcraft.api.mj.

@@ -14,11 +14,14 @@ import net.minecraft.util.StringRepresentable;
 /**
  * The pipe materials {@link BlockPipeHolder} can carry, as a real blockstate property -- one value per
  * {@code PipeDefinition} currently registered in {@code BCTransportRegistries} ({@code PIPE_COBBLESTONE}/
- * {@code PIPE_WOOD}/{@code PIPE_STONE}/{@code PIPE_SANDSTONE}/{@code PIPE_QUARTZ}), matching each definition's own
+ * {@code PIPE_WOOD}/{@code PIPE_STONE}/{@code PIPE_SANDSTONE}/{@code PIPE_QUARTZ}/{@code PIPE_GOLD}/
+ * {@code PIPE_IRON}/{@code PIPE_CLAY}/{@code PIPE_VOID}), matching each definition's own
  * {@code identifier.getPath()} string exactly (confirmed against {@code BCTransportRegistries}: every one of
- * those five definitions is built with {@code idTexPrefix(...)}, which sets both the registry id and the texture
+ * those definitions is built with {@code idTexPrefix(...)}, which sets both the registry id and the texture
  * prefix from the same single string, so {@code identifier.getPath()} -- {@code "cobblestone"}/{@code "wood"}/
- * {@code "stone"}/{@code "sandstone"}/{@code "quartz"} -- is the real, live material name, not a guess).
+ * {@code "stone"}/{@code "sandstone"}/{@code "quartz"}/{@code "gold"}/{@code "iron"}/{@code "clay"}/
+ * {@code "void"} -- is the real, live material name, not a guess). New values are appended: a blockstate property
+ * value is saved by its serialized name, so the order does not affect existing worlds either way.
  *
  * <p>New, transport-local, following the exact shape {@code buildcraft.api.enums.EnumEngineType} already
  * established for a custom blockstate enum on this port ({@link StringRepresentable}, a lower-case
@@ -33,7 +36,11 @@ public enum EnumPipeMaterial implements StringRepresentable {
     WOOD("wood"),
     STONE("stone"),
     SANDSTONE("sandstone"),
-    QUARTZ("quartz");
+    QUARTZ("quartz"),
+    GOLD("gold"),
+    IRON("iron"),
+    CLAY("clay"),
+    VOID("void");
 
     public static final EnumPipeMaterial[] VALUES = values();
 

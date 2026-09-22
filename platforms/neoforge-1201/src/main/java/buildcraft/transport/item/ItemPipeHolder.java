@@ -50,4 +50,18 @@ public class ItemPipeHolder extends BlockItem implements IItemPipe {
     public PipeDefinition getDefinition() {
         return definition;
     }
+
+    /** Uses this item's own {@code item.buildcraft.pipe_item_<material>} key rather than the shared block's.
+     * 1.20.1's {@code BlockItem#getDescriptionId()} returns {@code getBlock().getDescriptionId()} (read from the
+     * real decompiled 1.20.1-Forge source), so without this every pipe item on this target was named plain
+     * "Pipe" ({@code block.buildcraft.pipe_holder}) whatever its material -- confirmed live: the dropped item
+     * entity of each new material reported its name as {@code Pipe}. {@code Item#getOrCreateDescriptionId()}
+     * ({@code protected}, confirmed via {@code javap}) is exactly what a plain {@code Item} would have returned.
+     * 26.x needs no equivalent: there, a {@code BlockItem}'s description id comes from its
+     * {@code Item.Properties} ({@code ITEM_DESCRIPTION_ID} unless {@code useBlockDescriptionPrefix()} is
+     * called, which {@code BCRegistry#addItem} does not), so it was already the per-item key. */
+    @Override
+    public String getDescriptionId() {
+        return getOrCreateDescriptionId();
+    }
 }
