@@ -1554,6 +1554,195 @@ Deliberately not ported, with reasons:
     mechanical list-concatenation change with a clear, verified-by-reading root cause, but a human should still
     open a real creative inventory once before trusting this fully.
 
+- **`buildcraft.factory` — `TileAutoWorkbenchItems`/`BlockAutoWorkbenchItems` (both platforms), the auto
+  workbench, and with it this port's first real GUI/container foundation.** Every machine ported so far needed
+  zero player-facing UI (place it, pipe items/fluids through it, maybe wrench it) -- `BlockChute`'s own javadoc
+  already flagged this as "the first block that *would* have wanted one." A player drags items into a phantom
+  3x3 blueprint grid; the tile derives a matching material filter, pulls piped-in materials that exactly match
+  (by item + data components, not by recipe ingredient/tag -- see below), and crafts one item at a time, charged
+  by MJ (`POWER_GEN_PASSIVE = MjAPI.MJ / 5` per tick, `POWER_REQUIRED` = 10 seconds' worth, `POWER_LOST` = half
+  that per tick once materials run out) exactly as 1.12.2's `TileAutoWorkbenchBase` did.
+  - **New files, both platforms**: `buildcraft.lib.gui.ContainerBCTile` (tile-bound menu base),
+    `buildcraft.lib.gui.slot.{IPhantomSlot,SlotBase,SlotPhantom,SlotOutput,SlotDisplay}`,
+    `buildcraft.lib.tile.craft.WorkbenchCrafting`, `buildcraft.factory.tile.{TileAutoWorkbenchBase,
+    TileAutoWorkbenchItems}`, `buildcraft.factory.block.BlockAutoWorkbenchItems`,
+    `buildcraft.factory.container.ContainerAutoCraftItems`, `buildcraft.factory.gui.GuiAutoCraftItems`, and a
+    genuinely new (no 1.12.2 counterpart) `buildcraft.factory.client.BCFactoryClientRegistries`. `BCRegistry`
+    (both platforms) grew a new `addMenu(name, IContainerFactory<M>)` helper alongside its existing
+    `addBlockAndItem`/`addBlockEntity`, so the next GUI-needing machine (quarry, filler, assembly table, ...)
+    registers a `MenuType` the same one-line way.
+  - **Deliberately dropped, matching this task's own scope, not discovered mid-port**: 1.12.2's
+    `GuiRecipeBookPhantom`/`IRecipeShownListener` recipe-book integration (click a recipe in the book to
+    auto-fill the blueprint) -- pure client UI convenience with no bearing on the tile's own logic; a player can
+    still fill the blueprint by hand. The `ICON_FILTER_OVERLAY_SAME/DIFFERENT/SIMILAR` filter-overlay icons on
+    the material slots -- a material slot's *behaviour* never depended on the overlay, only its look. Both are
+    noted in each new class's own javadoc. `TileAutoWorkbenchFluids`/`BlockAutoWorkbenchFluids` are out of scope
+    for this pass entirely (a separate follow-up once this foundation is proven) and were not touched.
+    `buildcraft.lib.misc.CraftingUtil` (1.12.2's `GameRegistry.findRegistry(IRecipe.class)` scan) has no port at
+    all -- both targets' own `RecipeManager#getRecipeFor` already does the lookup directly, collapsing the whole
+    class into one call inside `WorkbenchCrafting#tick()`. The block's own crafting recipe (gear + crafting
+    table, `gwg`) *is* ported, as a clean modern shaped-recipe JSON -- unlike `TilePump`/`TileTank`/
+    `TileFloodGate`'s skipped recipes, both its ingredients (`buildcraft:gear_stone`, vanilla's crafting table)
+    already exist in this port.
+  - **Genuine platform divergence #1, confirmed via `javap` against both real merged jars: the recipe-matching
+    API shape, not just a rename.** 1.12.2's `WorkbenchCrafting extends InventoryCrafting` was simultaneously
+    the temporary crafting-grid storage *and* the object handed straight to `IRecipe#matches`/
+    `#getCraftingResult`. On 1.20.1, `Recipe<C extends Container>` is still generic over a live container type,
+    and `CraftingContainer` (extending `Container`) is exactly that same shape -- so the 1.20.1
+    `WorkbenchCrafting` *does* implement `CraftingContainer` itself, backed by a small internal `ItemStack[]`
+    standing in for 1.12.2's inherited storage, staying structurally close to the original. On 26.x,
+    `Recipe<T extends RecipeInput>` is generic over a plain **immutable data holder**, not a live container --
+    `CraftingInput`, built only through the static factory `CraftingInput.of(int width, int height,
+    List<ItemStack> items)` (no mutable container interface exists to implement at all), with `Recipe#matches`/
+    `#assemble` (no `RegistryAccess` parameter on `assemble` here, confirmed via `javap` — 1.20.1's takes one)
+    both reading it directly. So the 26.x `WorkbenchCrafting` is a plain object that snapshots either the live
+    blueprint (while matching) or its own temporary grid (while executing a craft) into a fresh `CraftingInput`
+    each time one is needed. `RecipeManager#getRecipeFor` also returns one layer deeper on 26.x
+    (`Optional<RecipeHolder<T>>`, the recipe itself `holder.value()`) than 1.20.1's plain `Optional<T>`.
+  - **A real bug, found only by actually crafting through RCON, not by reading the API surface alone:
+    `CraftingInput.of` silently trims its input to the bounding box of non-empty stacks.** Confirmed by reading
+    this target's own decompiled source (`CraftingInput.ofPositioned`) after a real dedicated-server crash: a
+    3x3 blueprint holding a 1x2 sticks pattern (planks in slot 0 and slot 3) produces a **trimmed 1x2**
+    `CraftingInput`, not a 3x3 one -- matching for recipe *lookup* still works fine either way (`RecipeManager`
+    handles a trimmed input correctly), but `CraftingRecipe#getRemainingItems(CraftingInput)` is sized to the
+    *trimmed* grid, not `width * height`. The first version of `WorkbenchCrafting#craftExact` built a 3x3
+    `CraftingInput` and then looped `remainingStacks.get(s)` for `s` in `0..9`, and crashed the live dedicated
+    server outright with `ArrayIndexOutOfBoundsException: Index 2 out of bounds for length 2` the moment a real
+    craft was attempted (`net.minecraft.ReportedException: Ticking block entity`, caught and fixed in this same
+    pass -- see the RCON verification note below for the exact scenario that triggered it). Fixed by using
+    `CraftingInput.ofPositioned(width, height, grid)` instead and mapping the trimmed grid's own
+    `(tx, ty)` coordinates back to the original blueprint's `(positioned.left() + tx, positioned.top() + ty)`
+    when returning a genuine remaining item (an empty bucket, say) to materials -- `matches()`/`assemble()`
+    themselves needed no change, since both only ever read through `input.getItem(...)`, which is already
+    trim-relative and safe. 1.20.1's `WorkbenchCrafting`, which never trims (its `CraftingContainer` is always
+    reported as the tile's own fixed `width * height`, exactly like 1.12.2's `InventoryCrafting`), has no
+    equivalent bug -- confirmed by the same RCON scenario succeeding there without incident, both before and
+    after the 26.x fix. Worth remembering for any future 26.x code that builds a `CraftingInput` from a grid
+    that can be smaller than the crafting recipe search area: `of`/`ofPositioned` trims, and anything reading
+    `getRemainingItems`/similar per-slot recipe output has to size itself off the (possibly trimmed) input, not
+    off its own caller-side grid dimensions.
+  - **Genuine platform divergence #2, confirmed via `javap`: the GUI slot base class.** On 1.20.1, classic
+    `IItemHandler`/`net.minecraftforge.items.SlotItemHandler` both still exist, and `ItemHandlerSimple` still
+    implements `IItemHandlerModifiable` directly, so `SlotBase` keeps 1.12.2's shape almost unchanged --
+    `extends SlotItemHandler`, wrapping the handler directly. On 26.x, neither `IItemHandler` nor
+    `SlotItemHandler` exist at all (see `ItemHandlerSimple`'s own javadoc); NeoForge's replacement,
+    `net.neoforged.neoforge.transfer.item.ResourceHandlerSlot`, wraps a `ResourceHandler<ItemResource>` through
+    an `IndexModifier`, but since every inventory this GUI layer touches is concretely an `ItemHandlerSimple`
+    (never just any `ResourceHandler`), the 26.x `SlotBase` instead extends NeoForge's own
+    `net.neoforged.neoforge.world.inventory.StackCopySlot` directly and reads/writes the handler's own
+    `getStackInSlot`/`setStackInSlot` pair through the abstract `getStackCopy`/`setStackCopy` pair -- one fewer
+    layer of indirection than wiring up a `ResourceHandlerSlot` + `IndexModifier` would need, and consistent
+    with this port's established preference for talking to its own concrete handler types directly (see
+    `ItemHandlerSimple`'s own javadoc, and `TileTank` implementing `ResourceHandler` itself rather than being
+    wrapped). `SlotDisplay` follows the same split: a hand-rolled `InventoryBasic`-backed classic `Slot` on
+    1.20.1 (1.12.2's own shape, unchanged), `StackCopySlot` directly on 26.x (no fake backing `Container`
+    needed at all there).
+  - **A third, smaller divergence, also confirmed via `javap`, in the container-menu click/merge plumbing**:
+    `AbstractContainerMenu#clicked(int, int, ?, Player)` takes 1.20.1's classic `ClickType` but 26.x's own
+    `ContainerInput` enum instead -- a genuine, target-specific rename (re-verified via `javap`, not assumed
+    from the task brief that flagged it), and on both targets `clicked` now returns `void` rather than 1.12.2's
+    `ItemStack` (the cursor stack lives in `getCarried()`/`setCarried` instead). `ContainerBCTile#clicked`
+    (both platforms) intercepts an `IPhantomSlot` click before delegating to `super.clicked`, setting/growing
+    the phantom slot's content to match the carried stack without ever consuming it -- ported from
+    `ContainerBC_Neptune#slotClick`'s same behaviour. Shift-click merging (`#quickMoveStack`) is a plain two-
+    region merge (machine slots, then player inventory, or the reverse) using `moveItemStackTo` (the modern
+    rename of `mergeItemStack`), which already respects `Slot#mayPlace` -- so phantom/output/display slots are
+    automatically skipped without `ContainerBCTile` needing to filter them out itself.
+  - **No custom network payload survives, and none was rebuilt.** 1.12.2's `writePayload`/`readPayload` pushed
+    the MJ progress bar's value and the assumed-result display by hand, id-tagged. The progress value is now a
+    single container `DataSlot` (`TileAutoWorkbenchBase#getPowerStoredForSync`/`#setPowerStoredForSync`, the
+    same "block entity doubles as the `ContainerData` source" idiom vanilla's own furnace uses -- the server's
+    `get()` always reads the live field, the client's `set()` writes into its own local tile instance when a
+    change packet arrives). The assumed-result display slot needs nothing at all: `SlotDisplay#getItem()` reads
+    `TileAutoWorkbenchBase#getCurrentRecipeOutput()` live, and `AbstractContainerMenu#broadcastChanges()`
+    already diffs and pushes every slot's `getItem()` to the client every tick on its own. 1.12.2's
+    `powerStoredLast`/partial-tick progress-bar interpolation has no replacement -- the progress bar just reads
+    the last-synced `DataSlot` value directly; a minor, deliberate simplification given no `DeltaManager`-style
+    interpolation is wired into the GUI layer yet.
+  - **Opening the menu diverges in the expected, already-documented-elsewhere way.** `BlockAutoWorkbenchItems`
+    always opens the GUI on right-click, with no wrench check at all -- matching 1.12.2's own
+    `onBlockActivated`, unlike `BlockFloodGate`'s wrench-gated interaction. On 26.x this overrides
+    `useWithoutItem` (confirmed `protected` via `javap`, the split-hook shape) and opens through
+    `Player#openMenu(MenuProvider)`, with `TileAutoWorkbenchBase` itself implementing `MenuProvider` and
+    overriding `IMenuProviderExtension#writeClientSideData` to write its own `BlockPos` by hand (read back by
+    `ContainerAutoCraftItems`'s `RegistryFriendlyByteBuf` factory constructor to look the tile up again
+    client-side). On 1.20.1 this overrides the still-unified `use` and opens through
+    `NetworkHooks.openScreen(ServerPlayer, MenuProvider, BlockPos)`, which writes that same `BlockPos`
+    automatically -- no `writeClientSideData` override needed there at all.
+  - **Dist-isolation for client screen registration, mirroring but not identical to the `MessageMarker`
+    precedent already on file.** `MessageMarker.ClientPlayerLookup` had to isolate one client-only field read
+    into a lazily-loaded nested class because that message's registration itself had to run, and be verified,
+    unconditionally on both sides. Menu-screen registration is different: it is *inherently* client-only, so the
+    coarser, standard idiom applies instead -- gate the *listener registration call itself*, never the method
+    body. `BuildCraft`'s constructor (both platforms) only calls
+    `modBus.addListener(BCFactoryClientRegistries::registerScreens)` behind a dist check
+    (`FMLEnvironment.getDist().isClient()` on 26.x -- confirmed via `javap` that `FMLEnvironment.getDist()` is a
+    **method**, not the field the task brief's own starting guess assumed; `FMLEnvironment.dist.isClient()` on
+    1.20.1, where it genuinely *is* a public field, confirmed separately via `javap` against that target's own
+    `net.minecraftforge.fml.loading.FMLEnvironment`) -- so a dedicated server never has a reason to load or
+    bytecode-verify `BCFactoryClientRegistries`, and transitively `GuiAutoCraftItems` (a client-only type on
+    26.x, since `Screen`/`GuiGraphicsExtractor` don't exist on a dedicated server there), at all. The actual
+    `MenuScreens.register`/`RegisterMenuScreensEvent#register` call and every import of the `Screen` subclass
+    live only inside that gated class.
+  - **A second, unrelated real bug was found and fixed in the block's own crafting recipe JSON, specific to
+    26.3's data format.** The first version of `auto_workbench_item.json`'s shaped-recipe `key` used the classic
+    `{"item": "minecraft:crafting_table"}` object form for the non-tag ingredient -- valid on 1.20.1 (and
+    accepted there without incident) but rejected outright on 26.3, which crashed *dedicated server world
+    creation itself* (`RegistryDataLoader` failing to parse `buildcraft:auto_workbench_item` out of the
+    `minecraft:recipe` registry, `IllegalStateException`, before "Done" ever printed) because 26.3's ingredient
+    codec no longer accepts that bare object form for a plain item reference -- only a plain string (an item id,
+    or a `"#namespace:tag"` string) or its own `neoforge:ingredient_type` object shape. Fixed by using the bare
+    string form (`"w": "minecraft:crafting_table"`) instead, matching the already-working `"g": "#c:gears/stone"`
+    tag reference beside it. Found on the very first dedicated-server boot attempt after adding the recipe, not
+    by inspection -- worth remembering for any future 26.x recipe JSON that still writes ingredients the classic
+    `{"item": ...}` way.
+  - Registered in `BCFactoryRegistries` (`auto_workbench_item`, same default block properties as every other
+    `factory` machine, plus the new `AUTO_WORKBENCH_ITEMS_MENU` field) and `BCRegistry`'s new `addMenu` helper,
+    inserted directly after `FLOOD_GATE`/`FLOOD_GATE_TYPE` and before `TUBE`, with the same care taken not to
+    disturb `TUBE`'s own anchored javadoc that every prior insertion into this file has needed (flagged as a
+    real, previously-hit bug class in this task's own brief). Textures/blockstate/block+item model/loot table/
+    lang pulled or written following the established `BlockFloodGate`/`BlockPump` pattern -- `up`/`down` both
+    use the original's single `top.png` (matching 1.12.2's own model, which never referenced its own bundled
+    `bottom.png` at all -- dropped as a genuinely unreferenced asset, not merely unported), sides use `side.png`
+    (`side_alt.png`, also unreferenced by the original model, dropped the same way).
+  - **In-game verification, both platforms, via RCON, two independent scenarios each (different position, different
+    recipe every time, not a replay of the same test).** `/data merge block` on a freshly placed auto-workbench's
+    own NBT (`{blueprint:{stacks:[...]},materials:{stacks:[...]},powerStored:...}` on 26.x -- the
+    `ValueIOSerializable`-driven `ItemHandlerSimple` shape, `stacks: [{count, id}, ...]`, empty slots encoding to
+    a bare `{}`; `{inv_manager:{blueprint:{items:[...]},materials:{items:[...]}}}` on 1.20.1 -- classic
+    `{id, Count}` item NBT nested one level deeper under `inv_manager`, both shapes read directly off a real
+    `/data get block` rather than guessed) simulated a player having already configured the blueprint and piped
+    in materials, with `powerStored` set directly to `POWER_REQUIRED` to skip the idle-server tick-throttling
+    gap already documented in this project's own RCON-verification memory. First scenario (both platforms): a
+    1x2 sticks pattern (2 oak planks) with 10 planks piped in -- after ticking, the result slot held 8 sticks
+    (4 automatic crafts, 2 sticks each), materials correctly dropped from 10 to 6 planks, and
+    `material_filter` balanced to all 9 slots holding oak planks (the only unique blueprint ingredient), exactly
+    matching `createFilters()`'s expected single-ingredient case. Second, independent scenario at a different
+    position (both platforms): a real wooden-pickaxe pattern (3 planks across the top row, a stick down the
+    middle column, 6 planks + 4 sticks piped in) produced one real `minecraft:wooden_pickaxe` in the result slot,
+    consumed exactly 3 planks + 2 sticks, and balanced `material_filter` 5 slots to planks / 4 to sticks --
+    matching `createFilters()`'s own balancing-formula arithmetic worked out by hand from its ported algorithm
+    (`64*1/3` vs `64*1/2` and so on), and `powerStored` correctly fell back to 0 afterward rather than
+    accumulating for a next craft, since a pickaxe's own max stack size of 1 makes `canFullyAccept` correctly
+    refuse a second craft into an already-occupied result slot. Zero exceptions in either server's log across
+    both scenarios on both platforms; this is also the RCON scenario that surfaced both real bugs documented
+    above (the `CraftingInput` trimming crash, first hit by this exact sticks scenario on 26.x; the recipe-JSON
+    ingredient-format crash, hit on 26.x world creation before any RCON command could even run).
+  - **Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite, real
+    dedicated-server boots with zero exceptions on both targets (before *and* after both bug fixes above), and a
+    real `:neoforge-26x:runClient` boot reaching texture-atlas stitching -- well past mod construction and
+    `RegisterMenuScreensEvent` registration -- with no `IllegalStateException`/`ClassNotFoundError`/
+    `NoClassDefFoundError` naming `GuiAutoCraftItems`/`BCFactoryClientRegistries`/`ContainerAutoCraftItems`
+    anywhere in the log, confirming the dist-isolation guard is correctly wired.** **Not independently verified:
+    the actual on-screen GUI itself** -- this environment has no mouse/keyboard input automation, so the phantom-
+    slot drag-and-drop interaction, the progress-bar fill, and the background texture's on-screen placement can
+    only be confirmed by a human opening a real client and right-clicking a placed auto-workbench, the same
+    caveat already on file for `BlockFloodGate`'s wrench gesture, the creative-tab fix, and client-side rendering
+    generally. What *is* verified live, end to end, is every piece of logic the GUI would otherwise only be a
+    thin skin over: blueprint matching, exact-stack requirement checking, material consumption, filter
+    auto-derivation, MJ accumulation/spend, and result production -- all directly, via RCON, bypassing the GUI
+    entirely.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1572,7 +1761,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate (done). Autoworkbench. |
+| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 

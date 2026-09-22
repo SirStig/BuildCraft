@@ -14,6 +14,8 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ItemLike;
 import net.minecraft.world.level.block.Block;
@@ -22,6 +24,8 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
+import net.neoforged.neoforge.network.IContainerFactory;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -64,6 +68,7 @@ public final class BCRegistry {
     private final DeferredRegister.Blocks blocks;
     private final DeferredRegister.Items items;
     private final DeferredRegister<BlockEntityType<?>> blockEntities;
+    private final DeferredRegister<MenuType<?>> menus;
 
     /** Everything that should show up in BuildCraft's creative tab, in registration order. */
     private final List<Supplier<? extends ItemLike>> creativeOrder = new ArrayList<>();
@@ -72,6 +77,7 @@ public final class BCRegistry {
         this.blocks = DeferredRegister.createBlocks(modId);
         this.items = DeferredRegister.createItems(modId);
         this.blockEntities = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, modId);
+        this.menus = DeferredRegister.create(Registries.MENU, modId);
         ALL.add(this);
     }
 
@@ -163,6 +169,27 @@ public final class BCRegistry {
 
     // ###############
     //
+    // Menus
+    //
+    // ###############
+
+    /** Registers a {@link MenuType} bound to the given tile-menu factory -- first needed by
+     * {@code buildcraft.factory.container.ContainerAutoCraftItems}, this port's first real GUI/container. Wraps
+     * NeoForge's own {@link IMenuTypeExtension#create}, which threads the extra
+     * {@code RegistryFriendlyByteBuf} client-side lookup data through automatically (see
+     * {@code buildcraft.factory.tile.TileAutoWorkbenchBase#writeClientSideData} for the server-side half of that
+     * hand-off). Client-side screen registration is a separate call entirely -- see
+     * {@code buildcraft.factory.client.BCFactoryClientRegistries}'s own javadoc for why that one is never routed
+     * through this class. */
+    public <M extends AbstractContainerMenu> DeferredHolder<MenuType<?>, MenuType<M>> addMenu(
+        String name,
+        IContainerFactory<M> factory
+    ) {
+        return menus.register(name, () -> IMenuTypeExtension.create(factory));
+    }
+
+    // ###############
+    //
     // Hook-up
     //
     // ###############
@@ -171,6 +198,7 @@ public final class BCRegistry {
         blocks.register(modBus);
         items.register(modBus);
         blockEntities.register(modBus);
+        menus.register(modBus);
     }
 
     /** Everything this module contributes to the creative tab, in registration order. */

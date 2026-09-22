@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ItemLike;
@@ -18,7 +20,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 
+import net.minecraftforge.common.extensions.IForgeMenuType;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.network.IContainerFactory;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
@@ -41,6 +45,7 @@ public final class BCRegistry {
     private final DeferredRegister<Block> blocks;
     private final DeferredRegister<Item> items;
     private final DeferredRegister<BlockEntityType<?>> blockEntities;
+    private final DeferredRegister<MenuType<?>> menus;
 
     /** Everything that should show up in BuildCraft's creative tab, in registration order. */
     private final List<Supplier<? extends ItemLike>> creativeOrder = new ArrayList<>();
@@ -49,6 +54,7 @@ public final class BCRegistry {
         this.blocks = DeferredRegister.create(ForgeRegistries.BLOCKS, modId);
         this.items = DeferredRegister.create(ForgeRegistries.ITEMS, modId);
         this.blockEntities = DeferredRegister.create(ForgeRegistries.BLOCK_ENTITY_TYPES, modId);
+        this.menus = DeferredRegister.create(ForgeRegistries.MENU_TYPES, modId);
         ALL.add(this);
     }
 
@@ -121,6 +127,18 @@ public final class BCRegistry {
 
     // ###############
     //
+    // Menus
+    //
+    // ###############
+
+    /** Registers a {@link MenuType} bound to the given tile-menu factory -- see the 26.x copy of this class for
+     * why this exists. Wraps Forge's own {@link IForgeMenuType#create}. */
+    public <M extends AbstractContainerMenu> RegistryObject<MenuType<M>> addMenu(String name, IContainerFactory<M> factory) {
+        return menus.register(name, () -> IForgeMenuType.create(factory));
+    }
+
+    // ###############
+    //
     // Hook-up
     //
     // ###############
@@ -129,6 +147,7 @@ public final class BCRegistry {
         blocks.register(modBus);
         items.register(modBus);
         blockEntities.register(modBus);
+        menus.register(modBus);
     }
 
     /** Everything this module contributes to the creative tab, in registration order. */

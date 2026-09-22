@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "gwg"
+  ],
+  "key": {
+    "g": "#c:gears/stone",
+    "w": "minecraft:crafting_table"
+  },
+  "result": {
+    "count": 1,
+    "id": "buildcraft:auto_workbench_item"
+  }
+}

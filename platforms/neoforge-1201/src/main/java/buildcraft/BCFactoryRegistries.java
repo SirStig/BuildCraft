@@ -7,6 +7,7 @@
  */
 package buildcraft;
 
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
@@ -19,12 +20,15 @@ import buildcraft.api.inventory.ItemTransactorCapabilities;
 
 import buildcraft.lib.registry.BCRegistry;
 
+import buildcraft.factory.block.BlockAutoWorkbenchItems;
 import buildcraft.factory.block.BlockChute;
 import buildcraft.factory.block.BlockFloodGate;
 import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
+import buildcraft.factory.container.ContainerAutoCraftItems;
+import buildcraft.factory.tile.TileAutoWorkbenchItems;
 import buildcraft.factory.tile.TileChute;
 import buildcraft.factory.tile.TileFloodGate;
 import buildcraft.factory.tile.TileMiningWell;
@@ -120,6 +124,28 @@ public final class BCFactoryRegistries {
             .sound(SoundType.METAL)
             .noOcclusion()
             .noLootTable()));
+
+    /** Same default properties as {@link #CHUTE}/{@link #MINING_WELL}/{@link #PUMP}/{@link #TANK}/
+     * {@link #FLOOD_GATE} -- see {@link #CHUTE}'s own javadoc. Right-click always opens
+     * {@link ContainerAutoCraftItems}'s GUI, this port's first real container -- see
+     * {@link BlockAutoWorkbenchItems}'s own javadoc for why there is no wrench check here, unlike
+     * {@link #FLOOD_GATE}. */
+    public static final RegistryObject<BlockAutoWorkbenchItems> AUTO_WORKBENCH_ITEMS = REGISTRY.addBlockAndItem(
+        "auto_workbench_item", () -> new BlockAutoWorkbenchItems(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileAutoWorkbenchItems>> AUTO_WORKBENCH_ITEMS_TYPE =
+        REGISTRY.addBlockEntity("auto_workbench_item", TileAutoWorkbenchItems::new, AUTO_WORKBENCH_ITEMS);
+
+    /** See {@link BCRegistry#addMenu}'s own javadoc for why this exists, and
+     * {@code buildcraft.factory.client.BCFactoryClientRegistries} for the separate client-only screen
+     * registration this pairs with. */
+    public static final RegistryObject<MenuType<ContainerAutoCraftItems>> AUTO_WORKBENCH_ITEMS_MENU =
+        REGISTRY.addMenu("auto_workbench_item", ContainerAutoCraftItems::new);
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
