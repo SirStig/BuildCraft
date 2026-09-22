@@ -12,19 +12,24 @@ import java.util.EnumSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
 import buildcraft.lib.misc.NBTUtilBC;
 import buildcraft.lib.misc.StackUtil;
+import buildcraft.lib.misc.VecUtil;
 
 /**
  * One item moving through a pipe's internal space -- a direct port of 1.12.2's own {@code TravellingItem},
- * server-state fields only. See the 26.x copy of this class for the full account of every client-rendering
- * member dropped -- unchanged here.
+ * server-state fields only. See the 26.x copy of this class for the full account of what {@code clientItemLink}/
+ * {@code stackSize} stay dropped for, and why {@code getRenderPosition}/{@code getRenderDirection} (below) are
+ * re-added rather than {@code interpolatePosition}/{@code isVisible} under their own names -- identical reasoning
+ * here, this target's own {@code RenderTilePipeHolder} being the one real caller.
  *
  * <p>The one genuine per-platform divergence: item serialisation. 1.20.1 has no transfer API and no data
  * components, so a stack round-trips through the classic {@code ItemStack#save(CompoundTag)}/
@@ -135,5 +140,44 @@ public class TravellingItem {
             return true;
         }
         return false;
+    }
+
+    // Rendering -- re-added surface, see the 26.x copy of this class's own javadoc for why.
+
+    /** @return The real server itemstack, for a renderer to draw directly. */
+    public ItemStack getStack() {
+        return stack;
+    }
+
+    /** @return True if this item is phantom bookkeeping only -- a renderer must skip these entirely. */
+    public boolean isPhantom() {
+        return isPhantom;
+    }
+
+    /** This item's real-time render position -- byte-identical logic to the 26.x copy of this method (same
+     * {@code Vec3}/{@code VecUtil} shapes on both targets); see that copy's own javadoc for the full account of
+     * the one deliberate fix over 1.12.2's original (a zero-duration divide-by-zero, guarded here the same way). */
+    public Vec3 getRenderPosition(BlockPos pos, long tick, float partialTick, PipeFlowItems flow) {
+        long diff = tickFinished - tickStarted;
+        long afterTick = tick - tickStarted;
+
+        float interp = diff <= 0 ? 1f : (afterTick + partialTick) / diff;
+        interp = Math.max(0f, Math.min(1f, interp));
+
+        Vec3 center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        Vec3 vecSide = side == null ? center : VecUtil.offset(center, side, flow.getPipeLength(side));
+
+        Vec3 vecFrom = toCenter ? vecSide : center;
+        Vec3 vecTo = toCenter ? center : vecSide;
+
+        return VecUtil.scale(vecFrom, 1 - interp).add(VecUtil.scale(vecTo, interp));
+    }
+
+    /** This item's current facing for rendering purposes -- see the 26.x copy of this method's own javadoc for
+     * why this drops 1.12.2's own {@code (tick, partialTicks)} parameters entirely (they were computed, then
+     * never read, in the original). */
+    @Nullable
+    public Direction getRenderDirection() {
+        return toCenter ? (side == null ? null : side.getOpposite()) : side;
     }
 }

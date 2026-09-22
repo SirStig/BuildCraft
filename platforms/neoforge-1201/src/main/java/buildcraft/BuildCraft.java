@@ -17,6 +17,7 @@ import buildcraft.api.core.BCDebugging;
 
 import buildcraft.energy.client.BCEnergyClientRegistries;
 import buildcraft.factory.client.BCFactoryClientRegistries;
+import buildcraft.transport.client.BCTransportClientRegistries;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +60,7 @@ public final class BuildCraft {
             modBus.addListener(BCFactoryClientRegistries::registerRenderers);
             modBus.addListener(BCEnergyClientRegistries::registerScreens);
             modBus.addListener(BCEnergyClientRegistries::registerRenderers);
+            modBus.addListener(BCTransportClientRegistries::registerRenderers);
         }
     }
 }

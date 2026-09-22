@@ -79,11 +79,15 @@ import buildcraft.lib.misc.StackUtil;
  * transfer API at all), so no journal/transaction machinery is needed there -- {@code insertItemEvents} mutates
  * {@link #buckets} directly, exactly like 1.12.2 did.
  *
- * <p><b>Deliberately dropped, all for the same "no client rendering in this batch" reason already established
- * across this whole module:</b> the network constructor and {@code readPayload}/{@code writePayload}/
- * {@code sendItemDataToClient} (1.12.2's item-creation packet, routed through the unported
- * {@code PipeItemMessageQueue}/{@code BuildCraftObjectCaches}), and the client-only {@code getAllItemsForRender}.
- * Persistence goes through {@link #writeToNbt(HolderLookup.Provider)}/the NBT constructor only.
+ * <p><b>Deliberately dropped, still true even now that a renderer exists:</b> the network constructor and
+ * {@code readPayload}/{@code writePayload}/{@code sendItemDataToClient} (1.12.2's own dedicated item-creation
+ * packet, routed through the unported {@code PipeItemMessageQueue}/{@code BuildCraftObjectCaches}). This port's
+ * client sync goes a different, coarser route instead -- see {@link #getTravellingItemsForRender()}'s own
+ * javadoc, and {@code TilePipeHolder#scheduleNetworkUpdate}'s, for the real mechanism and why. Persistence goes
+ * through {@link #writeToNbt(HolderLookup.Provider)}/the NBT constructor only.
+ *
+ * <p><b>{@code getAllItemsForRender} is re-added below, renamed {@link #getTravellingItemsForRender()}</b>, now
+ * that {@code RenderTilePipeHolder} exists to call it -- see that method's own javadoc.
  *
  * <p><b>Also dropped: {@code addTriggers}</b> (a {@code @PipeEventHandler} registering
  * {@code BCTransportStatements.TRIGGER_ITEMS_TRAVERSING}) -- gates/statements are out of this batch's scope
@@ -246,6 +250,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         firstItem.speed = EXTRACT_SPEED;
         firstItem.genTimings(now, getPipeLength(firstItem.side));
         addDelayed(firstItem.timeToDest, firstItem);
+        pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
 
         if (from != null && to != null) {
             TravellingItem secondItem = new TravellingItem(stack);
@@ -256,6 +261,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             secondItem.speed = EXTRACT_SPEED;
             secondItem.genTimings(firstItem.tickFinished, getPipeLength(secondItem.side));
             addDelayed(secondItem.timeToDest, secondItem);
+            pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
         }
     }
 
@@ -406,6 +412,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
                 newItem.speed = newSpeed;
                 newItem.genTimings(now, getPipeLength(newItem.side));
                 addDelayed(newItem.timeToDest, newItem);
+                pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
             }
         }
     }
@@ -468,6 +475,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         item.stack = excess;
         item.genTimings(holder.getPipeLevel().getGameTime(), getPipeLength(item.side));
         addDelayed(item.timeToDest, item);
+        holder.scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
     }
 
     private ItemStack fireEventEjectIntoPipe(IFlowItems oFlow, Direction to, ItemStack before, ItemStack excess) {
@@ -579,8 +587,10 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         if (from != null) {
             item.tried.add(from);
         }
-        // Explicitly don't send this item to the client: there's no renderer to draw it, and it needs to
-        // travel 0 distance anyway.
+        // Still explicitly not synced, even now that a renderer exists: genTimings(now, 0) makes this a
+        // zero-distance, same-tick item (see TravellingItem#getRenderPosition's own javadoc for the divide-by-
+        // zero this produces, guarded there) -- it is consumed by the very next onTick() before any render frame
+        // could plausibly observe it, so there is nothing for a sync to usefully show the client in time anyway.
         addDelayed(item.timeToDest, item);
     }
 
@@ -617,6 +627,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             }
         }
         addDelayed(item.timeToDest, item);
+        pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
     }
 
     public boolean doesContainItems() {
@@ -642,6 +653,48 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             }
         }
         return false;
+    }
+
+    /** A flattened, safe-to-iterate snapshot of every {@link TravellingItem} currently in flight across every
+     * delay bucket -- including phantom ones, which {@code RenderTilePipeHolder} (the one real caller) is
+     * responsible for skipping itself via {@link TravellingItem#isPhantom()}, per this batch's own scope. Renamed,
+     * re-added port of 1.12.2's own {@code getAllItemsForRender} (dropped in the connection-shape/materials
+     * batches above for having no renderer to serve yet -- see this class's own "Deliberately dropped" javadoc
+     * paragraph).
+     *
+     * <p><b>Real, investigated sync-timing finding, not assumed either way (this batch's own open verification
+     * question):</b> {@code BlockPipeHolder#getTicker} returns {@code null} on the client side on both platforms
+     * (confirmed by directly reading it) -- a client-side {@code TilePipeHolder} never calls {@link #onTick()} at
+     * all, so its own copy of {@link #buckets} never advances or reshuffles locally; whatever this method returns
+     * on the client is exactly whatever the last full-tile NBT sync wrote into {@link #buckets} via the NBT
+     * constructor, frozen until the next one. That makes {@link TravellingItem#getRenderPosition} deriving purely
+     * from the item's own absolute {@code tickStarted}/{@code tickFinished} against the client's own
+     * ever-advancing {@code level.getGameTime()} (never from bucket position/order, which is meaningless on a
+     * client that never shifts its own buckets) the only correct design, and makes syncing at exactly the moment
+     * those two fields get set to fresh values -- not on some generic cadence -- the only way the client ever
+     * learns a new travel segment exists in the first place. {@code TilePipeHolder#serverTick()} only ever called
+     * plain {@code setChanged()} (chunk-save only, confirmed by re-reading {@code TileBC#markDirtyAndSync}'s own
+     * javadoc: "plain setChanged() only marks the chunk for saving") -- never {@code markDirtyAndSync()} -- so
+     * before this batch, a client's {@link #buckets} would only ever refresh on chunk (re)load, then sit stale
+     * for the tile's entire remaining lifetime. Fixed here by finally implementing
+     * {@code TilePipeHolder#scheduleNetworkUpdate} (previously a real no-op on both platforms, per its own
+     * "No client sync exists in this batch" javadoc) to call {@code markDirtyAndSync()}, and calling
+     * {@code pipe.getHolder().scheduleNetworkUpdate(PipeMessageReceiver.FLOW)} at each of this class's five real
+     * call sites that set a {@link TravellingItem}'s {@code tickStarted}/{@code tickFinished} to fresh values --
+     * both ends of {@link #sendPhantomItem}, the new item {@link #onItemReachCenter} creates, the bounced item
+     * {@link #onItemReachEnd} re-queues, and the genuinely-new (non-merged) item {@link #addItemTryMerge} adds --
+     * the exact same five moments 1.12.2's own {@code sendItemDataToClient} was called from, re-derived by
+     * re-reading that method's own call sites directly rather than guessed. This resyncs the whole tile (this
+     * port's sync granularity is coarser than 1.12.2's own per-item creation packet -- see this class's own
+     * "Deliberately dropped" javadoc paragraph) exactly when a travel segment starts, not every tick and not
+     * only on chunk load -- deliberately not a per-tick sync, since nothing about an in-flight item's own
+     * {@code tickStarted}/{@code tickFinished} ever changes again until it reaches an endpoint. */
+    public List<TravellingItem> getTravellingItemsForRender() {
+        List<TravellingItem> all = new ArrayList<>();
+        for (List<TravellingItem> bucket : buckets) {
+            all.addAll(bucket);
+        }
+        return all;
     }
 
     double getPipeLength(@Nullable Direction side) {

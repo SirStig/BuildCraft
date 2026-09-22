@@ -60,9 +60,15 @@ import buildcraft.lib.misc.StackUtil;
  * {@code boolean simulate} either mutates {@link #buckets} or it does not, exactly like 1.12.2 did.
  *
  * <p>See the 26.x copy of this class's own javadoc for the full, still-applicable account of what is deliberately
- * dropped (network sync, {@code addTriggers}/gates) and why -- unchanged here. The delay-bucket queue
- * ({@link #buckets}) is likewise a small, self-contained reimplementation of 1.12.2's own {@code DelayedList<E>},
- * not a port of that class under its own name -- see the 26.x copy for why.
+ * dropped ({@code addTriggers}/gates) and why -- unchanged here. The delay-bucket queue ({@link #buckets}) is
+ * likewise a small, self-contained reimplementation of 1.12.2's own {@code DelayedList<E>}, not a port of that
+ * class under its own name -- see the 26.x copy for why.
+ *
+ * <p><b>{@code getAllItemsForRender} is re-added below, renamed {@link #getTravellingItemsForRender()}</b>, and
+ * this class now calls {@code scheduleNetworkUpdate(PipeMessageReceiver.FLOW)} at the same five call sites the
+ * 26.x copy does -- see that method's own javadoc for the real, investigated sync-timing finding behind both
+ * (byte-identical reasoning: {@code BlockPipeHolder#getTicker} returns {@code null} client-side on this target
+ * too, confirmed directly, so the same fix is needed here for the same reason).
  */
 public final class PipeFlowItems extends PipeFlow implements IFlowItems {
     private static final double EXTRACT_SPEED = 0.08;
@@ -192,6 +198,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         firstItem.speed = EXTRACT_SPEED;
         firstItem.genTimings(now, getPipeLength(firstItem.side));
         addDelayed(firstItem.timeToDest, firstItem);
+        pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
 
         if (from != null && to != null) {
             TravellingItem secondItem = new TravellingItem(stack);
@@ -202,6 +209,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             secondItem.speed = EXTRACT_SPEED;
             secondItem.genTimings(firstItem.tickFinished, getPipeLength(secondItem.side));
             addDelayed(secondItem.timeToDest, secondItem);
+            pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
         }
     }
 
@@ -347,6 +355,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
                 newItem.speed = newSpeed;
                 newItem.genTimings(now, getPipeLength(newItem.side));
                 addDelayed(newItem.timeToDest, newItem);
+                pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
             }
         }
     }
@@ -390,6 +399,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         item.stack = excess;
         item.genTimings(holder.getPipeLevel().getGameTime(), getPipeLength(item.side));
         addDelayed(item.timeToDest, item);
+        holder.scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
     }
 
     private ItemStack fireEventEjectIntoPipe(IFlowItems oFlow, Direction to, ItemStack before, ItemStack excess) {
@@ -499,6 +509,10 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
         if (from != null) {
             item.tried.add(from);
         }
+        // Not synced, even now that a renderer exists: genTimings(now, 0) makes this a zero-distance, same-tick
+        // item (see TravellingItem#getRenderPosition's own javadoc for the divide-by-zero this produces, guarded
+        // there), consumed by the very next onTick() before any render frame could plausibly observe it -- see
+        // the 26.x copy of this method's own comment for the same reasoning.
         addDelayed(item.timeToDest, item);
     }
 
@@ -535,6 +549,7 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             }
         }
         addDelayed(item.timeToDest, item);
+        pipe.getHolder().scheduleNetworkUpdate(IPipeHolder.PipeMessageReceiver.FLOW);
     }
 
     public boolean doesContainItems() {
@@ -558,6 +573,18 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
             }
         }
         return false;
+    }
+
+    /** A flattened, safe-to-iterate snapshot of every {@link TravellingItem} currently in flight -- see the 26.x
+     * copy of this method's own javadoc for the full account of why this is shaped the way it is, and the real,
+     * investigated sync-timing finding it documents (identical on this target: {@code BlockPipeHolder#getTicker}
+     * returns {@code null} client-side here too, confirmed directly). */
+    public List<TravellingItem> getTravellingItemsForRender() {
+        List<TravellingItem> all = new ArrayList<>();
+        for (List<TravellingItem> bucket : buckets) {
+            all.addAll(bucket);
+        }
+        return all;
     }
 
     double getPipeLength(@Nullable Direction side) {

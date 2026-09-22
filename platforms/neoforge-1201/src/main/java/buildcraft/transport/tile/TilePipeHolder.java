@@ -52,7 +52,8 @@ import buildcraft.transport.pipe.PipeEventBus;
 /**
  * The single shared block entity every pipe kind uses -- implements the already-ported {@link IPipeHolder}. See
  * the 26.x copy of this class for the full account of what is deliberately dropped ({@code PluggableHolder},
- * every {@code NET_UPDATE_*} network message) and why -- unchanged here.
+ * every {@code NET_UPDATE_*} network message) and why, and of what {@link #scheduleNetworkUpdate} does now
+ * (identical reasoning and implementation on this target).
  *
  * <p>The one real per-platform divergence: capabilities. 1.20.1 still has {@code ICapabilityProvider}, so this
  * tile exposes its own {@link #getCapability} override directly (matching {@code TileChute}'s own precedent on
@@ -250,12 +251,20 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         return eventBus.fireEvent(event);
     }
 
+    /** No renderer needs a *block-model* rebuild in this batch -- see the 26.x copy of this method's own
+     * javadoc. */
     @Override
     public void scheduleRenderUpdate() {
     }
 
+    /** Pushes this tile's whole NBT-serialised state to every client tracking it -- see the 26.x copy of this
+     * method's own javadoc for the real, investigated finding that made this necessary and why it is shaped this
+     * coarsely. */
     @Override
     public void scheduleNetworkUpdate(PipeMessageReceiver... parts) {
+        if (parts.length > 0) {
+            markDirtyAndSync();
+        }
     }
 
     @Override

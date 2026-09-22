@@ -3303,6 +3303,183 @@ Deliberately not ported, with reasons:
     both platforms with zero exceptions and the eight-point RCON matrix above, and real `runClient` boots on both
     platforms reaching a fully stitched texture atlas with zero exceptions and zero missing-model warnings.
 
+- **Items now actually render travelling through a pipe -- the last major visual gap this whole pipe-rendering
+  effort was chasing, closing the real complaint that started it ("the pipes... not having... items inside
+  them").** A `BlockEntityRenderer<TilePipeHolder>` on each platform reads every real, in-flight
+  `TravellingItem` off a pipe's own `PipeFlowItems` and draws its actual `ItemStack` at an interpolated position
+  inside the now-visible pipe geometry (the connection-shape batch above), facing along its direction of travel.
+  Genuinely new work, not a reproduction of 1.12.2's own `PipeFlowRendererItems`/`IPipeFlowRenderer` -- that was
+  a bespoke `MutableQuad`/`BufferBuilder` framework with no counterpart anywhere in this port, the same category
+  of deliberate non-reproduction the piston-rod batch's own `RenderEngine_BC8` note already established; the
+  underlying interpolation math is the same "(elapsed + partialTick) / totalDuration, clamped 0..1" shape that
+  batch's own `RenderTileEngine` already proved correct in this codebase, here reading two fixed absolute-tick
+  anchors instead of a continuously-changing `progress` field (see the sync-timing finding below for why that
+  distinction matters).
+  - **The real, re-added public accessor surface, and why it is shaped this way.** `TravellingItem`'s server
+    fields (`stack`, `toCenter`, `side`, `tickStarted`/`tickFinished`, `isPhantom`) stayed package-private on
+    purpose after the original port batch dropped every render helper outright -- its own class javadoc said as
+    much, framing this as "a renderer must re-add these" territory rather than an oversight. Re-read directly
+    against 1.12.2's own `TravellingItem`/`PipeFlowItems` (`common/buildcraft/transport/...`) before writing
+    anything, per this task's own brief. Landed as: (a) `PipeFlowItems#getTravellingItemsForRender()` (renamed
+    port of the original's own dropped `getAllItemsForRender`), a flattened copy of every item across every delay
+    bucket -- copied, not a view, so a renderer iterating it can never observe this flow's own buckets mutate out
+    from under it; (b) `TravellingItem#getStack()`/`#isPhantom()`, plain field accessors; (c)
+    `TravellingItem#getRenderPosition(BlockPos, long, float, PipeFlowItems)`/`#getRenderDirection()`, brought
+    back as real, close, renamed ports of the 1.12.2 originals of the same name, living directly on
+    `TravellingItem` itself rather than as free functions on the renderer -- keeping the interpolation math
+    colocated with the data it reads, the same shape the task's own brief called "closer to the original's own
+    design" and the piston-rod entry's own `getRenderProgress` precedent already established for this codebase.
+    `interpolatePosition`/`isVisible` were not brought back under their own names: `getRenderPosition` already
+    inlines the one real lerp `interpolatePosition` ever did (its only caller), and every item this accessor set
+    reaches is already visible by construction -- a phantom item is filtered by the renderer itself via
+    `isPhantom()`, not by a dedicated "am I visible" query the original never actually varied (confirmed by
+    re-reading `isVisible`'s own one-line body: `return true;`, unconditionally, in every version of 1.12.2 this
+    session has read). One real, deliberate fix over the original, not a guess: `getRenderPosition` divides by
+    `tickFinished - tickStarted` unconditionally in 1.12.2, which is genuinely `0` for a same-tick, zero-distance
+    item (`PipeFlowItems#insertItemsForce`'s own `genTimings(now, 0)` call produces exactly this) -- a `0f/0f`
+    division that resolves to `NaN` and then survives `Math.min`/`Math.max` unclamped, the exact bug class the
+    piston-rod batch's own first-frame divide-by-zero guard already exists in this codebase to prevent. Guarded
+    here by treating a non-positive duration as "already arrived" (`interp = 1`), also the semantically correct
+    answer for a zero-length trip. `getRenderDirection` additionally drops the original's own `(tick,
+    partialTicks)` parameters entirely: re-reading the original's method body shows it computes the same clamped
+    interpolation fraction `getRenderPosition` does, then never actually reads it -- direction only ever changes
+    when a fresh `TravellingItem` object replaces this one at the pipe's centre (`onItemReachCenter`/
+    `onItemReachEnd` always construct a new instance with its own already-correct `toCenter`/`side`, never mutate
+    an in-flight item's own direction), so the original's own extra parameters were dead weight, not a real
+    per-frame recomputation -- confirmed by reading the method body, not assumed from the signature.
+  - **The real, investigated sync-timing finding this batch's own open question asked for, with concrete
+    evidence, not assumed either way.** Read `TilePipeHolder`/`PipeFlowItems`' real tick/insert logic on both
+    platforms directly, as instructed. Two things, together, made this a genuine bug rather than a
+    "already works, just prove it" finding: first, `TilePipeHolder#serverTick()` called plain `setChanged()`
+    every tick (matching 1.12.2's own unconditional `markChunkDirty()`) -- but `TileBC#markDirtyAndSync()`'s own
+    javadoc says outright "plain `setChanged()` only marks the chunk for saving," and only `markDirtyAndSync()`
+    (which additionally calls `level.sendBlockUpdated`) actually reaches a tracking client; `TilePipeHolder`
+    never called that method anywhere, and `scheduleNetworkUpdate` -- the one real `IPipeHolder` API that
+    `PipeFlowItems`/`Pipe` are already written to call when something changes (`Pipe#updateConnections` already
+    calls it with `PipeMessageReceiver.BEHAVIOUR`) -- was a genuine no-op on both platforms, per its own "No
+    client sync exists in this batch" javadoc. Second, and the more surprising finding: `BlockPipeHolder#getTicker`
+    returns `null` on the client side, confirmed by directly reading it on both platforms -- a client-side
+    `TilePipeHolder` **never calls `PipeFlowItems#onTick()` at all**, so its own copy of the delay-bucket queue
+    never advances or reshuffles locally, ever. Put together: before this batch, a client's view of a pipe's
+    items would populate once on chunk load (`getUpdateTag`'s full NBT snapshot) and then sit frozen for the
+    tile's entire remaining lifetime -- no per-tick client simulation to fall back on (unlike the piston rod's own
+    `progress`, which at least advances locally every client tick via `getRenderProgress`'s own mirror), and no
+    resync ever pushed a fresh one. This is *not* the same problem the piston-rod batch solved: that engine
+    needed a client-side mirror specifically because `progress` changes continuously but syncs rarely; a
+    travelling item's `tickStarted`/`tickFinished` are two fixed anchor points that never change again until the
+    item reaches an endpoint, so the correct fix is the opposite one -- sync precisely at the moment those two
+    fields get set to fresh values, then let the client's own naturally-advancing `level.getGameTime()` (which
+    does keep ticking locally even though the tile itself never does) interpolate between them with no bespoke
+    smoothing state needed at all. Fixed as an in-scope, necessary part of this batch, per its own instructions:
+    `TilePipeHolder#scheduleNetworkUpdate` now calls `markDirtyAndSync()` whenever any part requests an update,
+    and `PipeFlowItems` now calls `pipe.getHolder().scheduleNetworkUpdate(PipeMessageReceiver.FLOW)` at the exact
+    five call sites 1.12.2's own dedicated `sendItemDataToClient` packet was sent from -- re-derived by directly
+    re-reading that method's own call sites in the original, not guessed: both items in `sendPhantomItem`, the
+    new item `onItemReachCenter` creates, the bounced item `onItemReachEnd` re-queues, and the genuinely-new
+    (non-merged) item `addItemTryMerge` adds. This resyncs the whole tile rather than one item (this port dropped
+    1.12.2's own per-item creation packet entirely, along with the rest of its bespoke network layer, in an
+    earlier batch), but only at the moments that matter, not on some tight per-tick cadence -- cheap enough not
+    to need finer targeting, since every real caller already only fires on a genuine change.
+    `PipeFlowItems#insertItemsForce` deliberately still does not sync (both platforms, comment updated to say so
+    explicitly): `genTimings(now, 0)` makes it a zero-distance, same-tick item, consumed by the very next
+    `onTick()` before any render frame could plausibly observe it either way.
+  - **The real, `javap`-confirmed item-rendering API, genuinely different per platform -- the first renderer in
+    this port to need it.** 26.x: `ItemModelResolver#updateForTopItem(ItemStackRenderState, ItemStack,
+    ItemDisplayContext, Level, ItemOwner, int)` (confirmed against `minecraft-patched-26.3.0.7-beta-merged.jar`),
+    called once per visible item during `extractRenderState` to populate an `ItemStackRenderState`, then
+    `ItemStackRenderState#submit(PoseStack, SubmitNodeCollector, int, int, int)` draws each one during `submit` --
+    the same state-extraction/`submit` split `RenderTileEngine` already established as this target's real
+    `BlockEntityRenderer<T, S>` contract. The exact call shape (a `null` `ItemOwner`, `ItemDisplayContext.FIXED`,
+    a per-item seed derived from the tile's own `BlockPos`) is not guessed -- it is read directly off real,
+    decompiled vanilla source for `CampfireRenderer` (`net.minecraft.client.renderer.blockentity`, same target),
+    the closest real precedent for "items sitting inside a block's own interior, drawn by a `BlockEntityRenderer`
+    with no owning entity to hand `ItemOwner`" -- confirmed live in the decompiled jar, not assumed from the
+    interface alone, since neither `ItemOwner` nor the display-context choice is discoverable from the method
+    signature by itself. 1.20.1: the classic `ItemRenderer#renderStatic(ItemStack, ItemDisplayContext, int, int,
+    PoseStack, MultiBufferSource, Level, int)` (confirmed against `forge-1.20.1-47.1.106-merged.jar`), called
+    directly from the classic immediate-mode `render(...)` contract `RenderTileEngine` already established as
+    unchanged on this target since the `TileEntitySpecialRenderer` era -- reached via `context.getItemRenderer()`
+    in the constructor (also confirmed via `javap` on `BlockEntityRendererProvider.Context` itself), cached once
+    like `RenderTileEngine`'s own `texture` field, rather than a per-frame `Minecraft.getInstance()` call.
+  - **A small, honestly-scoped rotation simplification, not a claim of fidelity -- flagged as acceptable by this
+    batch's own brief.** Both platforms rotate the drawn item to face its real `getRenderDirection()`: horizontal
+    directions reuse `Direction#toYRot()` (the same real method the piston-rod batch's own javadoc already
+    confirmed exists identically on both platforms), `UP`/`DOWN` get a plain 90-degree tilt since `toYRot()`
+    alone cannot express a vertical facing. No attempt was made to reproduce 1.12.2's own exact per-axis rotation
+    matrix -- a reasonable, honestly-scoped simplification, per this batch's own explicit "exact rotation
+    fidelity is a nice-to-have, not a hard requirement" scope note. Item size (`ITEM_SCALE = 0.4f` on both
+    platforms) is a similarly named, not measured, constant: this port's pipes have no real analogue of
+    `CampfireRenderer`'s own 0.375 cooking-item scale to copy, so a small, sensible round number was picked to
+    fit inside the connection-shape batch's own 0.5-block-wide centre cube instead.
+  - **Registration**: `BCTransportRegistries.PIPE_HOLDER_TYPE` is the real `BlockEntityType` (found by reading
+    that class directly, not guessed from the tile's own name). New, both platforms:
+    `buildcraft.transport.client.BCTransportClientRegistries` -- this module's first client-registration class,
+    following the exact `BCEnergyClientRegistries`/`BCFactoryClientRegistries` shape (including the same
+    dedicated-server-never-resolves-a-client-type reasoning both of those classes' own javadoc already
+    documents), with only a `registerRenderers` method -- no pipe has a GUI in this port yet, so no
+    `registerScreens`. One new line in `BuildCraft.java` on each platform,
+    `modBus.addListener(BCTransportClientRegistries::registerRenderers);`, inside the exact same pre-existing
+    client-only guard the energy/factory renderer lines already live in -- the smallest possible diff, matching
+    this batch's own instructions.
+  - **In-game verification, both platforms, via RCON against real dedicated servers -- real gameplay, not NBT
+    injection.** Rather than hand-crafting `flow.items` NBT (this session's usual technique for `pipe.def`), this
+    batch drove the real code path end to end: two `buildcraft:cobblestone` pipes placed adjacent
+    (`/setblock` + `/data merge block {pipe:{def:"buildcraft:cobblestone"}}}`, the same zero-debug-command rig
+    every prior pipe batch used), a `minecraft:hopper[facing=east]` feeding the first pipe, a `minecraft:chest`
+    catching whatever the second pipe ejects. `/execute if block ... buildcraft:pipe_holder[east=true]`/
+    `[west=true]` confirmed both pipes had already connected (the connection-shape batch's own real `BlockState`,
+    not just tile NBT). A `/data merge block <hopper> {Items:[...]}` five-emerald stack, real vanilla hopper
+    behaviour (an 8-tick transfer cooldown, one item per successful transfer -- confirmed live, not assumed: five
+    separate `TravellingItem` entries appeared in the second pipe's own `flow.items`, each with `tickStarted`
+    values exactly 8 ticks apart) pushed items into the exposed `Capabilities.Item.BLOCK`/`ForgeCapabilities.
+    ITEM_HANDLER` capability `PipeFlowItems#getCapability` already wires up (a real, unplanned proof that this
+    capability wiring -- added for a different reason in an earlier batch -- genuinely works with a stock vanilla
+    hopper, not just this session's own test tooling). Caught mid-transit on both platforms via rapid back-to-back
+    `/data get block ... pipe.flow` polling (this environment's dedicated server ticks considerably faster than
+    20 TPS with no player connected and every relevant chunk force-loaded, the opposite of the "throttles to
+    near-zero" gotcha an earlier batch's own RCON notes warned about -- a real, re-confirmed environmental
+    finding, not a contradiction of that note, since that note's own server had no chunks force-loaded): real
+    `TravellingItem` NBT showing `side: "EAST"`/`toCenter: 0b` in the first pipe and `side: "WEST"`/`toCenter: 1b`
+    in the second, `tickFinished` always greater than `tickStarted` across every one of the ten-plus samples
+    taken on each platform, e.g. 26.x's own `{tickStarted: -44, tickFinished: 6}` through `{tickStarted: -1,
+    tickFinished: 49}` and 1.20.1's own `{tickStarted: -46, tickFinished: 4}` through `{tickStarted: -14,
+    tickFinished: 36}` (NBT-relative offsets from the write moment, per `TravellingItem#writeToNbt`'s own
+    documented format -- not raw absolute ticks). A follow-up query on both platforms confirmed both pipes'
+    `flow.items` empty again and the destination chest holding a single merged `{Count: 5}`/`{count: 5}` emerald
+    stack -- the full hopper-to-pipe-to-pipe-to-chest journey completing correctly, not just starting correctly.
+  - **Both real dedicated-server boots (used for the RCON verification above) logged zero exceptions**, including
+    through the sync fix's own new `markDirtyAndSync()` calls firing repeatedly during the five-item transit
+    above (each of the five hopper transfers, plus each pipe-to-pipe hop, fires at least one). Both real
+    `runClient` boots reached a fully stitched texture atlas with zero exceptions and zero missing-model/missing-
+    sprite warnings anywhere for `pipe_holder` -- `2048x2048x4 minecraft:textures/atlas/blocks.png-atlas` on
+    26.x, `1024x512x4` on 1.20.1.
+  - **Honest limitation, same standing category as every render-adjacent entry in this file, stated plainly per
+    this batch's own instructions.** The underlying item-position data is real and RCON-verifiable, and was
+    verified as such above; the actual on-screen rendered position/rotation is not -- this project has no
+    display. `RenderTilePipeHolder#extractRenderState`/`#render` being invoked live by a real client was not
+    checked either: no mouse/keyboard input automation exists in this environment to place a pipe and walk up to
+    it in a running `runClient` session, the same honest limitation every prior GUI/render-adjacent batch in this
+    file has already stated. What is verified: a clean compile and full test suite on both platforms, a clean
+    `runClient` boot with the block/item models this renderer's own geometry depends on stitched with zero
+    warnings, and the real, live, RCON-verified server-side data (`tickStarted`/`tickFinished`/`side`/`toCenter`)
+    this renderer's own interpolation math reads.
+  - **Explicitly out of scope for this batch, per its own brief**: reproducing 1.12.2's exact lighting/shading
+    beyond what the modern item-rendering API already gives for free, item colour tinting for coloured pipes (no
+    pipe is colourable yet -- unchanged from the connection-shape batch's own note), and any change to the actual
+    item-movement gameplay logic in `PipeFlowItems` beyond the sync-timing fix above. `buildcraft.factory` was not
+    touched anywhere in this batch, per the standing rule protecting a concurrent Auto Workbench Fluids GUI task.
+  - **New files, both platforms**: `buildcraft.transport.tile.RenderTilePipeHolder`;
+    `buildcraft.transport.client.BCTransportClientRegistries`. Modified, both platforms:
+    `buildcraft.transport.pipe.flow.TravellingItem` (the four re-added render methods plus updated class
+    javadoc), `buildcraft.transport.pipe.flow.PipeFlowItems` (`getTravellingItemsForRender`, five new
+    `scheduleNetworkUpdate` call sites, updated javadoc), `buildcraft.transport.tile.TilePipeHolder`
+    (`scheduleNetworkUpdate` now calls `markDirtyAndSync()`, updated javadoc), `buildcraft.BuildCraft` (the one
+    listener line above).
+  - Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite (all 25
+    green), real dedicated-server boots on both platforms with zero exceptions and the real-gameplay RCON
+    transit above, and real `runClient` boots on both platforms reaching a fully stitched texture atlas with
+    zero exceptions and zero missing-model warnings.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

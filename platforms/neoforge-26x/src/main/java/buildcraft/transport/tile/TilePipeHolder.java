@@ -60,8 +60,10 @@ import buildcraft.transport.pipe.PipeEventBus;
  * <p><b>Wholesale dropped, both out of this batch's scope entirely:</b> {@code PluggableHolder} (no
  * {@link buildcraft.api.transport.pluggable.PipePluggable} exists in this batch at all -- see
  * {@link #getPluggable} below) and every {@code NET_UPDATE_*}/{@code writePayload}/{@code readPayload} network
- * message (no client rendering exists yet to sync state to -- see {@link #scheduleNetworkUpdate} and friends
- * below). Persistence goes through {@link #loadAdditional}/{@link #saveAdditional} only.
+ * message -- 1.12.2's own per-message granularity, not brought back even now that {@link #scheduleNetworkUpdate}
+ * does real work again (see that method's own javadoc): this port's sync goes through the coarser, already-
+ * existing whole-tile {@link buildcraft.lib.tile.TileBC#markDirtyAndSync()} instead. Persistence goes through
+ * {@link #loadAdditional}/{@link #saveAdditional} only.
  */
 public class TilePipeHolder extends TileBC implements IPipeHolder {
 
@@ -274,14 +276,29 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         return eventBus.fireEvent(event);
     }
 
-    /** No renderer exists in this batch, so there is nothing to schedule a render update for. */
+    /** No renderer needs a *block-model* rebuild (a {@code BlockState} recompute) in this batch -- the one real
+     * renderer that does exist ({@code RenderTilePipeHolder}) reads the tile's own live state every frame instead,
+     * so there is nothing for this to schedule. Distinct from {@link #scheduleNetworkUpdate}, which now does
+     * real work -- see that method's own javadoc. */
     @Override
     public void scheduleRenderUpdate() {
     }
 
-    /** No client sync exists in this batch -- see this class's own javadoc for why. */
+    /** Pushes this tile's whole NBT-serialised state to every client tracking it, via {@link #markDirtyAndSync()}
+     * -- see {@code PipeFlowItems#getTravellingItemsForRender()}'s own javadoc for the real, investigated finding
+     * that made this necessary (a client-side {@code TilePipeHolder} never ticks its own {@code Pipe} at all, so
+     * this is the *only* way it ever learns a travelling item's {@code tickStarted}/{@code tickFinished} changed).
+     * Coarser than 1.12.2's own per-{@code PipeMessageReceiver} granularity ({@code parts} is intentionally
+     * ignored beyond "was this even called") -- this port dropped the whole per-message network layer
+     * ({@code NET_UPDATE_*}) that granularity depended on, and every real caller of this method today
+     * ({@code Pipe#updateConnections} for {@code BEHAVIOUR}, {@code PipeFlowItems}' five real call sites for
+     * {@code FLOW}) already only fires at a genuinely-changed moment, not on some tight per-tick cadence, so a
+     * whole-tile resync per call is cheap enough not to need finer targeting. */
     @Override
     public void scheduleNetworkUpdate(PipeMessageReceiver... parts) {
+        if (parts.length > 0) {
+            markDirtyAndSync();
+        }
     }
 
     @Override
