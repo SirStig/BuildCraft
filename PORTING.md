@@ -1196,6 +1196,133 @@ Deliberately not ported, with reasons:
     rather than "fixed" with the unused `mining_well/tube.png`/`pump/tube.png` art assets sitting in
     `buildcraft_resources` but referenced by no model anywhere in the shipped resource pack.
 
+- **`buildcraft.factory`'s fluid foundation lands, and `TilePump`/`BlockPump` is the third factory machine.**
+  This batch is `buildcraft.lib.fluid.Tank` (both platforms), `buildcraft.lib.misc.FluidUtilBC#pushFluidAround`
+  (both platforms, the two methods that class's own javadoc had flagged as blocked pending exactly this), and
+  `TilePump`/`BlockPump` built on top of them. No new capability class was needed for either platform -- see
+  below, a real correction to the assumption this task started from.
+  - **The fluid capability turned out to need no BuildCraft-native token at all, unlike the item side.**
+    1.12.2's `CapUtil.CAP_FLUIDS` was `IFluidHandlerAdv extends IFluidHandler` -- a single capability that was
+    *already* vanilla-interop-shaped, unlike `IItemTransactor` (which needed `ItemTransactorCapabilities` plus a
+    separate vanilla-interop token because it does *not* implement `IItemHandler`). Confirmed via `javap` against
+    the real universal jars: 26.x already ships `net.neoforged.neoforge.capabilities.Capabilities$Fluid.BLOCK`,
+    typed `BlockCapability<ResourceHandler<FluidResource>, Direction>` -- exactly `Tank`'s own shape, once `Tank`
+    is itself a `ResourceHandler<FluidResource>` (see below) -- and 1.20.1 already ships
+    `ForgeCapabilities.FLUID_HANDLER`, typed `Capability<IFluidHandler>` -- exactly what `Tank` already is by
+    extending Forge's own `FluidTank`. Both were registered directly (`BCFactoryRegistries` on 26.x,
+    `TilePump#getCapability` on 1.20.1) with no wrapper class in between; `FluidUtilBC#pushFluidAround`'s
+    neighbour lookup queries them directly too, the same way `pushFluidAround` needed no `FluidTransactorHelper`
+    the way `addToBestAcceptor` needed `ItemTransactorHelper`. `FluidUtilBC`'s own javadoc (both platforms) is
+    corrected in place to say so, the same "stale note fixed once its blocker landed" precedent
+    `InventoryUtil#addToBestAcceptor`'s own javadoc already set.
+  - **26.x's `Tank` is a one-slot `FluidStacksResourceHandler`, not a from-scratch `ResourceHandler`
+    implementation.** Confirmed via `javap`: `net.neoforged.neoforge.fluids.FluidTank` (the direct rename target
+    1.12.2's own superclass would suggest) genuinely does not exist on this target -- "class not found", as this
+    task's own briefing already expected. What *does* exist, and was not anticipated going in, is
+    `net.neoforged.neoforge.transfer.fluid.FluidStacksResourceHandler`: the fluid counterpart of
+    `ItemHandlerSimple`'s own `ItemStacksResourceHandler` base, in the same `StacksResourceHandler<S, T extends
+    Resource>` family, with the same transaction-safe `insert`/`extract` and `ValueIOSerializable` NBT
+    persistence already built in. `Tank` (26.x) is therefore exactly as thin a wrapper over its base as
+    `ItemHandlerSimple` is over its own -- `isValid`/`onContentsChanged` overrides for the filter/callback, plus
+    `fillInternal` (new: `StacksResourceHandler#set(int, T, int)`, already public, is the direct modern
+    equivalent of 1.12.2 `FluidTank#fillInternal`'s validator-bypassing write) -- not the ground-up
+    transaction-aware handler the task briefing budgeted real design time for. Worth a human double-check purely
+    because it means less new code than expected, not because the design is shaky.
+  - **1.20.1's `Tank` keeps a real base-class relationship, just under a moved package.** Confirmed via `javap`
+    against the Forge 1.20.1 universal jar (not the merged jar -- the merged jar doesn't carry it):
+    `net.minecraftforge.fluids.capability.templates.FluidTank` is 1.12.2's own `net.minecraftforge.fluids.
+    FluidTank` moved under `capability.templates`, with the same `fill`/`drain`/`isFluidValid`/`getCapacity`/
+    `onContentsChanged` surface (`boolean doFill/doDrain` -> `FluidAction`, matching every other fill/drain
+    rename already in this port's fluid code). `Tank` still implements `IFluidHandlerAdv` here (unlike 26.x,
+    which drops it -- see above): 1.20.1's `IFluidHandler` has no transaction-scoped way to introspect a
+    handler's slots from outside, so filtered draining still needs its own interface method, same as 1.12.2.
+  - **The vanilla "infinite water source" rule is unchanged in shape, confirmed against the real modern
+    mechanic, not assumed.** 1.12.2's own comment pointed at `BlockDynamicLiquid.updateTick`; the direct modern
+    descendant is `FlowingFluid#getNewLiquid` (decompiled out of the 26.x merged jar, scratch space only): a
+    flowing block becomes a new source once it has `neighbourSources >= 2` horizontally-adjacent source
+    neighbours of the same fluid *and* the block directly below is either solid or another source of that fluid
+    -- the identical two-neighbour threshold and shape 1.12.2's own check already used, just re-expressed against
+    `FluidState#isSource()`/`BlockState#isSolid()` instead of Forge's old `Material#isSolid()`. Ported verbatim
+    into `TilePump#buildQueue0` rather than guessed at.
+  - **The oil-spring branch (`isOil`/`oilSpringPos`/`ADVANCEMENT_DRAIN_OIL`/`BCEnergyFluids.crudeOil`/
+    `ITileOilSpring#onPumpOil`) is dropped entirely, not ported.** All five depend on `buildcraft.energy`, not
+    ported at all in this port. Not a functional cut: 1.12.2's own `isOil` already opened with
+    `if (BCModules.ENERGY.isLoaded()) { ... } return false;`, and since `buildcraft.energy` never registers here
+    either, that condition is permanently `false` regardless of whether the branch exists in source -- dropping
+    it outright reproduces the exact real-world behaviour this port is already in, matching the precedent already
+    set for `BlockSpringWater`'s dropped oil half and the un-ported `ITileOilSpring` itself.
+  - `fluidConnection` is not ported -- a dead field even in 1.12.2's own source (assigned in `buildQueue`, never
+    read anywhere in the whole 1.12.2 tree).
+  - The debug-profiler instrumentation (`Profiler debugProf`/`Stopwatch watch`/`ProfilerEntry`, gated behind
+    `DEBUG_PUMP`, a system property nobody sets) is dropped, not reproduced -- zero behavioural effect, and it
+    would have needed merging with a live per-tick world profiler this target has no simple handle on.
+    `DEBUG_PUMP`'s real diagnostic value, the `BCLog.logger.info` calls explaining *why* a drain attempt failed,
+    is kept in full.
+  - `Fluid#isGaseous()` has no modern equivalent -- confirmed via `javap` against `FluidType` on both targets: no
+    such method exists, getter or builder flag. The established Forge/NeoForge convention (a negative
+    `FluidType#getDensity()` marks a gas) stands in for it; nothing this port registers is actually gaseous yet
+    (only vanilla water/lava), so the branch it gates is currently dead in practice, kept faithfully anyway since
+    the original explicitly special-cased it.
+  - `BlockUtil`'s own 1.12.2 `getFluid`/`getFluidWithoutFlowing`/`drainBlock` (`TilePump`'s other fluid-block-
+    inspection dependencies, beyond the already-ported `getFluidWithFlowing`) become `FluidUtilBC#getFluidSource`/
+    `#drainBlock` instead, on both platforms -- relocated there rather than added to `BlockUtil`, which was out of
+    scope for this pass. Real per-platform research, not a rename: NeoForge's own generic
+    `net.neoforged.neoforge.transfer.fluid.FluidUtil#tryPickupFluid` was considered for 26.x and rejected after
+    reading its source -- its own doc comment warns it can mutate the world (via `BucketPickup#pickupBlock`) even
+    when the `Transaction` it was given is never committed, unsuitable for `mine()`'s simulate-then-commit two
+    step. On 1.20.1, `net.minecraftforge.fluids.FluidUtil#getFluidHandler(Level, BlockPos, Direction)` was also
+    considered and rejected after decompiling it: confirmed it only resolves a handler through a neighbouring
+    `BlockEntity`, and a plain vanilla water/lava lake has none, unlike 1.12.2's own version of that method (which
+    wrapped `IFluidBlock`/`BucketPickup` blocks directly). Both platforms' `drainBlock` instead go straight to
+    `BucketPickup` (the same interface Forge's own `BucketPickupHandlerWrapper` builds on for this exact case,
+    confirmed by reading its decompiled source): a `FluidState` read for the side-effect-free simulate case, and
+    only the real case calls `pickupBlock`, which vanilla's `LiquidBlock` already refuses unless the state is a
+    source (confirmed by reading `LiquidBlock#pickupBlock` on both targets) -- no redundant source check needed.
+  - `createMjReceiver()` no longer exists as an overridable hook on `TileMiner` (dropped when that class landed,
+    see its own javadoc) -- its `mjReceiver` field is fixed to a plain, non-redstone `MjBatteryReceiver`. Since a
+    pump genuinely still wants `MjRedstoneBatteryReceiver` (unlike the mining well, which was already happy with
+    the plain receiver) and `TileMiner` was out of scope to modify for this pass, `TilePump` adds a second
+    receiver field, `mjRedstoneReceiver`, wrapping the same `battery` -- registered in its place
+    (`BCFactoryRegistries` on 26.x, an intercepting `getCapability` override on 1.20.1); the inherited
+    `mjReceiver` field is simply never registered for this tile. `IMjRedstoneReceiver` is presently a pure marker
+    (nothing in this port reads it yet to actually allow cheap redstone-direct power), so this has no observable
+    behavioural effect today -- it is there for whenever a future redstone-to-MJ feature wants to find pumps by
+    it, matching what the field existed for in 1.12.2 too.
+  - `getOwner().getId()` (used only to grant the "draining the world" advancement) follows the same owner-UUID-
+    field pattern `TileChute`/`TileEngineWood` already established -- unlike `TileMiningWell` (which needed no
+    owner at all, see that class's own javadoc), a pump's advancement grant is the one place this tile still
+    cares who placed it.
+  - `BlockPump` needed no facing property or GUI-opening hook to drop: unlike `BlockMiningWell` (which kept a
+    facing property purely for parity), 1.12.2's real `BlockPump` had neither to begin with -- it extended
+    `BlockBCTile_Neptune` directly, overriding only `createTileEntity`.
+  - Registered in the existing `BCFactoryRegistries` (additive, same shape as `MINING_WELL`'s own registration).
+    Textures/blockstate/block+item model/loot table/lang pulled from `buildcraft_resources/assets/
+    buildcraftfactory/` following the established pattern; the LED-status textures (`led_green`/`led_red`) are
+    not pulled in, matching every other render-only asset already skipped elsewhere in this port (no renderer to
+    show them). The 1.12.2 recipe is **not** ported: its `t` key requires `buildcraftfactory:tank`, an entirely
+    separate `factory` block/item this port hasn't reached yet (the "Tank" *block*, not this batch's
+    `lib.fluid.Tank` *class* -- same name, different thing) -- inventing a substitute ingredient would misrepresent
+    the real recipe, so it waits for that block the same way `BlockTube` waits for a reason to have a `BlockItem`.
+  - **Verified with a real dedicated-server boot and RCON on both targets, not just a compile check -- a pump
+    genuinely fills its tank from world water and correctly tells a finite pool apart from an infinite one.**
+    Two scenarios, both observed directly via `/data get block` and `/execute store result score ... if block`
+    (no `mcrcon`/`mcstatus` dependency -- a small stdlib `socket`+`struct` script speaks the RCON binary protocol
+    directly): (1) a flat 5x5 source-block pond sitting on solid ground -- every position the pump drains from is
+    the "two-or-more-same-fluid-neighbours-over-solid-ground" infinite-source pattern by construction, and
+    indeed, after ten separate MJ-gated drain cycles across two full battery charges, both drained positions were
+    still confirmed real `minecraft:water` blocks, never `air`; the tank correctly accumulated `5000`/`1000` mB
+    (26.x/1.20.1) at exactly `10 * MjAPI.MJ` per drain, and the battery correctly hit `0` after exactly five
+    charges' worth. (2) a single isolated water source block on a stone platform, with no same-fluid neighbours
+    anywhere -- drained exactly once (`1000` mB into the tank, matching a single battery charge), and the source
+    block genuinely became `air` afterward, confirmed the same way. Both scenarios reproduced on 26.x; scenario
+    (1) also reproduced independently on 1.20.1 (tank correctly held `1000` mB after one charge, and the drained
+    position was still confirmed water afterward) to confirm the shared algorithm and the platform-specific
+    `Tank`/NBT shape both actually work there too. `pushFluidAround` itself was not observed moving fluid between
+    two real in-world blocks -- there is no second fluid-accepting block anywhere in this port yet for it to push
+    into (the same gap the task briefing itself flagged as a real possibility) -- so it is verified by code
+    review and the already-proven `move` primitive it is built on, not by a live cross-block transfer. Both dev
+    servers booted and shut down cleanly with zero exceptions in the log either time.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1214,7 +1341,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 49 | Chute, mining well + tube (done). Pump, tank, autoworkbench. |
+| `buildcraft.factory` | 49 | Chute, mining well + tube, pump (done). Tank block, autoworkbench. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
@@ -1508,6 +1635,9 @@ These are the traps when porting a file to both at once.
 | Vanilla-interop item capability | `Capabilities.Item.BLOCK` (block entity) / `Capabilities.Item.ENTITY_AUTOMATION` (entity) -- both `ResourceHandler<ItemResource>`-shaped, NeoForge's own tokens, auto-registered for every vanilla container and minecart-type entity (confirmed via `CapabilityHooks` in the NeoForge sources jar) | `ForgeCapabilities.ITEM_HANDLER` -- one token, `IItemHandler`-shaped, works identically for a `BlockEntity` or an `Entity` since both still implement `ICapabilityProvider` |
 | Neighbour capability lookup | `Level#getCapability(BlockCapability<T,C>, BlockPos, C)` for a block position; `Entity#getCapability(EntityCapability<T,C>, C)` for an entity -- two different call shapes, no common supertype | `provider.getCapability(Capability<T>, Direction)` (returns `LazyOptional<T>`) -- one shape, works on both `BlockEntity` and `Entity` |
 | Fluid viscosity (1.12.2's `Fluid#getViscosity()`) | `net.neoforged.neoforge.fluids.FluidType#getViscosity(FluidState, BlockAndLightGetter, BlockPos)`, reached via `fluid.getType().getFluidType()` | `net.minecraftforge.fluids.FluidType#getViscosity(FluidState, BlockAndTintGetter, BlockPos)`, same shape, reached the same way -- only the package and the `BlockGetter` supertype name differ |
+| Fluid tank base class | none -- `net.neoforged.neoforge.fluids.FluidTank` doesn't exist (confirmed via `javap`: class not found); build on `net.neoforged.neoforge.transfer.fluid.FluidStacksResourceHandler` instead, the fluid counterpart of `ItemHandlerSimple`'s own `ItemStacksResourceHandler` base | `net.minecraftforge.fluids.capability.templates.FluidTank` -- 1.12.2's own `net.minecraftforge.fluids.FluidTank`, moved under `capability.templates`, same `fill`/`drain`/`isFluidValid` surface |
+| Vanilla-interop fluid capability | `Capabilities.Fluid.BLOCK` -- `BlockCapability<ResourceHandler<FluidResource>, Direction>`, NeoForge's own token, needs no BuildCraft-native counterpart since `Tank` already *is* a `ResourceHandler<FluidResource>` | `ForgeCapabilities.FLUID_HANDLER` -- `Capability<IFluidHandler>`, needs no BuildCraft-native counterpart either, since `Tank` already *is* an `IFluidHandler` by extending `FluidTank` |
+| Draining a world fluid block (no capability-bearing block entity involved, e.g. a plain water/lava lake) | `BucketPickup#pickupBlock(LivingEntity, LevelAccessor, BlockPos, BlockState)` directly -- NeoForge's own generic `FluidUtil#tryPickupFluid` was rejected; its own doc admits it can mutate the world even when its `Transaction` is never committed | `BucketPickup#pickupBlock(LevelAccessor, BlockPos, BlockState)` directly (no `LivingEntity` parameter at all on this target) -- Forge's own `FluidUtil#getFluidHandler(Level, BlockPos, Direction)` was rejected too, confirmed via decompile to only resolve through a neighbouring `BlockEntity`, which a plain fluid lake never has |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

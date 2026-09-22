@@ -12,28 +12,39 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BucketPickup;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 
+import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidType;
 import net.minecraftforge.fluids.capability.IFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandler.FluidAction;
 
 import buildcraft.api.core.IFluidFilter;
 import buildcraft.api.core.IFluidHandlerAdv;
 
-/** Partial port. Two 1.12.2 methods are not here:
+/** Partial port. One 1.12.2 method is not here:
  *
  * <ul>
- * <li>{@code pushFluidAround} needed {@code buildcraft.lib.fluid.Tank} and {@code CapUtil.CAP_FLUIDS}. Neither
- *     is ported -- {@code buildcraft.lib.fluid} hasn't landed yet (it is part of the {@code factory} module,
- *     far down PORTING.md's remaining-work table), and {@code CapUtil} is the capability-token chain PORTING.md
- *     already lists as blocked pending a real {@code IItemTransactor} capability design. Nothing to port against
- *     yet.</li>
  * <li>{@code onTankActivated} needed {@code buildcraft.lib.misc.SoundUtil} (bucket fill/empty sound effects),
  *     which is not ported by anyone yet -- it isn't in this batch or the concurrent one. It also has a real API
  *     shape change worth noting for whoever ports it: {@code FluidUtil.getFluidHandler(ItemStack)} now returns
  *     {@code LazyOptional<IFluidHandlerItem>} rather than a nullable reference.</li>
  * </ul>
+ *
+ * <p>{@code pushFluidAround} <em>is</em> ported now, alongside {@code TilePump} (this method's first caller):
+ * the note above used to say it needed {@code buildcraft.lib.fluid.Tank} and {@code CapUtil.CAP_FLUIDS}, neither
+ * of which existed yet -- both now do ({@code buildcraft.lib.fluid.Tank}, and {@link ForgeCapabilities
+ * #FLUID_HANDLER}, an existing token this port needed no BuildCraft-native counterpart for -- see {@code Tank}'s
+ * own class javadoc). Same stale-note correction {@code InventoryUtil#addToBestAcceptor}'s own javadoc already
+ * had to make once its blocking dependency landed.
  *
  * <p>26.x also has a version of this file, but it is not a shared port: {@code IFluidHandler} is gone there,
  * replaced by {@code ResourceHandler<FluidResource>} plus {@code Transaction} (see PORTING.md's transfer-API
@@ -43,7 +54,19 @@ import buildcraft.api.core.IFluidHandlerAdv;
  *
  * <p>Here on 1.20.1, {@code FluidStack}'s {@code amount} field became {@link FluidStack#getAmount()}/
  * {@link FluidStack#setAmount(int)}/{@link FluidStack#grow(int)}/{@link FluidStack#shrink(int)}, and
- * {@code IFluidHandler.fill}/{@code drain}'s {@code boolean} simulate flag became {@link FluidAction}. */
+ * {@code IFluidHandler.fill}/{@code drain}'s {@code boolean} simulate flag became {@link FluidAction}.
+ *
+ * <p>{@code getFluidSource}/{@code drainBlock} are new (relocated here rather than into {@code BlockUtil}, which
+ * is out of scope for this pass). Confirmed via {@code javap} plus a decompile of the real
+ * {@code net.minecraftforge.fluids.FluidUtil#getFluidHandler(Level, BlockPos, Direction)}: that method only
+ * resolves a handler through a neighbouring position's {@link BlockEntity}, and a plain vanilla water/lava lake
+ * has none -- so it cannot see ordinary world fluid, unlike 1.12.2's own version of the same method (which
+ * wrapped {@code IFluidBlock}/{@code BucketPickup} blocks directly, no block entity required). The real modern
+ * path for "drain the fluid block sitting in the world" is {@link BucketPickup} directly (the same interface
+ * Forge's own {@code BucketPickupHandlerWrapper} builds on for this exact case), confirmed by reading that
+ * wrapper's decompiled source: simulate reads {@link FluidState} only (no world mutation), and only the execute
+ * branch calls {@code pickupBlock}, which vanilla's {@code LiquidBlock} already refuses unless the state is a
+ * source -- so {@link #drainBlock} needs no separate source check of its own beyond what it already does. */
 public class FluidUtilBC {
 
     public static List<FluidStack> mergeSameFluids(List<FluidStack> fluids) {
@@ -124,5 +147,59 @@ public class FluidUtilBC {
             throw new IllegalStateException("Mismatched IFluidHandler implementations!\n" + detail);
         }
         return new FluidStack(drained, accepted);
+    }
+
+    /** Pushes as much of {@code from}'s contents as possible into every neighbouring block entity that exposes
+     * {@link ForgeCapabilities#FLUID_HANDLER}, one side at a time -- the fluid-side sibling of
+     * {@link InventoryUtil#addToBestAcceptor}, built directly on {@link #move}. See the 26.x copy of this class
+     * for why there is no "drop the remainder" fallback the way {@code addToBestAcceptor} has one. */
+    public static void pushFluidAround(Level level, BlockPos pos, IFluidHandler from) {
+        for (Direction side : Direction.values()) {
+            BlockEntity neighbor = level.getBlockEntity(pos.relative(side));
+            if (neighbor == null) {
+                continue;
+            }
+            IFluidHandler to = neighbor.getCapability(ForgeCapabilities.FLUID_HANDLER, side.getOpposite()).orElse(null);
+            if (to != null) {
+                move(from, to);
+            }
+        }
+    }
+
+    /** {@code null} if there is no <em>source</em> fluid block at {@code pos} -- unlike
+     * {@link BlockUtil#getFluidWithFlowing}, a flowing (non-source) block returns {@code null} here. Was
+     * 1.12.2's {@code BlockUtil#getFluid(World, BlockPos)}; see the class javadoc for why it lives here now. */
+    @Nullable
+    public static Fluid getFluidSource(Level level, BlockPos pos) {
+        FluidState state = level.getFluidState(pos);
+        return state.isEmpty() || !state.isSource() ? null : state.getType();
+    }
+
+    /** As {@link #getFluidSource(Level, BlockPos)}, but for a {@link BlockState} the caller already has in hand.
+     * Was 1.12.2's {@code BlockUtil#getFluidWithoutFlowing(IBlockState)}. */
+    @Nullable
+    public static Fluid getFluidSource(BlockState state) {
+        FluidState fluid = state.getFluidState();
+        return fluid.isEmpty() || !fluid.isSource() ? null : fluid.getType();
+    }
+
+    /** Drains (or, with {@code doDrain = false}, only inspects) the source fluid block at {@code pos}, mirroring
+     * what an empty bucket would pick up there. Was 1.12.2's {@code BlockUtil#drainBlock}; see the class javadoc
+     * for why this goes through {@link BucketPickup} directly rather than
+     * {@code net.minecraftforge.fluids.FluidUtil#getFluidHandler}. */
+    @Nullable
+    public static FluidStack drainBlock(Level level, BlockPos pos, boolean doDrain) {
+        BlockState state = level.getBlockState(pos);
+        FluidState fluidState = level.getFluidState(pos);
+        if (fluidState.isEmpty() || !fluidState.isSource() || !(state.getBlock() instanceof BucketPickup pickup)) {
+            return null;
+        }
+        Fluid fluid = fluidState.getType();
+        if (doDrain) {
+            // The returned ItemStack (nominally a filled bucket) is discarded: TilePump drains straight into its
+            // own tank, never via an actual bucket item, and the fluid type/amount is already known above.
+            pickup.pickupBlock(level, pos, state);
+        }
+        return new FluidStack(fluid, FluidType.BUCKET_VOLUME);
     }
 }

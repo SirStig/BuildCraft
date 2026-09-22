@@ -21,9 +21,11 @@ import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.factory.block.BlockChute;
 import buildcraft.factory.block.BlockMiningWell;
+import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTube;
 import buildcraft.factory.tile.TileChute;
 import buildcraft.factory.tile.TileMiningWell;
+import buildcraft.factory.tile.TilePump;
 
 /**
  * Registrations belonging to the old {@code buildcraftfactory} module -- the first ones. Mirrors
@@ -65,6 +67,17 @@ public final class BCFactoryRegistries {
 
     public static final RegistryObject<BlockEntityType<TileMiningWell>> MINING_WELL_TYPE =
         REGISTRY.addBlockEntity("mining_well", TileMiningWell::new, MINING_WELL);
+
+    /** Same default properties as {@link #CHUTE}/{@link #MINING_WELL} -- see {@link #CHUTE}'s own javadoc. */
+    public static final RegistryObject<BlockPump> PUMP = REGISTRY.addBlockAndItem("pump", () -> new BlockPump(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TilePump>> PUMP_TYPE =
+        REGISTRY.addBlockEntity("pump", TilePump::new, PUMP);
 
     /** No {@code BlockItem} ({@link BCRegistry#addBlock}, not {@code addBlockAndItem}) and an empty loot table --
      * see {@link BlockTube}'s own javadoc for why. {@code strength(-1.0F, ...)} matches

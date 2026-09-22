@@ -12,26 +12,38 @@ import java.util.List;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BucketPickup;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.transfer.ResourceHandler;
 import net.neoforged.neoforge.transfer.fluid.FluidResource;
 import net.neoforged.neoforge.transfer.transaction.Transaction;
 
-/** Partial port. Two 1.12.2 methods are not here:
+/** Partial port. One 1.12.2 method is not here:
  *
  * <ul>
- * <li>{@code pushFluidAround} needed {@code buildcraft.lib.fluid.Tank} and {@code CapUtil.CAP_FLUIDS}. Neither
- *     is ported -- {@code buildcraft.lib.fluid} hasn't landed yet (it is part of the {@code factory} module,
- *     far down PORTING.md's remaining-work table), and {@code CapUtil} is the capability-token chain PORTING.md
- *     already lists as blocked pending a real {@code IItemTransactor} capability design. Nothing to port against
- *     yet.</li>
  * <li>{@code onTankActivated} needed {@code buildcraft.lib.misc.SoundUtil} (bucket fill/empty sound effects),
  *     which is not ported by anyone yet -- it isn't in this batch or the concurrent one. It would also need
  *     redesigning against the item-side half of the transfer API (item-embedded fluid handling), which is real
  *     work rather than a rename; deferred alongside it.</li>
  * </ul>
+ *
+ * <p>{@code pushFluidAround} <em>is</em> ported now, alongside {@code TilePump} (this method's first caller):
+ * the note above used to say it needed {@code buildcraft.lib.fluid.Tank} and {@code CapUtil.CAP_FLUIDS}, neither
+ * of which existed yet -- both now do ({@code buildcraft.lib.fluid.Tank}, and the vanilla-interop
+ * {@link Capabilities.Fluid#BLOCK} capability NeoForge already ships, confirmed via {@code javap} to need no
+ * BuildCraft-native token of its own; see {@code Tank}'s own class javadoc for the same "no counterpart needed"
+ * finding {@code ItemTransactorCapabilities} already established for the item side). This is the stale-note
+ * correction {@code InventoryUtil#addToBestAcceptor}'s own javadoc already had to make once its blocking
+ * dependency landed; same situation here.
  *
  * <p>Unlike 1.20.1, {@code IFluidHandler} is genuinely gone here, but {@code FluidStack} is not -- NeoForge kept
  * {@link FluidStack} as a plain value type (fluid + amount + data components, the fluid equivalent of
@@ -41,7 +53,22 @@ import net.neoforged.neoforge.transfer.transaction.Transaction;
  * needs no counterpart of its own any more, because every handler is already slot-introspectable -- see
  * {@link #move}, which walks {@code from}'s slots directly rather than delegating to a filter interface. Fluid
  * equality is the static {@link FluidStack#matches(FluidStack, FluidStack)} rather than 1.20.1's instance
- * {@code isFluidEqual} (PORTING.md's "Fluid equality" divergence row). */
+ * {@code isFluidEqual} (PORTING.md's "Fluid equality" divergence row).
+ *
+ * <p>{@code getFluidSource}/{@code drainBlock} are new (relocated here rather than into {@code BlockUtil}, which
+ * is out of scope for this pass): 1.12.2's {@code BlockUtil} had {@code getFluid}/{@code getFluidWithoutFlowing}/
+ * {@code drainBlock} for exactly this "is there a drainable source fluid at this position" question, built on
+ * {@code IFluidBlock}/{@code FluidUtil.getFluidHandler}. Both no longer exist as concepts: fluid-block detection
+ * is a direct {@link Level#getFluidState(BlockPos)} read now (already established by {@code BlockUtil
+ * #getFluidWithFlowing}, which this reuses for "any fluid, flowing or not" and leaves untouched), and the actual
+ * removal goes through vanilla's {@link BucketPickup} interface directly -- confirmed via a decompile of
+ * {@code LiquidBlock#pickupBlock}, which already refuses to act unless the fluid state is a source, so there is
+ * no need to gate on {@code isSource()} twice. {@code FluidUtil#tryPickupFluid} (NeoForge's own generic version
+ * of this, in {@code net.neoforged.neoforge.transfer.fluid.FluidUtil}) was considered and rejected: its own
+ * javadoc warns it can mutate the world even when the {@link Transaction} it was given is never committed, since
+ * {@code pickupBlock} itself isn't transaction-aware -- unsuitable for {@code TilePump#mine}'s simulate-then-
+ * commit two-step. {@link #drainBlock} sidesteps that by reading {@link FluidState} for the simulate case
+ * (genuinely side-effect-free) and only calling {@code pickupBlock} for the real one. */
 public class FluidUtilBC {
 
     public static List<FluidStack> mergeSameFluids(List<FluidStack> fluids) {
@@ -123,5 +150,61 @@ public class FluidUtilBC {
             }
         }
         return null;
+    }
+
+    /** Pushes as much of {@code from}'s contents as possible into every neighbouring block that exposes
+     * {@link Capabilities.Fluid#BLOCK}, one side at a time -- the fluid-side sibling of
+     * {@link InventoryUtil#addToBestAcceptor}, built directly on {@link #move} rather than reimplementing its
+     * simulate-then-commit dance. Unlike {@code addToBestAcceptor}, there is no "drop the remainder" fallback:
+     * fluid that nothing around it will accept simply stays in {@code from}, matching 1.12.2's own version (which
+     * only ever drained what neighbouring tanks could actually take). */
+    public static void pushFluidAround(Level level, BlockPos pos, ResourceHandler<FluidResource> from) {
+        for (Direction side : Direction.values()) {
+            ResourceHandler<FluidResource> to = level.getCapability(Capabilities.Fluid.BLOCK, pos.relative(side), side.getOpposite());
+            if (to != null) {
+                move(from, to);
+            }
+        }
+    }
+
+    /** {@code null} if there is no <em>source</em> fluid block at {@code pos} -- unlike
+     * {@link BlockUtil#getFluidWithFlowing}, a flowing (non-source) block returns {@code null} here. Was
+     * 1.12.2's {@code BlockUtil#getFluid(World, BlockPos)}; see the class javadoc for why it lives here now. */
+    @Nullable
+    public static Fluid getFluidSource(Level level, BlockPos pos) {
+        FluidState state = level.getFluidState(pos);
+        return state.isSource() ? state.getType() : null;
+    }
+
+    /** As {@link #getFluidSource(Level, BlockPos)}, but for a {@link BlockState} the caller already has in hand
+     * (used to check the block directly below a candidate infinite-water-source position, without a second world
+     * lookup). Was 1.12.2's {@code BlockUtil#getFluidWithoutFlowing(IBlockState)}. */
+    @Nullable
+    public static Fluid getFluidSource(BlockState state) {
+        FluidState fluid = state.getFluidState();
+        return fluid.isSource() ? fluid.getType() : null;
+    }
+
+    /** Drains (or, with {@code doDrain = false}, only inspects) the source fluid block at {@code pos}, mirroring
+     * what an empty bucket would pick up there. Was 1.12.2's {@code BlockUtil#drainBlock}; see the class javadoc
+     * for why this reads {@link FluidState} directly for the simulate case rather than routing through NeoForge's
+     * own {@code FluidUtil#tryPickupFluid}. Returns {@code null} if {@code pos} holds no source fluid, or its
+     * block doesn't implement {@link BucketPickup} at all (nothing vanilla ships doesn't, but a modded fluid
+     * block need not). */
+    @Nullable
+    public static FluidStack drainBlock(Level level, BlockPos pos, boolean doDrain) {
+        BlockState state = level.getBlockState(pos);
+        FluidState fluidState = level.getFluidState(pos);
+        if (!fluidState.isSource() || !(state.getBlock() instanceof BucketPickup pickup)) {
+            return null;
+        }
+        Fluid fluid = fluidState.getType();
+        if (doDrain) {
+            // The returned ItemStack (nominally a filled bucket) is discarded: TilePump drains straight into its
+            // own tank, never via an actual bucket item, and the fluid type/amount is already known from the
+            // FluidState read above.
+            pickup.pickupBlock(null, level, pos, state);
+        }
+        return new FluidStack(fluid, FluidType.BUCKET_VOLUME);
     }
 }
