@@ -1880,6 +1880,23 @@ Each of these cost a failed server boot, so they are worth knowing up front.
   `buildcraft.lib.marker` progress entry above for the full account. 26.x has no equivalent restriction (its
   merged/joined jar and `IPayloadContext#player()`, whose static type is already the common `Player`, never
   `LocalPlayer`, sidestep this entirely).
+- **On 26.x, `PayloadRegistrar#playBidirectional` has two overloads, and the 3-argument one silently drops
+  the client-side handler.** `playBidirectional(type, codec, serverHandler, clientHandler)` (4-arg) registers
+  both directions; `playBidirectional(type, codec, serverHandler)` (3-arg) registers **only** the server-bound
+  handler and leaves the client handler `null` — per its own javadoc, the client side then has to be
+  registered separately via `RegisterClientPayloadHandlersEvent`, which nothing in this port does. `BCNetwork`
+  called the 3-arg overload for `MessageUpdateTile` (the generic tile-sync envelope, sent both ways), so the
+  jar compiled and booted a dedicated server fine (server-to-server never needs the missing half) but crashed
+  every real client on startup with `IllegalStateException: Some clientbound payloads are missing client-side
+  handlers: [buildcraft:update_tile]`, thrown from `ClientModLoader.finish()` before the game window even
+  opens. This is exactly the failure mode the "not verified: client-side rendering" caveat above was flagging
+  as a gap — a dedicated-server boot alone cannot catch it. Found only once real jars were deployed to actual
+  Prism Launcher instances and launched as a client; confirmed the fix (switching to the 4-arg overload,
+  passing `MessageUpdateTile::handle` for both directions, since the handler already reads `ctx.player()`/
+  `level()` generically rather than assuming a side) by running `:neoforge-26x:runClient` directly afterward —
+  mod loading now completes, the integrated server starts, and a world loads and renders with no crash report.
+  Worth checking for on any future bidirectional message: grep for `playBidirectional(` calls with exactly
+  three arguments.
 
 ## How much actually has to be duplicated
 

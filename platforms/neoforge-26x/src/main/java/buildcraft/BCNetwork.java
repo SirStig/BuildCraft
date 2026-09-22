@@ -30,7 +30,8 @@ public final class BCNetwork {
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(BuildCraft.MOD_ID).versioned("1");
 
-        registrar.playBidirectional(MessageUpdateTile.TYPE, MessageUpdateTile.STREAM_CODEC, MessageUpdateTile::handle);
+        registrar.playBidirectional(
+            MessageUpdateTile.TYPE, MessageUpdateTile.STREAM_CODEC, MessageUpdateTile::handle, MessageUpdateTile::handle);
         registrar.playToClient(MessageMarker.TYPE, MessageMarker.STREAM_CODEC, MessageMarker::handle);
     }
 }
