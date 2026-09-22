@@ -3056,6 +3056,92 @@ Deliberately not ported, with reasons:
     explicitly note that the dropped `getFluidForRender`/`clientFluid`/`clientAmount` fields are still not
     resurrected, per the interpolation call above).
 
+- **`buildcraft.factory.gui.GuiAutoCraftFluids` (both platforms) trades its plain `"Tank 1: ..."`/`"Tank 2: ..."`
+  text lines for two real vertical fluid-level bars, reusing the exact fluid sprite/tint lookup the immediately
+  preceding `RenderTileTank` batch already pinned down and `javap`-verified on both targets** (see that entry
+  above for the full API account: 26.x's `Minecraft.getInstance().getModelManager().getFluidStateModelSet()`
+  vs. 1.20.1's `IClientFluidTypeExtensions.of(Fluid)`). That lookup is identical regardless of what draws it
+  afterward, but a plain 2D GUI context needed its own, separately-verified drawing primitive -- a 3D
+  `BlockEntityRenderer` builds a hand-wound `VertexConsumer` quad, which has no counterpart in `GuiGraphics`/
+  `GuiGraphicsExtractor` at all. The GUI background texture itself is still a plain panel fill, unchanged and out
+  of scope, per this class's own pre-existing javadoc: no genuine `autobench_fluid.png` GUI texture ever existed
+  in 1.12.2 to base one on, and authoring one from nothing was explicitly out of scope for this batch.
+  - **Real drawing primitive, confirmed by reading the actual decompiled source out of each platform's own
+    `-sources.jar` rather than guessed -- and it genuinely diverges in *shape*, not just name.** On 26.x,
+    `net.minecraft.client.gui.GuiGraphicsExtractor` (from `minecraft-patched-26.3.0.7-beta-sources.jar`) has
+    exactly one public overload that takes an already-resolved `TextureAtlasSprite` together with a tint:
+    `blitSprite(RenderPipeline, TextureAtlasSprite, int x, int y, int width, int height, int color)` -- read its
+    body directly: it always draws the sprite's full UV rect (`u0`/`u1`/`v0`/`v1`) stretched into the given pixel
+    box. The one overload that *does* crop a sub-rectangle of a `TextureAtlasSprite` is `private`; the public,
+    UV-cropping `blitSprite(RenderPipeline, Identifier, int spriteWidth, int spriteHeight, int textureX, int
+    textureY, int x, int y, int width, int height)` overload (confirmed by decompiling vanilla's own
+    `AbstractFurnaceScreen#extractBackground`, which uses exactly this one for the lit-flame/burn-progress icons)
+    resolves its sprite from the *GUI* sprite atlas (`this.guiSprites.getSprite(location)`), which cannot address
+    an arbitrary block-atlas fluid sprite at all. On 1.20.1, `net.minecraft.client.gui.GuiGraphics` (from
+    `forge-1.20.1-47.1.106-sources.jar`) has the equivalent single tint-capable `TextureAtlasSprite` overload --
+    `blit(int x, int y, int blitOffset, int width, int height, TextureAtlasSprite sprite, float red, float green,
+    float blue, float alpha)`, confirmed by reading its body forwarding straight to `innerBlit` with the sprite's
+    own full `getU0()`/`getU1()`/`getV0()`/`getV1()` -- same full-UV-stretch behaviour, no UV-cropping overload
+    exists for a raw sprite here either (the classic `ResourceLocation`-based `blit` overloads that do crop a
+    source rectangle assume a flat, fixed-size PNG addressed by pixel offset, not a fractional atlas UV rect, so
+    they cannot substitute).
+  - **The fill-from-the-bottom effect is therefore built from `enableScissor`/`disableScissor`, not a UV crop --
+    a real, verified primitive on both targets, not a workaround.** Both `GuiGraphicsExtractor` (26.x) and
+    `GuiGraphics` (1.20.1) expose public `enableScissor(int, int, int, int)`/`disableScissor()` (confirmed via
+    `javap` on both real jars), and 26.x's own `GuiGraphicsExtractor#blitSprite(Identifier, ...)` internally falls
+    back to this exact same enable-scissor/draw-full-sprite/disable-scissor triad whenever a GUI sprite's own
+    scaling mode isn't `Stretch` -- i.e. this is vanilla's own established technique for "can't crop this
+    particular sprite," reused here for the same reason. Each bar is drawn at its full `BAR_WIDTH x BAR_HEIGHT`
+    box every frame; a scissor rect clipped to the box's bottom `fillHeight` pixels reveals only the filled
+    portion.
+  - **Tint, confirmed via decompiled source rather than assumed to work the same way on both targets.** 26.x's
+    `blitSprite` overload takes a direct packed `int` ARGB colour; `BlockTintSource#color(BlockState)` (the same
+    call `RenderTileTank` already makes) returns a plain `0x00RRGGBB` value with the alpha byte unset, which --
+    confirmed by reading `innerBlit`'s use of the colour as a real multiplicative vertex tint -- would otherwise
+    multiply the sprite fully transparent; `ARGB.opaque(int)` (`color | 0xFF000000`, read directly from
+    `ARGB.java` in the sources jar) forces the alpha byte to `0xFF` before the colour is passed in. 1.20.1's `blit`
+    overload instead takes direct `float red, green, blue, alpha` components, so `IClientFluidTypeExtensions
+    .getTintColor(FluidStack)`'s packed int is split into `r`/`g`/`b` floats exactly the way `RenderTileTank`
+    already does, with `alpha` passed as a literal `1f` -- no packed-alpha concern on this target at all, a
+    genuine, `javap`-confirmed shape divergence between the two platforms' tint-capable overloads, not a rename.
+  - **Fill direction: bottom-up, matching `RenderTileTank`'s own vertical fill-from-`Y_MIN` convention** -- the
+    natural reading for a tank (liquid rises from the bottom). Screen-space Y increases downward, so "reveal the
+    bottom" scissors to the *larger*-Y half of the bar's box: for a bar at `[barY, barY + BAR_HEIGHT)`, fraction
+    `f` clips to `[barY + BAR_HEIGHT - fillHeight, barY + BAR_HEIGHT)` where `fillHeight = round(BAR_HEIGHT * f)`.
+    Hand-traced with concrete numbers, identically on both platforms: `BAR_HEIGHT = 54`; `f = 0.0` never reaches
+    this code at all (see below); `f = 0.5` gives `fillHeight = 27`, scissor `[barY + 27, barY + 54)` -- the bottom
+    half, 27 px tall; `f = 1.0` gives `fillHeight = 54`, scissor `[barY, barY + 54)` -- the whole bar, unclipped.
+    No negative height is ever possible: `fraction` is `Mth.clamp`-ed to `[0, 1]` before use (guarded against a
+    zero-capacity divide, even though `Tank`'s capacity here is a positive compile-time constant, `FluidType
+    .BUCKET_VOLUME * 6`), and an empty tank or a fraction of exactly `0` returns before any sprite/scissor call
+    runs at all -- matching `RenderTileTank`'s own "don't render anything for an empty tank" rule one level up, so
+    no zero-height sliver, clipped or otherwise, is ever drawn. A compact percentage readout (e.g. `"50%"`) is
+    still drawn under each bar regardless of fill state, in place of the old full `getContentsString()` line, to
+    keep some of the original plain-text informational value without the layout risk of a long amount string.
+  - **Layout**: two 14px-wide, 54px-tall bars at a fixed `BAR1_X = 144`/`BAR2_X = 160`, `BAR_Y = 16` (both
+    platforms, identical), chosen to sit in the panel's otherwise-empty space to the right of the output slot
+    (`x` 124-142) -- clear of every slot `ContainerAutoCraftFluids` lays out and of the player inventory (which
+    starts at `y` 115), confirmed by re-reading that container's own slot coordinates rather than eyeballed.
+  - **`buildcraft.transport` was not touched**, per this task's own explicit instruction (a concurrent pipe-
+    rendering effort was live in the same tree) -- this batch stayed entirely inside
+    `buildcraft.factory.gui.GuiAutoCraftFluids`. `ContainerAutoCraftFluids` also did not need touching: the tank
+    contents were already readable directly off `menu.tile.tank1`/`tank2`, exactly as the pre-existing plain-text
+    version already did, so no new synced value was needed.
+  - **Explicitly out of scope, same as before**: a real background GUI texture for this block (still none, still
+    a plain panel fill) and any block-world rendering (this is 2D GUI-only, reusing but not modifying
+    `RenderTileTank`).
+  - **Honest limitation, same category as every render-adjacent entry in this file**: the actual on-screen visual
+    result -- whether the two bars' size, position, texture, or tint genuinely look right -- is not verified, per
+    this project's own standing limitation that rendering needs a real display no mouse/keyboard input automation
+    exists to drive in this environment. What *is* verified: both platforms compile clean via a forced
+    `--no-build-cache clean` rebuild (`:neoforge-26x:compileJava :neoforge-1201:compileJava`), the full 25-test
+    suite passes (`--no-build-cache test --rerun`, all 25 green), a real dedicated-server boot on both platforms
+    reached `Done (...)` with zero exceptions and zero references to `GuiAutoCraftFluids` anywhere in either log
+    -- confirming this client-only screen class is still never loaded server-side, the same way every other
+    `buildcraft.factory.gui` class's own javadoc already establishes -- and the fill-fraction/pixel-height
+    arithmetic above was hand-traced with concrete numbers rather than eyeballed on screen.
+  - **Modified, both platforms**: `buildcraft.factory.gui.GuiAutoCraftFluids` only. No other file needed changing.
+
 - **`buildcraft.transport` -- the pipe connection shape finally renders, closing the single most-requested
   visual gap in this whole port ("the pipes... not having animations", i.e. every pipe is still a plain solid
   cube regardless of what it connects to).** No custom `BakedModel` was needed: the real 1.12.2 geometry
