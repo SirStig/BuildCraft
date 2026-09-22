@@ -1434,6 +1434,98 @@ Deliberately not ported, with reasons:
     by an observed live drain -- worth a human double-check once a real fluid consumer exists to test it against.
     Both dev servers booted and shut down cleanly with zero exceptions in the log either time.
 
+- **`buildcraft.factory` — `TileFloodGate`/`BlockFloodGate` (both platforms), the flood gate.** Given a
+  fluid piped into its own single-slot `tank` (registered the same direct way `TilePump`'s own `tank` is, not
+  `TileTank`'s aggregating-column pattern -- a flood gate is a single, non-stacking tile), it breadth-first
+  searches outward through open space along up to 4 of its 5 non-top sides (`openSides`) and spreads that fluid
+  into the world, one source block every 16 ticks, on a rebuild cadence that backs off exponentially
+  (`{16, 32, 64, 128, 256}` ticks) whenever the search queue empties out with nothing left to place, and resets to
+  the fastest delay the moment a placement actually succeeds.
+  - **Fluid placement needs no `FakePlayer`, confirmed rather than assumed.** `TileFloodGate#canFill` only ever
+    accepts two kinds of target -- plain air, or an existing *flowing* (non-source) block of the tank's own fluid
+    -- and neither is ever a `LiquidBlockContainer` (a cauldron and friends), so the modern placement call is a
+    plain, unconditional `Level#setBlock(pos, fluid.defaultFluidState().createLegacyBlock(), Block.UPDATE_ALL)`
+    with no player object of any kind. Independently confirmed moot either way: `BuildCraftAPI.fakePlayerProvider`
+    is still never assigned anywhere in this port (`grep` across both platforms turns up only its declaration), so
+    routing through it would have been a guaranteed `NullPointerException` regardless -- the same "no renderer/no
+    consumer yet" situation as several other deferred fields in this port, just for a field that would crash on
+    use rather than silently do nothing.
+  - **A genuine, faithfully-preserved bug in 1.12.2's own `TileFloodGate#update()`, found while verifying this
+    method line-by-line against the original, not introduced by porting it.** The path-revalidation loop iterates
+    over every intermediate position `p` on the route back to the flood gate, but the actual fillability check
+    inside that loop calls `canFillThrough(currentPos)` -- the loop variable `p` is read for nothing but the
+    `p.equals(currentPos)` skip-self test, never passed to `canFillThrough` itself. The result is that 1.12.2's
+    real binary never independently re-validates the intermediate steps of a path at all, only the destination,
+    repeated once per path element. Ported byte-for-byte as written (bug included), per this port's established
+    precedent for preserved-not-silently-fixed upstream quirks (`BlockMarkerVolume#neighborChanged`) -- flagged
+    in both platforms' class javadoc and here for a human to weigh in on whether it is worth deviating from
+    upstream to fix.
+  - **`openSides` is a real, persisted `EnumSet<Direction>`, encoded as a plain bitmask `int`** (one bit per
+    `Direction#ordinal()`), not 1.12.2's `NBTTagByteArray`/`NBTPrimitive` dual-format reader -- there is no old
+    save data for a fresh port to stay backward-compatible with, so the "7.99.7 and before" legacy-array fallback
+    is dropped outright, matching how `TileMiner`'s own `migrateOldNBT` was already dropped for the same reason.
+    It needs no client sync of its own beyond the ordinary `markDirtyAndSync()` full-state push `toggleOpenSide`
+    already triggers -- there is still no renderer in this port to consume a faster sync of this one field, the
+    same reasoning that already dropped `TileMarkerVolume#showSignals`'s own id-tagged payload pair.
+  - **The wrench interaction is real and was confirmed reachable, unlike a same-shaped precedent that turned out
+    not to be.** `BlockEngineCreative`'s own javadoc already documented that `ItemWrench#useOn` intercepts a
+    wrench click through `CustomRotationHelper.INSTANCE.attemptRotateBlock` *before* a block's own
+    `useItemOn`/`use` ever runs, and speculated its own output-cycling wrench feature was consequently dead code
+    since that block implements `ICustomRotationHandler`. `BlockFloodGate` does not implement
+    `ICustomRotationHandler` and has no handler registered against it, so `attemptRotateBlock` falls through to
+    its own `InteractionResult.PASS` default (confirmed by reading `CustomRotationHelper#attemptRotateBlock`
+    directly, not assumed) -- and a `PASS` does not consume the interaction, so it genuinely reaches
+    `BlockFloodGate#useItemOn`/`#use` on both targets.
+  - **In-game verification, both platforms, via RCON.** `data merge block` on a placed flood gate's own NBT
+    (`{tank:{stacks:[{id:"minecraft:water",amount:...}]}}` on 26.x -- `FluidStacksResourceHandler`'s real codec
+    shape, `id`/`amount`, decompiled from the NeoForge sources jar rather than guessed after a first wrong guess
+    silently produced a zero-length stack list and crashed the dedicated server with an `IndexOutOfBoundsException`
+    in `StacksResourceHandler#getAmountAsLong` -- worth knowing for the next person who merges NBT into a
+    `Tank`-backed tile on this target: a malformed `stacks` list decodes to *empty*, not *rejected*, and every
+    `Tank` read assumes exactly one slot always exists; `{tank:{FluidName:"minecraft:water",Amount:...}}` on
+    1.20.1, unchanged Forge `FluidTank` NBT shape) filled the tank directly. With a flood gate placed in the
+    middle of five otherwise-sealed 1-block pockets (one per non-top side, each connected to the flood gate's own
+    position only, no path around), and `openSides` set to exclude `WEST` via `data merge block ...
+    {openSides:45}`, all four open pockets (`DOWN`/`NORTH`/`SOUTH`/`EAST`) filled with real placed water source
+    blocks (`execute if block ... minecraft:water`, matching the pattern already established for
+    `TileMiningWell`/`TilePump`/`TileTank`) while the closed `WEST` pocket never did, on both platforms, with the
+    tank draining exactly 4,000 mB (four 1,000 mB placements) each time -- a clean, unambiguous confirmation that
+    `openSides` genuinely gates the search. **Not independently observed live: an actual client wrench right-click
+    flipping `openSides` end to end.** This environment has no graphical client to drive a real interaction
+    through; what *is* verified live is everything `toggleOpenSide` actually does once reached (the NBT-level
+    `openSides` gating above) and, via direct source reading rather than assumption, that the interaction pipeline
+    genuinely reaches `BlockFloodGate#useItemOn`/`#use` for a wrench click on this block (see above) -- worth a
+    human double-check with a real client before relying on this specific gesture.
+  - **A real, dedicated-server-crashing robustness gap was found (and left as-is, not fixed) in shared
+    `Tank`/`StacksResourceHandler` plumbing this pass does not own.** Feeding `data merge block` a `stacks` list
+    that fails to decode (a wrong field name, in this case) does not reject the merge or fall back to the
+    previous contents -- it silently produces a zero-*length* list instead of the expected always-one-slot list,
+    and the very next `tank.getAmountAsInt(0)` (called unconditionally at the top of every `serverTick()`) throws
+    `IndexOutOfBoundsException` and crashes the dedicated server. This is shared `net.neoforged.neoforge.transfer
+    .StacksResourceHandler` behaviour, not something `TileFloodGate` does differently from `TilePump`/`TileTank`
+    (both of which read tank slot 0 just as unconditionally, and neither is in scope for this pass to modify) --
+    flagged here since it was only actually triggered by this task's own testing, not because it is specific to
+    the flood gate. A real player can never produce this through ordinary play (nothing in-game ever hands a tank
+    a malformed NBT blob), but it is worth a human's attention as a shared fragility the next `Tank`-owning tile's
+    own verification pass should be aware can happen from a bad `/data merge`.
+  - Registered in the existing `BCFactoryRegistries` (additive, inserted directly after `TANK`/`TANK_TYPE` and
+    before the `TUBE` block, same care taken as `TANK`'s own insertion not to disturb `TUBE`'s anchored javadoc).
+    A plain full cube (matching `PUMP`/`TANK`'s own "no renderer to justify a non-cube model yet" call) using the
+    real `flood_gate/open.png`/`top.png` textures from `buildcraft_resources/assets/buildcraftfactory/` (the
+    per-side `open`/`closed` texture swap and the `connected_*` blockstate properties that drove it are dropped
+    along with `getActualState`, matching precedent -- see the class's own javadoc); blockstate/block+item
+    model/loot table/lang written following the established pattern. The 1.12.2 recipe is not ported, same
+    "no invented ingredient substitute" reasoning already applied to `TilePump`'s and `TileTank`'s own skipped
+    recipes (this one needs `buildcraftfactory:tank`, itself unrecipe'd yet -- see `TileTank`'s own entry).
+  - Verified with forced rebuilds, the full test suite, real dedicated-server boots with zero exceptions on both
+    targets, and the live RCON fluid-placement/`openSides`-gating test described above on both platforms.
+    **One environment-specific gotcha hit during this pass's own verification, unrelated to the port itself**:
+    26.x's dedicated server pauses ticking entirely after `pause-when-empty-seconds` (default 60) with no players
+    connected, which silently stalled the very first `openSides`-gating attempt (nothing placed for over a
+    minute) until noticed in the server log and raised locally in `run/server/server.properties` for this test
+    session -- worth remembering for whoever next needs a long-idle RCON-only verification run on 26.x; 1.20.1
+    has no equivalent setting and was unaffected.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1452,7 +1544,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank (done). Autoworkbench. |
+| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate (done). Autoworkbench. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 

@@ -25,11 +25,13 @@ import buildcraft.lib.inventory.AutomaticProvidingTransactor;
 import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.factory.block.BlockChute;
+import buildcraft.factory.block.BlockFloodGate;
 import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
 import buildcraft.factory.tile.TileChute;
+import buildcraft.factory.tile.TileFloodGate;
 import buildcraft.factory.tile.TileMiningWell;
 import buildcraft.factory.tile.TilePump;
 import buildcraft.factory.tile.TileTank;
@@ -94,6 +96,20 @@ public final class BCFactoryRegistries {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileTank>> TANK_TYPE =
         REGISTRY.addBlockEntity("tank", TileTank::new, TANK);
 
+    /** Same default properties as {@link #CHUTE}/{@link #MINING_WELL}/{@link #PUMP}/{@link #TANK} -- see
+     * {@link #CHUTE}'s own javadoc. A plain full cube, matching {@link #PUMP}/{@link #TANK}'s own "no renderer to
+     * justify a non-cube model yet" call -- see {@link BlockFloodGate}'s own javadoc for why {@code openSides} is
+     * real gameplay state even though its 1.12.2 blockstate visualisation is dropped. */
+    public static final DeferredBlock<BlockFloodGate> FLOOD_GATE = REGISTRY.addBlockAndItem("flood_gate", BlockFloodGate::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileFloodGate>> FLOOD_GATE_TYPE =
+        REGISTRY.addBlockEntity("flood_gate", TileFloodGate::new, FLOOD_GATE);
+
     /** No {@code BlockItem} ({@link BCRegistry#addBlock}, not {@code addBlockAndItem}) and an empty loot table --
      * see {@link BlockTube}'s own javadoc for why. {@code strength(-1.0F, ...)} matches
      * {@code BlockSpringWater}'s "always unbreakable" precedent; {@code noOcclusion()} keeps the one non-cosmetic
@@ -139,5 +155,9 @@ public final class BCFactoryRegistries {
         // TileTank implements ResourceHandler<FluidResource> itself (a single logical slot spanning the whole
         // connected column) -- see that class's own javadoc -- so this hands back the tile, not a field.
         event.registerBlockEntity(Capabilities.Fluid.BLOCK, TANK_TYPE.get(), (tile, side) -> tile);
+
+        // A flood gate's tank is a single, non-stacking slot, registered directly the same way TilePump's own
+        // tank field is -- unlike TileTank, there is no aggregating column to walk.
+        event.registerBlockEntity(Capabilities.Fluid.BLOCK, FLOOD_GATE_TYPE.get(), (tile, side) -> tile.tank);
     }
 }

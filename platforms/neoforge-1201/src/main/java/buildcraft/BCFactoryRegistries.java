@@ -20,11 +20,13 @@ import buildcraft.api.inventory.ItemTransactorCapabilities;
 import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.factory.block.BlockChute;
+import buildcraft.factory.block.BlockFloodGate;
 import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
 import buildcraft.factory.tile.TileChute;
+import buildcraft.factory.tile.TileFloodGate;
 import buildcraft.factory.tile.TileMiningWell;
 import buildcraft.factory.tile.TilePump;
 import buildcraft.factory.tile.TileTank;
@@ -92,6 +94,20 @@ public final class BCFactoryRegistries {
 
     public static final RegistryObject<BlockEntityType<TileTank>> TANK_TYPE =
         REGISTRY.addBlockEntity("tank", TileTank::new, TANK);
+
+    /** Same default properties as {@link #CHUTE}/{@link #MINING_WELL}/{@link #PUMP}/{@link #TANK} -- see
+     * {@link #CHUTE}'s own javadoc. A plain full cube -- see {@link BlockFloodGate}'s own javadoc, and the 26.x
+     * copy of this file, for why {@code openSides} is real gameplay state even though its 1.12.2 blockstate
+     * visualisation is dropped. */
+    public static final RegistryObject<BlockFloodGate> FLOOD_GATE = REGISTRY.addBlockAndItem("flood_gate", () -> new BlockFloodGate(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileFloodGate>> FLOOD_GATE_TYPE =
+        REGISTRY.addBlockEntity("flood_gate", TileFloodGate::new, FLOOD_GATE);
 
     /** No {@code BlockItem} ({@link BCRegistry#addBlock}, not {@code addBlockAndItem}) and an empty loot table --
      * see {@link BlockTube}'s own javadoc for why. {@code strength(-1.0F, ...)} matches
