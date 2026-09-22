@@ -19,6 +19,9 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 
@@ -34,11 +37,38 @@ import buildcraft.transport.tile.TilePipeHolder;
 /**
  * The single block every pipe kind shares -- see the 26.x copy of this class for the full account of the real
  * 1.12.2 one-block-many-items architecture and why this is a plain full cube.
+ *
+ * <p><b>Connection-shape rendering.</b> Identical to the 26.x copy of this class -- see its own "Connection-shape
+ * rendering" javadoc entry for the full account: six vanilla direction booleans ({@link BlockStateProperties#NORTH}/
+ * {@code SOUTH}/{@code EAST}/{@code WEST}/{@code UP}/{@code DOWN}, confirmed identical {@code BooleanProperty}
+ * instances via {@code javap} against the real 1.20.1-Forge-fork universal jar) plus {@link #MATERIAL}, a new
+ * {@link EnumPipeMaterial} property, both declared here and pushed onto the real placed state from
+ * {@code TilePipeHolder#updateConnectionBlockState}/{@code Pipe#updateConnections}, never read by this block
+ * itself.
  */
 public class BlockPipeHolder extends BlockBCTile {
 
+    /** See the 26.x copy of this class's own javadoc for {@link #MATERIAL}. */
+    public static final EnumProperty<EnumPipeMaterial> MATERIAL = EnumProperty.create("material", EnumPipeMaterial.class);
+
     public BlockPipeHolder(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState()
+            .setValue(MATERIAL, EnumPipeMaterial.COBBLESTONE)
+            .setValue(BlockStateProperties.NORTH, false)
+            .setValue(BlockStateProperties.SOUTH, false)
+            .setValue(BlockStateProperties.EAST, false)
+            .setValue(BlockStateProperties.WEST, false)
+            .setValue(BlockStateProperties.UP, false)
+            .setValue(BlockStateProperties.DOWN, false));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(
+            MATERIAL, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
+            BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
+        );
     }
 
     @Override

@@ -3056,6 +3056,167 @@ Deliberately not ported, with reasons:
     explicitly note that the dropped `getFluidForRender`/`clientFluid`/`clientAmount` fields are still not
     resurrected, per the interpolation call above).
 
+- **`buildcraft.transport` -- the pipe connection shape finally renders, closing the single most-requested
+  visual gap in this whole port ("the pipes... not having animations", i.e. every pipe is still a plain solid
+  cube regardless of what it connects to).** No custom `BakedModel` was needed: the real 1.12.2 geometry
+  (`common/buildcraft/transport/client/model/PipeBaseModelGenStandard.java`) is plain axis-aligned boxes -- an
+  8x8x8 centre cube (`from=[4,4,4]`, `to=[12,12,12]`) plus one same-cross-section extrusion stub per connected
+  direction, running from the centre cube's own face out to the block's own face -- entirely expressible as
+  ordinary vanilla block-model JSON `elements` plus a `multipart` blockstate, confirmed by directly re-reading
+  that generator class's own manual `UvFaceData` constants (`UvFaceData.from16(4, 0, 12, 4)` for the unconnected
+  centre cube's north/south faces, matching exactly what a plain `[4,4,4]`-`[12,12,12]` box's *default*,
+  position-derived UV already produces with no explicit `"uv"` override at all) rather than assumed from the
+  geometry description alone.
+  - **A load-bearing correction to this batch's own starting research, caught by checking rather than trusting
+    it.** The brief's "bonus finding" that `pipe_wood.json`/`pipe_stone.json`/`pipe_sandstone.json`/
+    `pipe_quartz.json`/`pipe_holder.json` (the existing full-16x16x16 `cube_all` models) were orphaned and free to
+    repurpose was wrong: `grep`ping every `items/pipe_item_<material>.json` on both platforms shows each one is
+    `{"model": {"type": "minecraft:model", "model": "buildcraft:block/pipe_<material>"}}` (26.x) /
+    `{"parent": "buildcraft:block/pipe_<material>"}` (1.20.1) -- every one of those five files is the live
+    inventory-icon model for that material's item, still actively referenced today. Repurposing any of them into
+    an 8x8x8 sub-box would have silently broken that material's held/inventory icon. Ten new files were added per
+    platform instead -- `models/block/pipe_holder_core_<material>.json` (the centre cube) and
+    `models/block/pipe_holder_arm_<material>.json` (one north-facing arm template, reused for every other
+    direction via blockstate rotation, see below) -- leaving the five existing item-icon models completely
+    untouched.
+  - **Real vanilla precedent for the exact arm geometry, not an approximation of it**: `chorus_plant_side.json`
+    (present, byte-identical in shape, in both the real 1.20.1 and the real 26.3 client jars) is
+    `{"from": [4,4,0], "to": [12,12,4], "faces": {down,up,north,west,east}}` -- literally the same box this task's
+    own research already predicted for a north-connecting arm stub, missing only a `south` face (hidden inside
+    the centre cube, the same reason this port's own arm models also omit it). `pipe_holder_arm_<material>.json`
+    mirrors this shape directly, texture swapped for the material's own `block/pipe_<material>` sprite.
+  - **Multipart rotation, confirmed against two real vanilla blockstates on both target jars, not assumed to
+    carry over from the `variants`-only precedent the engine facing-visibility batch already established.**
+    `glass_pane.json` reuses one `glass_pane_side` model for two of its four horizontal directions via a plain
+    `"y": 90` on the `multipart` entry's own `apply` block; `chorus_plant.json` goes further and covers all six
+    directions from one `chorus_plant_side` template: `y: 0/90/180/270` for north/east/south/west and, critically,
+    `x: 270`/`x: 90` for up/down -- the one axis the engine batch's own `variants`-only rotation never had to
+    prove. `pipe_holder.json`'s own `multipart` array (both platforms, byte-identical, 35 entries: five
+    unconditional `{"when": {"material": "<m>"}}` centre-cube entries plus 5 materials x 6 directions arm
+    entries) copies `chorus_plant.json`'s exact rotation values for the exact same reason -- reorienting a single
+    north-facing box template onto every other face.
+  - **The material dimension needed one new, real, `javap`-verified `EnumProperty`, kept local to
+    `buildcraft.transport` rather than added to the shared `buildcraft.api.properties.BuildCraftProperties`/
+    `buildcraft.api.enums` classes.** `javap` against both real jars confirms `EnumProperty.create(String,
+    Class<T>)` (the exact overload `buildcraft.api.enums.EnumEngineType` already uses) is available identically
+    on both targets, so the new `buildcraft.transport.block.EnumPipeMaterial` (`StringRepresentable`, five
+    lower-case values matching every `PipeDefinition.identifier.getPath()` in `BCTransportRegistries` --
+    `"cobblestone"/"wood"/"stone"/"sandstone"/"quartz"`) follows that exact shape. Unlike `EnumEngineType` (which
+    genuinely spans `buildcraft.core`/`buildcraft.energy`, justifying a shared home), nothing outside
+    `buildcraft.transport` needs a pipe-material property, so it was kept as a `BlockPipeHolder`-local
+    `EnumProperty<EnumPipeMaterial> MATERIAL` field instead of growing the shared API class for a single
+    consumer -- a deliberate scope call, not an oversight. The six connection booleans reuse real vanilla
+    `BooleanProperty` instances directly (`BlockStateProperties.NORTH/SOUTH/EAST/WEST/UP/DOWN`), confirmed
+    identical via `javap` against both real jars (unlike `FACING`, no divergence exists here on either target),
+    rather than declaring six new BuildCraft-native properties.
+  - **The `Pipe` -> `TilePipeHolder` -> `BlockState` wiring, and why it needs no extra placement/load-time call
+    unlike the engine facing-visibility batch's own `updateFacingBlockState`.** `TilePipeHolder` gets one new
+    `public void updateConnectionBlockState(Pipe, EnumMap<Direction, IPipe.ConnectedType>)` method (both
+    platforms), called unconditionally from the tail of `Pipe#updateConnections()` through an
+    `instanceof TilePipeHolder` check on `Pipe`'s own `holder` field -- `IPipeHolder` itself gains no new method,
+    since a block-state-rendering push is not a concern any other holder implementation should have to care
+    about, and a repo-wide search confirms `TilePipeHolder` is the only real `implements IPipeHolder` anywhere in
+    either platform. First attempt made the method package-visible, matching a literal reading of the research's
+    own suggested shape -- this genuinely does not compile: `Pipe` lives in `buildcraft.transport.pipe`,
+    `TilePipeHolder` in the sibling `buildcraft.transport.tile`, so package-private access does not reach across
+    (confirmed by the compiler's own error, `updateConnectionBlockState(...) is not public in TilePipeHolder;
+    cannot be accessed from outside package`); fixed by making the method `public`. Unlike
+    `TileEngineBase#updateFacingBlockState` (which needs an explicit call from both the wrench path and
+    `onPlacedBy`, because facing only changes on those two specific events), pushing the connection/material
+    shape needed no separate `onPlacedBy`/NBT-load call at all: `Pipe#updateMarked` already starts `true` on
+    *both* of `Pipe`'s own constructors (fresh placement and NBT-reload alike), so the very next real
+    `serverTick()` after either path unconditionally runs `updateConnections()`, which now pushes both the
+    connection booleans and `EnumPipeMaterial.fromId(definition.identifier.getPath())` together, every time it
+    recomputes -- not just when something changed. Material is cheap to recompute every call rather than cache
+    behind a second flag, since it never actually changes after placement.
+  - **The connection boolean means "any connection", confirmed against `IPipe.ConnectedType`'s own two real
+    values (`PIPE`, `TILE`) and proven live, not assumed**: `updateConnectionBlockState` sets a direction's
+    boolean from `connectionTypes.containsKey(dir)` against the same `types` map `Pipe#updateConnections()` just
+    finished populating, which holds an entry for *either* connection type. RCON-verified directly below: a Stone
+    pipe placed next to a plain vanilla chest shows `east=true` (a `TILE`-type connection, no other pipe
+    involved), and a Sandstone pipe placed next to a chest shows `east=false` -- proving both that a TILE
+    connection sets the boolean and that Sandstone's own already-verified "never connects to a plain inventory"
+    rule (from the pipe-materials batch above) genuinely reaches this new BlockState, not just the old `con` NBT
+    bitmask.
+  - **In-game verification, both platforms, via RCON against real dedicated servers -- the BlockState data, not
+    the pixels.** Placed, via the same zero-debug-command `/setblock` + `/data merge block {pipe:{def:"..."}}`
+    NBT-reconstruction rig the pipe-materials batch already established: two Cobblestone pipes adjacent (both
+    directions), a Wood pipe next to a Cobblestone pipe (confirmed, by re-reading `PipeBehaviourWood`/
+    `PipeBehaviourSeparate`'s own real `canConnect` bodies rather than assumed, that this genuinely *should*
+    connect -- Wood only refuses another Wood pipe, Cobblestone only refuses a different `PipeBehaviourSeparate`
+    subclass, so two different-but-compatible behaviours connecting is correct, not a bug), a Stone pipe next to
+    a vanilla chest, a Sandstone pipe next to a vanilla chest, and a Stone pipe next to a Quartz pipe (two
+    different `PipeBehaviourSeparate` subclasses, which do genuinely refuse each other -- the real "different
+    materials don't connect" case, since Wood/Cobblestone's own cross-connection above turned out not to be
+    one). Waited for real tick advancement (`time query gametime` moving), then confirmed on both platforms with
+    `/execute if block <pos> buildcraft:pipe_holder[material=...,north=...,...]`-style vanilla property queries
+    (not `/data get block`, which cannot see `BlockState` properties at all -- the exact gotcha already on file
+    from the engine facing-visibility batch) that all eight test points' real placed `BlockState` matched the
+    tile's own internal `Pipe` state exactly: `material` correct on every pipe, `east=true` both directions
+    between the two Cobblestone pipes, `east=true`/`west=true` between Wood and Cobblestone, `east=true` from
+    Stone to the chest, `east=false` from Sandstone to its chest, and `east=false` both directions between Stone
+    and Quartz.
+  - **A genuine methodology finding, worth recording for the next batch that RCON-tests a freshly `/setblock`ed
+    position far from spawn: an untouched chunk gets zero real ticks, even after tens of real seconds, unless
+    something keeps it loaded.** The first verification pass left two of the eight test points
+    (Stone-next-to-Quartz, placed in a chunk one column further out than the rest of the rig) reading back the
+    block's *default* `BlockState` (`material=cobblestone`, every direction `false`) despite their own tile NBT
+    already showing a correctly-computed `con: 0`. `/forceload query` showed the reason directly: that chunk was
+    never on the force-load list at all (only a chunk near spawn, force-loaded by an earlier, unrelated session,
+    was), so the server's own chunk manager was letting it go straight back to sleep between commands with no
+    player and no ticket keeping it resident -- the con:0 in NBT was coincidentally correct (Stone and Quartz
+    really do refuse each other) but had not actually been computed by a *live* `updateConnections()` call yet,
+    only parsed as the NBT constructor's own "no `con` key present" default. `/forceload add` over the whole test
+    area and re-querying after another real tick gap fixed both points immediately, with no code change needed --
+    a testing-rig gap, not a `Pipe`/`BlockState` bug, but one worth force-loading for up front next time rather
+    than discovering it two test points in.
+  - **A second, unrelated false alarm caught and correctly ruled out rather than "fixed" blind: a stale
+    `processResources` output in this session's own shared build directory, not a real missing-model bug.** The
+    first `:neoforge-26x:runClient` boot logged 320 `Missing model for variant` warnings for `buildcraft:pipe_holder`
+    (every possible state) plus ten `Failed to load model ... java.nio.file.NoSuchFileException` errors naming
+    this batch's own new `pipe_holder_core_*`/`pipe_holder_arm_*` files directly in `build/resources/main` --
+    alarming on its face, but `diff`ing every one of those ten files' `build/resources/main` copy against its
+    `src/main/resources` original (once the client's own JVM was killed and a completely fresh `runClient`
+    invocation given a chance to run `processResources` uncontended) showed them byte-identical, and the
+    re-run logged zero missing-model warnings and zero load errors for `pipe_holder` at all. The most likely
+    explanation, consistent with the piston-rod batch's own documented "shared working tree" precedent above and
+    the concurrent Tank-rendering task's own entry in this file (which independently reports this exact session's
+    `neoforge-26x:compileJava` and `runServer` both being disturbed by this batch's work-in-progress state at
+    different points): a concurrent build touching the same `neoforge-26x` module's `build/` directory raced this
+    one's own `processResources` output between the moment it ran and the moment the client JVM actually read it.
+    Not treated as fixed by code -- there was no code to fix -- only re-verified clean on a contention-free run,
+    on both platforms.
+  - **Both `runClient` boots (26.x and 1.20.1) reached a fully stitched texture atlas with zero exceptions and,
+    on the clean re-run, zero missing-model/missing-sprite warnings anywhere for `pipe_holder`** --
+    `2048x2048x4 minecraft:textures/atlas/blocks.png-atlas` on 26.x, `1024x512x4` on 1.20.1. Both real dedicated-
+    server boots (used for the RCON verification above) also logged zero exceptions.
+  - **Honest limitation, same standing category as every render-adjacent entry in this file**: whether the
+    centre cube and arm stubs actually line up correctly on screen, and whether the rotated arm texture looks
+    right, is not verified -- this project has no display. What is verified: the blockstate/model JSON is
+    well-formed and every model it references resolves and stitches into the atlas without warning (a real,
+    `javap`/real-jar-confirmed distinction from a genuinely broken reference, which does warn, as the false-alarm
+    finding above demonstrates), and the `BlockState` data actually driving that rendering is proven correct,
+    live, via RCON, against the tile's own internal `Pipe` state -- exactly the two things this project's own
+    rendering-verification limitation says can and cannot be checked without a real display.
+  - **Explicitly out of scope for this batch, per its own brief**: cross-block-gap "extended" connections (a
+    pipe reaching across empty space to a non-adjacent block), colour tinting (no pipe in this port is colourable
+    yet -- `disableColouring()` on every material), items-inside-pipes rendering (deliberately sequenced after
+    this batch so it can build on the connection-shape work here), and wires/gates/plugs (not ported at all).
+  - **New files, both platforms**: `buildcraft.transport.block.EnumPipeMaterial`;
+    `models/block/pipe_holder_core_{cobblestone,wood,stone,sandstone,quartz}.json`; `models/block/
+    pipe_holder_arm_{cobblestone,wood,stone,sandstone,quartz}.json`. Modified, both platforms:
+    `buildcraft.transport.block.BlockPipeHolder` (`MATERIAL`, `createBlockStateDefinition`,
+    `registerDefaultState`), `buildcraft.transport.tile.TilePipeHolder` (`updateConnectionBlockState`),
+    `buildcraft.transport.pipe.Pipe` (the call site plus an updated class javadoc), `blockstates/
+    pipe_holder.json` (now `multipart`, replacing the old single-variant `cube_all`). No `BuildCraft.java`
+    change was needed on either platform -- this batch uses no custom `BakedModel`/`BlockEntityRenderer`, only
+    plain blockstate/model JSON, so there is no renderer to register.
+  - Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite (all 25
+    green -- none of them touch `buildcraft.transport` at all, confirmed by reading `PipeEventBusTester`'s own
+    imports, so this batch could not have broken any of them even indirectly), real dedicated-server boots on
+    both platforms with zero exceptions and the eight-point RCON matrix above, and real `runClient` boots on both
+    platforms reaching a fully stitched texture atlas with zero exceptions and zero missing-model warnings.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

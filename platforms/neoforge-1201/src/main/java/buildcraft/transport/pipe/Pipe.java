@@ -34,11 +34,14 @@ import buildcraft.api.transport.pluggable.PipePluggable;
 
 import buildcraft.lib.misc.NBTUtilBC;
 
+import buildcraft.transport.tile.TilePipeHolder;
+
 /**
  * The pipe inside a {@link IPipeHolder}: its definition, behaviour, flow and connections. A close port of
  * 1.12.2's own {@code Pipe}, implementing the already-ported {@link IPipe}. See the 26.x copy of this class for
  * the full account of what is deliberately not ported ({@code writePayload}/{@code readPayload}/the network
- * constructor/{@code getModel()}) and why -- unchanged here.
+ * constructor/{@code getModel()}) and why, and of the connection-shape {@code BlockState} push
+ * {@link #updateConnections()} now does -- unchanged here.
  *
  * <p>The one genuine per-platform divergence in this file: capability lookups. 1.20.1 still has
  * {@code ICapabilityProvider}, so a neighbouring pipe's own pluggable capability is queried directly off the
@@ -236,6 +239,13 @@ public final class Pipe implements IPipe {
             }
         }
         getHolder().scheduleNetworkUpdate(PipeMessageReceiver.BEHAVIOUR);
+
+        // Pushes the same connection shape onto the real placed BlockState the loop above just recomputed --
+        // see TilePipeHolder#updateConnectionBlockState's own javadoc for why this lives here (every recompute,
+        // not just on a change) rather than gated behind the `!old.equals(connected)` check above.
+        if (holder instanceof TilePipeHolder tileHolder) {
+            tileHolder.updateConnectionBlockState(this, types);
+        }
     }
 
     public static boolean canPipesConnect(Direction to, IPipe one, IPipe two) {

@@ -1,5 +1,339 @@
 {
-  "variants": {
-    "": {"model": "buildcraft:block/pipe_holder"}
-  }
+  "multipart": [
+    {
+      "when": {
+        "material": "cobblestone"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_cobblestone"
+      }
+    },
+    {
+      "when": {
+        "material": "wood"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_wood"
+      }
+    },
+    {
+      "when": {
+        "material": "stone"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_stone"
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_sandstone"
+      }
+    },
+    {
+      "when": {
+        "material": "quartz"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_core_quartz"
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone"
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "cobblestone",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood"
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "wood",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone"
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "stone",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone"
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "sandstone",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "x": 90
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "north": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz"
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "east": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "south": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "west": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "up": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "x": 270
+      }
+    },
+    {
+      "when": {
+        "material": "quartz",
+        "down": "true"
+      },
+      "apply": {
+        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "x": 90
+      }
+    }
+  ]
 }

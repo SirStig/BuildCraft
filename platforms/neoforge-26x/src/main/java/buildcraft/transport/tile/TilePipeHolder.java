@@ -7,6 +7,7 @@
  */
 package buildcraft.transport.tile;
 
+import java.util.EnumMap;
 import java.util.UUID;
 
 import org.jetbrains.annotations.Nullable;
@@ -21,8 +22,10 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 
@@ -42,6 +45,8 @@ import buildcraft.api.transport.pluggable.PipePluggable;
 import buildcraft.lib.tile.TileBC;
 
 import buildcraft.BCTransportRegistries;
+import buildcraft.transport.block.BlockPipeHolder;
+import buildcraft.transport.block.EnumPipeMaterial;
 import buildcraft.transport.pipe.Pipe;
 import buildcraft.transport.pipe.PipeEventBus;
 
@@ -141,6 +146,44 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
     public void onNeighbourChanged() {
         if (pipe != null) {
             pipe.markForUpdate();
+        }
+    }
+
+    /** Pushes the real connection/material shape onto the placed {@link BlockState} -- called from
+     * {@link Pipe#updateConnections()} every time it recomputes, the "Pipe holds a direct reference back to its
+     * own holder and calls a method on it" shape (an {@code instanceof TilePipeHolder} check on {@code Pipe}'s
+     * own {@code holder} field, since {@link IPipeHolder} itself stays free of this block-specific concern --
+     * {@code TilePipeHolder} is the only real implementation, confirmed by a repo-wide search finding no other
+     * {@code implements IPipeHolder}). {@code public}, not package-visible: {@code Pipe} lives in a sibling
+     * package ({@code buildcraft.transport.pipe}, not {@code buildcraft.transport.tile}), so package-private
+     * access does not reach across; kept out of {@link IPipeHolder} itself all the same, since it is a block-
+     * state-rendering concern this tile's own interface has no business exposing to every other holder.
+     *
+     * <p>Unlike {@code TileEngineBase#updateFacingBlockState} (which needs an explicit call from both the wrench
+     * path and {@code onPlacedBy}, because facing is only ever recomputed on those two events), this needs no
+     * separate {@code onPlacedBy}/load-time call: {@code Pipe#updateMarked} already starts {@code true} on both
+     * of {@code Pipe}'s own constructors, so the very next real {@link #serverTick()} after either a fresh
+     * placement or a disk-based reload runs {@code updateConnections()} regardless -- the same tick-driven
+     * guarantee the pipe-materials batch's own RCON rig already relies on (see its PORTING.md entry). Material
+     * is recomputed on every call rather than cached separately: {@code EnumPipeMaterial.fromId} is a cheap
+     * five-way string compare, and a pipe's material never actually changes after placement, so recomputing it
+     * alongside the connections it always changes with is simpler than a second "has this run yet" flag. */
+    public void updateConnectionBlockState(Pipe forPipe, EnumMap<Direction, IPipe.ConnectedType> connectionTypes) {
+        if (level == null || level.isClientSide()) {
+            return;
+        }
+        EnumPipeMaterial material = EnumPipeMaterial.fromId(forPipe.getDefinition().identifier.getPath());
+        BlockState state = getBlockState();
+        BlockState newState = state
+            .setValue(BlockPipeHolder.MATERIAL, material)
+            .setValue(BlockStateProperties.NORTH, connectionTypes.containsKey(Direction.NORTH))
+            .setValue(BlockStateProperties.SOUTH, connectionTypes.containsKey(Direction.SOUTH))
+            .setValue(BlockStateProperties.EAST, connectionTypes.containsKey(Direction.EAST))
+            .setValue(BlockStateProperties.WEST, connectionTypes.containsKey(Direction.WEST))
+            .setValue(BlockStateProperties.UP, connectionTypes.containsKey(Direction.UP))
+            .setValue(BlockStateProperties.DOWN, connectionTypes.containsKey(Direction.DOWN));
+        if (newState != state) {
+            level.setBlock(worldPosition, newState, Block.UPDATE_CLIENTS);
         }
     }
 

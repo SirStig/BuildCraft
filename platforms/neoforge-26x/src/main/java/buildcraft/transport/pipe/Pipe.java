@@ -34,21 +34,29 @@ import buildcraft.api.transport.pluggable.PipePluggable;
 
 import buildcraft.lib.misc.NBTUtilBC;
 
+import buildcraft.transport.tile.TilePipeHolder;
+
 /**
  * The pipe inside a {@link IPipeHolder}: its definition, behaviour, flow and connections. A close port of
  * 1.12.2's own {@code Pipe}, implementing the already-ported {@link IPipe}.
  *
- * <p><b>Deliberately not ported, both for the same reason: nothing client-side needs to observe a pipe's
- * connection state or behaviour data yet, because this batch has no client rendering at all.</b>
- * {@code writePayload}/{@code readPayload}/the network constructor ({@code Pipe(IPipeHolder, PacketBufferBC,
- * MessageContext)}) do not exist here -- persistence goes through {@link #writeToNbt(HolderLookup.Provider)}/the
- * NBT constructor only, which the tile's own {@code loadAdditional}/{@code saveAdditional} drive directly.
- * {@code getModel()}/{@code PipeModelKey} are dropped with them; both only ever fed the (unported) renderer.
+ * <p><b>Deliberately not ported, both for the same reason: nothing needs a full per-pipe network payload sync
+ * yet.</b> {@code writePayload}/{@code readPayload}/the network constructor ({@code Pipe(IPipeHolder,
+ * PacketBufferBC, MessageContext)}) do not exist here -- persistence goes through
+ * {@link #writeToNbt(HolderLookup.Provider)}/the NBT constructor only, which the tile's own
+ * {@code loadAdditional}/{@code saveAdditional} drive directly. {@code getModel()}/{@code PipeModelKey} are
+ * dropped with them; both only ever fed 1.12.2's own quad-based renderer, which this port does not reproduce (see
+ * {@code BlockPipeHolder}'s own "Connection-shape rendering" javadoc entry for the plain vanilla-block-model
+ * replacement that renders the connection shape instead, fed by {@link #updateConnections()} pushing straight
+ * onto the real placed {@code BlockState} rather than through a pipe-specific network payload).
  *
  * <p>Connection tracking -- {@link #connected}/{@link #types}, {@link #updateConnections()},
  * {@link #canPipesConnect}/{@link #canBehavioursConnect}/{@link #canFlowsConnect} -- is real, server-side-only
  * logic, ported unchanged: this is what actually links neighbouring pipes (and neighbouring inventories) into a
- * working network, so it is very much in scope even though nothing renders it.
+ * working network. {@link #updateConnections()} additionally pushes its own result onto the real {@code BlockState}
+ * (via {@code TilePipeHolder#updateConnectionBlockState}) every time it recomputes, which is what the connection
+ * shape's own rendering is driven by -- see that method's own javadoc for why no separate placement/load-time call
+ * is needed on top of this.
  *
  * <p>{@code hasCapability}/{@code getCapability(Capability<T>, EnumFacing)} collapse into the single
  * {@link #getCapability(BlockCapability, Direction)} below, matching {@link IPipe}'s own already-ported shape --
@@ -252,6 +260,13 @@ public final class Pipe implements IPipe {
             }
         }
         getHolder().scheduleNetworkUpdate(PipeMessageReceiver.BEHAVIOUR);
+
+        // Pushes the same connection shape onto the real placed BlockState the loop above just recomputed --
+        // see TilePipeHolder#updateConnectionBlockState's own javadoc for why this lives here (every recompute,
+        // not just on a change) rather than gated behind the `!old.equals(connected)` check above.
+        if (holder instanceof TilePipeHolder tileHolder) {
+            tileHolder.updateConnectionBlockState(this, types);
+        }
     }
 
     public static boolean canPipesConnect(Direction to, IPipe one, IPipe two) {

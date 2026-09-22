@@ -19,6 +19,9 @@ import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
@@ -41,11 +44,46 @@ import buildcraft.transport.tile.TilePipeHolder;
  * 600+ lines) is almost entirely rendering (per-octant collision boxes for pipe/wire/pluggable selection, paint
  * handling, particle spawning) and pluggable interaction, none of which is in this batch's scope -- see this
  * package's own module-level scope notes.
+ *
+ * <p><b>Connection-shape rendering.</b> Six vanilla direction booleans ({@link BlockStateProperties#NORTH}/
+ * {@code SOUTH}/{@code EAST}/{@code WEST}/{@code UP}/{@code DOWN} -- confirmed by {@code javap} against the real
+ * jar on both targets to be {@code BooleanProperty} instances already used by vanilla {@code IronBarsBlock}/
+ * {@code GlassPaneBlock}/{@code ChorusPlantBlock} for exactly this "is there a connection this direction" purpose,
+ * so reused directly rather than declaring six BuildCraft-native ones) plus {@link #MATERIAL}, a new
+ * {@link EnumPipeMaterial} property, are declared here purely so {@code pipe_holder.json}'s own {@code multipart}
+ * blockstate can pick the right per-material centre-cube model and rotate one arm-stub model per connected
+ * direction -- the same "the block never reads its own property, {@code Pipe} pushes it onto the placed state
+ * directly" pattern {@code BlockEngineWood}'s own {@code FACING} declaration already established for the engine
+ * facing-visibility batch. See {@code TilePipeHolder#updateConnectionBlockState}/{@code Pipe#updateConnections}
+ * for where the real values actually get pushed.
  */
 public class BlockPipeHolder extends BlockBCTile {
 
+    /** New, port-only: see this class's own "Connection-shape rendering" javadoc entry above. Not a vanilla
+     * property -- nothing in {@code BlockStateProperties} fits a five-value pipe-material enum, matching this
+     * port's already-established {@code EnumEngineType}/{@code BuildCraftProperties} precedent for a custom
+     * enum blockstate property, just kept local to {@code buildcraft.transport} (see {@link EnumPipeMaterial}'s
+     * own javadoc for why). */
+    public static final EnumProperty<EnumPipeMaterial> MATERIAL = EnumProperty.create("material", EnumPipeMaterial.class);
+
     public BlockPipeHolder(BlockBehaviour.Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState()
+            .setValue(MATERIAL, EnumPipeMaterial.COBBLESTONE)
+            .setValue(BlockStateProperties.NORTH, false)
+            .setValue(BlockStateProperties.SOUTH, false)
+            .setValue(BlockStateProperties.EAST, false)
+            .setValue(BlockStateProperties.WEST, false)
+            .setValue(BlockStateProperties.UP, false)
+            .setValue(BlockStateProperties.DOWN, false));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        builder.add(
+            MATERIAL, BlockStateProperties.NORTH, BlockStateProperties.SOUTH, BlockStateProperties.EAST,
+            BlockStateProperties.WEST, BlockStateProperties.UP, BlockStateProperties.DOWN
+        );
     }
 
     @Override
