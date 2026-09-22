@@ -5,6 +5,8 @@
   "block.buildcraft.decorated_leather": "Leather (Decoration)",
   "block.buildcraft.decorated_paper": "Paper (Decoration)",
   "block.buildcraft.decorated_template": "Template (Decoration)",
+  "block.buildcraft.engine_creative": "Creative Engine",
+  "block.buildcraft.engine_wood": "Wood Engine",
   "block.buildcraft.marker_path": "Path Mark",
   "block.buildcraft.marker_volume": "Land Mark",
   "block.buildcraft.power_tester": "Power Consumer Tester",

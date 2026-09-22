@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/cube_column",
+  "textures": {
+    "end": "buildcraft:block/engine_creative_back",
+    "side": "buildcraft:block/engine_creative_side"
+  }
+}

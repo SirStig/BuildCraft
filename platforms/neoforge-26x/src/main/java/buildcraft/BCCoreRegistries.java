@@ -30,6 +30,8 @@ import buildcraft.api.enums.EnumDecoratedBlock;
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.tiles.TilesAPI;
 import buildcraft.core.block.BlockDecoration;
+import buildcraft.core.block.BlockEngineCreative;
+import buildcraft.core.block.BlockEngineWood;
 import buildcraft.core.block.BlockMarkerPath;
 import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
@@ -39,6 +41,8 @@ import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.marker.PathCache;
 import buildcraft.core.marker.VolumeCache;
+import buildcraft.core.tile.TileEngineCreative;
+import buildcraft.core.tile.TileEngineWood;
 import buildcraft.core.tile.TileMarkerPath;
 import buildcraft.core.tile.TileMarkerVolume;
 import buildcraft.core.tile.TilePowerConsumerTester;
@@ -105,6 +109,35 @@ public final class BCCoreRegistries {
 
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TilePowerConsumerTester>> POWER_TESTER_TYPE =
         REGISTRY.addBlockEntity("power_tester", TilePowerConsumerTester::new, POWER_TESTER);
+
+    /** Renamed from 1.12.2's {@code WOOD} variant of the shared, multi-variant {@code BlockEngine_BC8}/
+     * {@code TileEngineRedstone_BC8} pair -- see {@code TileEngineWood}'s own javadoc. Properties match what
+     * {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft block by default (hardness 5,
+     * resistance 10, {@code SoundType.METAL}), the same reasoning already worked out for {@code BlockDecoration}
+     * below -- {@code BlockEngineBase_BC8} never overrode any of them either. */
+    public static final DeferredBlock<BlockEngineWood> ENGINE_WOOD =
+        REGISTRY.addBlockAndItem("engine_wood", BlockEngineWood::new,
+            properties -> properties
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileEngineWood>> ENGINE_WOOD_TYPE =
+        REGISTRY.addBlockEntity("engine_wood", TileEngineWood::new, ENGINE_WOOD);
+
+    /** Ported unchanged in name from 1.12.2's {@code CREATIVE} variant of the same shared block -- see
+     * {@code TileEngineCreative}'s own javadoc. Same default properties as {@link #ENGINE_WOOD}. */
+    public static final DeferredBlock<BlockEngineCreative> ENGINE_CREATIVE =
+        REGISTRY.addBlockAndItem("engine_creative", BlockEngineCreative::new,
+            properties -> properties
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileEngineCreative>> ENGINE_CREATIVE_TYPE =
+        REGISTRY.addBlockEntity("engine_creative", TileEngineCreative::new, ENGINE_CREATIVE);
 
     /** The water half of 1.12.2's single metadata-subtyped {@code BlockSpring} -- see
      * {@link BlockSpringWater}'s own javadoc. Not yet spawned anywhere: {@code core.gen.SpringPopulate}, the
@@ -183,5 +216,14 @@ public final class BCCoreRegistries {
         event.registerBlockEntity(MjCapabilities.RECEIVER, POWER_TESTER_TYPE.get(), (tile, side) -> tile);
         event.registerBlockEntity(MjCapabilities.CONNECTOR, POWER_TESTER_TYPE.get(), (tile, side) -> tile);
         event.registerBlockEntity(TilesAPI.TILE_AREA_PROVIDER, MARKER_VOLUME_TYPE.get(), (tile, side) -> tile);
+
+        // An engine's own mjConnector is the only MJ capability it exposes -- see TileEngineBase's own javadoc
+        // ("Capabilities" entry) for why the other four (receiver/redstone-receiver/readable/passive-provider)
+        // never apply to an engine. Guarded to the tile's currentDirection, matching 1.12.2's
+        // "if (facing == currentDirection)" check in TileEngineBase_BC8#getCapability.
+        event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_WOOD_TYPE.get(),
+            (tile, side) -> side == tile.getCurrentFacing() ? tile.mjConnector : null);
+        event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_CREATIVE_TYPE.get(),
+            (tile, side) -> side == tile.getCurrentFacing() ? tile.mjConnector : null);
     }
 }

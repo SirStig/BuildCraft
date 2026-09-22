@@ -23,6 +23,8 @@ import net.minecraftforge.registries.RegistryObject;
 
 import buildcraft.api.enums.EnumDecoratedBlock;
 import buildcraft.core.block.BlockDecoration;
+import buildcraft.core.block.BlockEngineCreative;
+import buildcraft.core.block.BlockEngineWood;
 import buildcraft.core.block.BlockMarkerPath;
 import buildcraft.core.block.BlockMarkerVolume;
 import buildcraft.core.block.BlockPowerConsumerTester;
@@ -32,6 +34,8 @@ import buildcraft.core.item.ItemMarkerConnector;
 import buildcraft.core.item.ItemWrench;
 import buildcraft.core.marker.PathCache;
 import buildcraft.core.marker.VolumeCache;
+import buildcraft.core.tile.TileEngineCreative;
+import buildcraft.core.tile.TileEngineWood;
 import buildcraft.core.tile.TileMarkerPath;
 import buildcraft.core.tile.TileMarkerVolume;
 import buildcraft.core.tile.TilePowerConsumerTester;
@@ -102,6 +106,37 @@ public final class BCCoreRegistries {
 
     public static final RegistryObject<BlockEntityType<TilePowerConsumerTester>> POWER_TESTER_TYPE =
         REGISTRY.addBlockEntity("power_tester", TilePowerConsumerTester::new, POWER_TESTER);
+
+    /** Renamed from 1.12.2's {@code WOOD} variant of the shared, multi-variant {@code BlockEngine_BC8}/
+     * {@code TileEngineRedstone_BC8} pair -- see {@code TileEngineWood}'s own javadoc. Properties match what
+     * {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft block by default (hardness 5,
+     * resistance 10, {@code SoundType.METAL}), the same reasoning already worked out for {@code BlockDecoration}
+     * below -- {@code BlockEngineBase_BC8} never overrode any of them either. Capabilities are exposed by the
+     * tile itself here (see {@code TileEngineBase}'s own javadoc), so unlike 26.x there is no capability event
+     * registration to add for either engine type. */
+    public static final RegistryObject<BlockEngineWood> ENGINE_WOOD =
+        REGISTRY.addBlockAndItem("engine_wood", () -> new BlockEngineWood(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileEngineWood>> ENGINE_WOOD_TYPE =
+        REGISTRY.addBlockEntity("engine_wood", TileEngineWood::new, ENGINE_WOOD);
+
+    /** Ported unchanged in name from 1.12.2's {@code CREATIVE} variant of the same shared block -- see
+     * {@code TileEngineCreative}'s own javadoc. Same default properties as {@link #ENGINE_WOOD}. */
+    public static final RegistryObject<BlockEngineCreative> ENGINE_CREATIVE =
+        REGISTRY.addBlockAndItem("engine_creative", () -> new BlockEngineCreative(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileEngineCreative>> ENGINE_CREATIVE_TYPE =
+        REGISTRY.addBlockEntity("engine_creative", TileEngineCreative::new, ENGINE_CREATIVE);
 
     /** The water half of 1.12.2's single metadata-subtyped {@code BlockSpring} -- see
      * {@link BlockSpringWater}'s own javadoc. Not yet spawned anywhere: {@code core.gen.SpringPopulate}, the

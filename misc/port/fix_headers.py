@@ -37,6 +37,10 @@ RELOCATED = {
     "buildcraft/lib/tile/item/IAutoCraft.java": "common/buildcraft/lib/tile/craft/IAutoCraft.java",
     "buildcraft/core/item/ItemWrench.java": "common/buildcraft/core/item/ItemWrench_Neptune.java",
     "buildcraft/core/block/BlockSpringWater.java": "common/buildcraft/core/block/BlockSpring.java",
+    "buildcraft/lib/engine/TileEngineBase.java": "common/buildcraft/lib/engine/TileEngineBase_BC8.java",
+    "buildcraft/core/block/BlockEngineWood.java": "common/buildcraft/core/block/BlockEngine_BC8.java",
+    "buildcraft/core/tile/TileEngineWood.java": "common/buildcraft/core/tile/TileEngineRedstone_BC8.java",
+    "buildcraft/core/block/BlockEngineCreative.java": "common/buildcraft/core/block/BlockEngine_BC8.java",
 }
 
 def upstream_for(path: pathlib.Path):

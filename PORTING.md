@@ -609,6 +609,121 @@ Ported (compiling, tested):
     up turned out to only hold for 1.20.1; 26.x found a better dedicated hook instead. See that entry for
     the full account. Only `buildcraft.core.marker`'s concrete subtypes remain unported.
 
+- **The engine subsystem: `buildcraft.lib.engine.{TileEngineBase,EngineConnector,IEngineLikeForLedger}` plus two
+  real machines, `core.block.{BlockEngineWood,BlockEngineCreative}`/`core.tile.{TileEngineWood,TileEngineCreative}`
+  (both platforms).** The largest single feature this port has taken from `buildcraft.core`/`buildcraft.lib` so
+  far -- MJ storage, a heat/power-stage state machine driving an overheat condition, chain-of-engines power
+  routing, and a redstone-pulsed-vs-constant power split, all ported faithfully from `TileEngineBase_BC8`
+  (660 lines). What changed is purely the plumbing, following patterns already established elsewhere in this
+  port; see `TileEngineBase`'s own (long) class javadoc for the full account on each target. Registered
+  (`engine_wood`, `engine_creative`) in `BCCoreRegistries` with textures/models/blockstates/loot
+  tables/lang pulled from `buildcraft_resources/assets/buildcraftcore/`, a datapack recipe for `engine_wood`
+  (a redstone-torch-free reproduction of the original's shaped recipe, using vanilla planks/glass/piston plus
+  `gear_wood` rather than 1.12.2's ore-dictionary keys), and no recipe for `engine_creative` (creative-tab-only in
+  1.12.2 too). Verified with forced rebuilds, the full 25-test suite, and clean dedicated-server boots on both
+  targets (no registration/asset/capability error surfaced on either) -- but **not** with a full in-game
+  placed-and-ticking check: this session could not get an interactive server console attached in its sandboxed
+  environment (tried a named-pipe-fed stdin and writing directly to the server process's `/proc/<pid>/fd/0`;
+  neither delivered a typed command to the running dedicated server), so `/setblock`-and-observe was not
+  completed. Worth doing properly before relying on this for anything downstream.
+  - **Renaming.** `TileEngineBase_BC8` -> `TileEngineBase` (dropping the `_BC8` suffix, matching this port's
+    established convention of dropping 1.12.2 version-tag suffixes -- `ItemBC_Neptune`/`BlockBCTile_Neptune`/
+    `TileBC_Neptune` and friends are all gone the same way already). `TileEngineRedstone_BC8` -> `TileEngineWood`:
+    despite its class name this was never a combustion engine, it just outputs a small constant MJ draw while
+    redstone-powered (hence the "free power" advancement) and was registered in 1.12.2 under the `WOOD`
+    `EnumEngineType`/`tile.engine.wood` tag -- the new name follows what it actually is and how it was
+    registered, not the misleading class name. `TileEngineCreative` keeps its name. 1.12.2's single, multi-variant
+    `BlockEngine_BC8` (metadata-subtyped via `EnumEngineType`, extended by `BlockEngineBase_BC8`'s
+    `registerEngine(type, constructor)` machinery so `buildcraft.core` could wire up WOOD/CREATIVE while
+    `buildcraft.energy`, unported, plugged STONE/IRON/RF into the *same block instance* later) splits into two
+    real, independent blocks, `BlockEngineWood`/`BlockEngineCreative` -- the same one-real-`Block`-per-variant
+    split `BlockSpringWater`/`BlockDecoration` already established, with the added twist that this cross-module
+    "other modules register more variants into my block later" design has no ported equivalent at all needed:
+    `BlockEngineBase_BC8`'s variant/`registerEngine` machinery itself is not ported, only the two concrete engine
+    tiles it used to host. `ItemEngine_BC8`, which existed purely to pick a model variant per metadata damage
+    value, has nothing left to do and is not ported either -- `BCRegistry.addBlockAndItem`'s default `BlockItem`
+    is sufficient, same as every other block in this port. `buildcraft.core.tile.ITileOilSpring` (a two-method
+    marker interface whose only implementor, the unported `buildcraft.energy.tile.TileSpringOil`, doesn't exist in
+    this port) and the `STONE`/`IRON`/`RF` engine types (`buildcraft.energy`, unported) are out of scope, matching
+    the existing `buildcraft.core` survey entry's own reasoning for both.
+  - **Capabilities.** An engine tile's `mjConnector` field (typed `IMjConnector`, always a plain `EngineConnector`
+    for both concrete engines) turns out to be the *only* MJ capability either engine ever exposes: `EngineConnector`
+    implements nothing beyond `IMjConnector`, so 1.12.2's `MjCapabilityHelper` `instanceof`-probing it for
+    `IMjReceiver`/`IMjRedstoneReceiver`/`IMjReadable`/`IMjPassiveProvider` never matched anything there either --
+    an engine pushes power outward by calling a neighbour's `receivePower`, it is never itself received from, read,
+    or pulled from. So on 26.x, `BCCoreRegistries#registerCapabilities` registers only `MjCapabilities.CONNECTOR`
+    for each engine block entity type, directly (not through `MjCapabilityHelper.registerAll`, which is built to
+    expose every MJ capability unconditionally on every side -- not what an engine, which only ever answers on its
+    `currentDirection` face, wants), guarded by `side == tile.getCurrentFacing()`. On 1.20.1, the tile itself holds
+    a `LazyOptional<IMjConnector>` and answers `getCapability` with the same guard, matching
+    `TilePowerConsumerTester`'s already-established per-instance pattern. **RF auto-conversion did not make it
+    in.** 1.12.2's `getReceiverToPower(TileEntity, EnumFacing)` had an RF-fallback branch
+    (`MjToRfAutoConvertor.createReceiver(rf)`, wrapping a neighbour's foreign `IEnergyStorage` to *look like* an
+    `IMjReceiver`), but the `MjToRfAutoConvertor` class already built on both platforms goes the *opposite*
+    direction -- it wraps an `IMjConnector` to *look like* Forge/NeoForge energy to outside callers, which is what
+    lets an external mod pull RF out of a BuildCraft machine, not what lets an engine push MJ into a foreign RF
+    machine. Writing the reverse adapter this call site would need is new work outside this pass's scope, not a
+    rename of something already built, so `getReceiverToPower(Direction)` here is MJ-to-MJ only -- deliberately,
+    documented in `TileEngineBase`'s own javadoc, not silently dropped.
+  - **Rotation.** `attemptRotation()` skips any face without a valid power receiver behind it
+    (`isFacingReceiver`), which rules out reusing `IBlockWithFacing`/`RotationUtil.rotateAll` the way
+    `BlockMarkerBase` does (that cycles blindly through all six faces with no such check). 1.12.2 drove the cycle
+    order from `VanillaRotationHandlers.ROTATE_FACING` (unported -- see this file's own "deliberately not ported"
+    entry for that class, which also covers ~25 unrelated vanilla-block rotation handlers with no bearing here),
+    so the same six-direction cycle (east-south-down-west-north-up) is reproduced inline in `TileEngineBase` using
+    the already-ported, pure-Java `buildcraft.lib.misc.collect.OrderedEnumMap` rather than porting the whole
+    unrelated class. Both concrete engine blocks implement `ICustomRotationHandler` directly (matching 1.12.2's
+    own per-block-class implementation) and delegate to the tile's `attemptRotation()`, which
+    `CustomRotationHelper.INSTANCE.attemptRotateBlock` (already ported, unchanged) dispatches to automatically via
+    an `instanceof ICustomRotationHandler` check -- no extra registration needed.
+  - **Block shape/face-solidity: real, decompiled-source-verified research, not a guess.** `javap` against
+    `BlockBehaviour` on both targets' merged jars shows `getBlockFaceShape`/`isSideSolid` have no surviving
+    override point at all any more -- `isFaceSturdy` (the modern rename `BlockMarkerBase` already uses, for a
+    *different* purpose: checking a *neighbour's* face) is declared on `BlockBehaviour$BlockStateBase`, not on
+    `BlockBehaviour`/`Block` itself, and is computed purely from the block's own `VoxelShape` geometry via
+    `SupportType.FULL.isSupporting`. There is nothing left for a block to override to declare "only this one face
+    is solid" independent of its collision shape. Since there is also no rendering pipeline in this port yet to
+    feed 1.12.2's `EnumBlockRenderType.ENTITYBLOCK_ANIMATED` custom model (matching every other machine ported so
+    far), both engine blocks use an ordinary static block model with no shape override at all -- `Block`'s own
+    default (a full cube) is exactly what's wanted with no renderer to justify anything else, and a full cube is
+    therefore sturdy on every side rather than just the one opposite `currentDirection`. This is a real,
+    documented behaviour change from 1.12.2, not an oversight; reproducing the old behaviour would need a custom
+    per-tile `VoxelShape`, undesirable without a renderer to justify the geometry.
+  - **Ticking.** `ITickable#update()` becomes `TileEngineBase#serverTick()`, wired through each concrete engine
+    block's `EntityBlock#getTicker` exactly like `BlockPowerConsumerTester`/`TilePowerConsumerTester` already do.
+    The client-side half of the original `update()` (the piston `progress` animation interpolating every client
+    tick while `isPumping`, plus `getProgressClient`/`lastProgress`/`clientModelData`/`ModelVariableData`) is
+    dropped rather than kept inert: nothing in this port can register a `BlockEntityRenderer` yet to consume it,
+    matching every other rendering deferral already documented elsewhere in this file. `progress` and
+    `progressPart` are still tracked and persisted server-side, so a future renderer has real data to read.
+  - **Owner tracking for the "free power" advancement.** `getOwner().getId()` was part of the old, much larger
+    `TileBC_Neptune`, with no equivalent on the current, slimmer `TileBC`. `TileEngineWood` (not the shared base,
+    since this is wood-engine-specific) adds its own small `@Nullable UUID owner` field, set from `setPlacedBy`'s
+    `placer` argument the same "the block calls the tile's own placement hook" pattern `TileMarkerVolume
+    #onPlacedBy`/`BlockMarkerVolume#setPlacedBy` already established, persisted, and passed to the already-ported
+    `AdvancementUtil.unlockAdvancement(UUID, Identifier/ResourceLocation)` overload in place of the original
+    direct call. The advancement JSON itself (`buildcraftcore:free_power`) is not ported, matching the exact
+    precedent already set for `ItemWrench`'s `buildcraftcore:wrenched` -- `AdvancementUtil.unlockAdvancement`
+    already tolerates an unregistered advancement id as a harmless one-time warning.
+  - **A genuine, worth-flagging finding, not a guess: `TileEngineCreative`'s wrench-driven power-output cycling
+    (`onActivated`) is very likely unreachable through an actual wrench, on both targets, and was probably
+    already unreachable in 1.12.2 too.** `ItemWrench#useOn` intercepts every wrench right-click through
+    `CustomRotationHelper.INSTANCE.attemptRotateBlock` and returns a definite result before a block's own
+    interaction hook (`useItemOn`/`use`) is ever reached, and since `BlockEngineCreative` also implements
+    `ICustomRotationHandler`, wrenching it always rotates it rather than falling through. 1.12.2's own
+    architecture is the same shape (`ItemWrench_Neptune` intercepted rotation the same way, ahead of
+    `BlockBCTile_Neptune#onBlockActivated`'s delegation to `TileEngineCreative#onActivated`), so this is a
+    faithfully-ported pre-existing quirk, not a new bug -- but it is still ported and wired in (via `useItemOn` on
+    26.x, `use` on 1.20.1), documented in `BlockEngineCreative`'s own javadoc, in case a future wrench redesign
+    changes the short-circuiting.
+  - New divergence-table rows worth knowing: `Player#sendSystemMessage(Component)` (26.x, no action-bar flag;
+    the action-bar equivalent is the separate `Player#sendOverlayMessage(Component)`) vs.
+    `Player#displayClientMessage(Component, boolean)` (1.20.1, action-bar flag still inline) -- found porting
+    `TileEngineCreative#onActivated`'s status message. `World#isBlockIndirectlyGettingPowered(pos) -> int` is
+    `Level#getBestNeighborSignal(pos) -> int` on both targets (confirmed via `javap` against `SignalGetter`,
+    identical signature on both) -- the direct modern successor, alongside the already-known
+    `isBlockPowered`/`hasNeighborSignal` (boolean) rename `BlockMarkerVolume` already uses.
+
 Deliberately not ported, with reasons:
 
 - `buildcraft.lib.registry.{RegistrationHelper,RegistryConfig,TagManager,CreativeTabManager}`,
