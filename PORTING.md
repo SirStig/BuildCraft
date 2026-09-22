@@ -1997,6 +1997,243 @@ Deliberately not ported, with reasons:
     same rendering caveat as every other entry in this file -- and the real right-click interaction, per the
     paragraph above.
 
+- **`buildcraft.transport` -- the first slice of pipes**, BuildCraft's signature feature and its own large
+  subsystem (124 files in the original). This batch is deliberately scoped to a straight run of the simplest
+  possible item pipe: a cobblestone pipe that moves an item from a source inventory into a destination
+  inventory, with real server-side simulation and every other pipe feature (colours, wires, gates, pluggables,
+  fluid/power flow, every non-cobblestone material) explicitly deferred. The entire pipe *API* was already
+  ported by an earlier pass (confirmed by diffing the original `BuildCraftAPI/api/buildcraft/api/transport` file
+  list against both platforms plus `modules/shared`); this batch is the first real *implementation* against it.
+  - **New files, both platforms**: `buildcraft.transport.pipe.{PipeRegistry,Pipe,PipeEventBus,
+    DefaultPipeConnection}`, `buildcraft.transport.pipe.behaviour.{PipeBehaviourSeparate,PipeBehaviourCobble}`,
+    `buildcraft.transport.pipe.flow.{PipeFlowItems,TravellingItem}`, `buildcraft.transport.tile.
+    {TilePipeHolder,SimplePipeWireManager}`, `buildcraft.transport.block.BlockPipeHolder`,
+    `buildcraft.transport.item.ItemPipeHolder`, and a new top-level `buildcraft.BCTransportRegistries`
+    (mirroring `BCFactoryRegistries`/`BCEnergyRegistries` exactly). `BuildCraft`'s constructor (both platforms)
+    grew one additive line, `BCTransportRegistries.register(modBus)`.
+  - **The one-block-many-items architecture is the real 1.12.2 design, reproduced deliberately, not a
+    simplification invented for this batch.** Re-reading `common/buildcraft/transport/pipe/{PipeRegistry,
+    Pipe}.java` directly (not assumed) confirms 1.12.2 already used a single shared block/tile pair
+    (`BlockPipeHolder`/`TilePipeHolder`) for every pipe material, with a `PipeDefinition` (id, behaviour
+    constructor, flow type) stamped onto the tile's `Pipe` object by whichever `ItemPipeHolder` instance placed
+    it -- the same shape the paintbrush batch's 17-separate-items design was explicitly *not* an example of
+    (that was for metadata-variant items with no shared runtime state; pipes are the opposite case). This batch
+    needed `BlockPipeHolder`/`TilePipeHolder` written exactly once; a second pipe material in a future batch is
+    only a second `PipeDefinition` + a second `ItemPipeHolder` instance registered in `BCTransportRegistries`,
+    no new block/tile code at all -- confirmed live: `BCTransportRegistries#registerCapabilities` never
+    references the specific `PIPE_COBBLESTONE` definition, only the shared block entity type.
+  - **A real, load-bearing defect was found and fixed on both platforms during RCON verification, not by
+    inspection: adjacent pipe segments failed to detect each other as pipes at all.** The first version of
+    `BCTransportRegistries#registerCapabilities` (26.x) only registered `Capabilities.Item.BLOCK` for
+    `TilePipeHolder`; it never registered `PipeApi.CAP_PIPE_HOLDER`/`CAP_PIPE`/`CAP_PLUG` themselves, the three
+    tokens that expose the tile/pipe/pluggable objects *as objects* (as opposed to arbitrary capabilities the
+    behaviour/flow choose to expose) -- 1.12.2's own `TilePipeHolder` constructor wires exactly these three via
+    `caps.addCapabilityInstance(CAP_PIPE_HOLDER, this, ...)`/`addCapability(CAP_PIPE, this::getPipe, ...)`/
+    `addCapability(CAP_PLUG, this::getPluggable, ...)`, which this batch had ported everywhere *except* that one
+    constructor-time registration. Without it, `IPipeHolder#getNeighbourPipe` (which resolves
+    `Level#getCapability(PipeApi.CAP_PIPE, pos, side)`) always returned null for a real neighbouring pipe tile,
+    so `Pipe#updateConnections` could never tell "the block next to me is another pipe" from "the block next to
+    me is a plain inventory" -- two adjacent cobblestone pipe segments connected to each other as
+    `ConnectedType.TILE` (falling through to `DefaultPipeConnection`) instead of `ConnectedType.PIPE`, and
+    `Pipe#canPipesConnect`/`canBehavioursConnect`/`canFlowsConnect` never ran between them at all. Caught live:
+    the first RCON test placed two pipe segments next to each other and read back `con: 0` on the second segment
+    (no connections recorded at all, since its first tick ran before the first segment had a chance to be
+    detected either) and, after a partial fix attempt, `con` values that decoded to TILE-TILE instead of the
+    expected PIPE-PIPE, plus a plain-air `con` bit that could only be explained by `getNeighbourPipe` resolving
+    null. Fixed on both platforms: 26.x now additionally calls `event.registerBlockEntity(PipeApi.CAP_PIPE_HOLDER,
+    ..., (tile, side) -> tile)` / `(..., PipeApi.CAP_PIPE, (tile, side) -> tile.getPipe())` / `(...,
+    PipeApi.CAP_PLUG, (tile, side) -> tile.getPluggable(side))` in `BCTransportRegistries`; 1.20.1's
+    `TilePipeHolder#getCapability` (which -- unlike 26.x -- already exposes its own capabilities directly, per
+    `TileChute`'s own precedent on that target) now additionally checks for and answers those same three tokens
+    before falling through to the pipe's own `getCapability`. Re-verified afterwards: `con` bitmasks on both
+    platforms decoded correctly (`WEST=TILE` towards the hopper, `EAST=PIPE` towards the neighbouring segment, and
+    the mirror image on the far segment), confirmed by hand-decoding the two-bits-per-face encoding documented in
+    `Pipe#writeToNbt`'s own comment, not just by trusting that no exception was thrown.
+  - **`Pipe.java` is a close, direct port of 1.12.2's own `Pipe.java`, with the one deliberate simplification the
+    task brief itself anticipated**: no `writePayload`/`readPayload`/network constructor/`getModel()`/
+    `PipeModelKey` -- nothing client-side observes a pipe's connection state or behaviour data yet, since this
+    batch has no client rendering at all. Connection tracking (`connected`/`types` maps,
+    `updateConnections()`, `canPipesConnect`/`canBehavioursConnect`/`canFlowsConnect`) is real, unabridged,
+    server-side logic, ported unchanged in structure. `DefaultPipeConnection` (consulted when a neighbour block
+    implements neither `ICustomPipeConnection` nor has a `PipeConnectionAPI` registration) is byte-identical on
+    both platforms: confirmed via `javap` that `BlockBehaviour$BlockStateBase#getCollisionShape(BlockGetter,
+    BlockPos)` (the modern replacement for 1.12.2's `IBlockState#getCollisionBoundingBox(World, BlockPos)`) is
+    unchanged in shape and still returns a shape in the neighbour's own *local* block space, not world space --
+    the same "no re-offsetting needed" property the 1.12.2 box had.
+  - **`PipeEventBus` needed only its one Minecraft-only dependency removed, not a redesign**, confirmed by
+    re-reading 1.12.2's own 193-line file directly: the reflection-based `@PipeEventHandler` dispatch
+    (`MethodHandle`/`Modifier`/`Parameter`, all plain `java.lang.reflect`/`java.lang.invoke` API) is completely
+    untouched by the port and copied over structurally unchanged. The only thing dropped is
+    `BCDebugging.shouldDebugLog`-gated state-validation calls around `fireEvent` -- no debug-flag system exists
+    anywhere else in this port either, and those checks were opt-in diagnostics, not behaviour. This file is
+    byte-identical on both platforms (nothing in it touches a Minecraft type), the same "worth knowing before
+    duplicating a platform class" category `VecUtil`/`RotationUtil`/`MjEffects` already established. Proven
+    working live, not just by inspection: `PipeBehaviourCobble#modifySpeed`, a real `@PipeEventHandler` static
+    method, fires on every item reaching a pipe's centre -- confirmed via RCON by watching queued
+    `TravellingItem`s consistently carry `speed: 0.01d` (the method's own target), not the default `0.05`.
+  - **`buildcraft.transport.pipe.flow.PipeFlowItems`/`TravellingItem` are the real logic this whole batch exists
+    to prove works, ported closely from `common/buildcraft/transport/pipe/flow/{PipeFlowItems,TravellingItem}
+    .java` (698 + 220 lines)**, with client-rendering members dropped (`clientItemLink`/`stackSize`/
+    `interpolatePosition`/`getRenderPosition`/`getRenderDirection`/`isVisible`/`getAllItemsForRender`,
+    `sendItemDataToClient`/the network constructor/`readPayload`/`writePayload`) and the delay-bucket item queue
+    (1.12.2's `buildcraft.lib.misc.data.DelayedList<E>`) folded in as a small private reimplementation rather
+    than ported under its own name, since nothing else in this batch's scope needs a generic delayed queue and
+    it was not itself part of this batch's file list. `addTriggers` (registering
+    `BCTransportStatements.TRIGGER_ITEMS_TRAVERSING`) is dropped outright -- gates/statements are out of scope
+    and `BCTransportStatements` is not ported.
+  - **This is the single largest genuine per-platform divergence in the whole batch, and it lives entirely
+    inside `PipeFlowItems`/the capability-exposure it needs, confirmed by reading each target's own already-
+    ported `IFlowItems`/`IInjectable` interface rather than assumed:** 1.12.2's `injectItem(ItemStack stack,
+    boolean doAdd, ...)` took a whole stack and a simulate flag and handed back the leftover stack. **1.20.1
+    keeps that shape completely unchanged** (`ItemStack`/`boolean doAdd`, no transaction type at all -- 1.20.1
+    has no transfer API), so that platform's `PipeFlowItems`/`TilePipeHolder`/`Pipe` read almost as a literal
+    transliteration of the original, and the vanilla-interop capability is the classic `IItemHandler` under
+    `ForgeCapabilities.ITEM_HANDLER`, exposed via `TilePipeHolder`'s own `getCapability(Capability<T>, Direction)`
+    override (matching `TileChute`'s established 1.20.1 precedent of exposing capabilities directly rather than
+    through a `RegisterCapabilitiesEvent` listener). **26.x reshapes the same method entirely** around the
+    transfer API: an `ItemResource` plus a plain `int` count and a `TransactionContext` this method must never
+    commit itself -- the caller (typically a real vanilla hopper's own transaction, reached through
+    `Capabilities.Item.BLOCK`) decides whether the effect sticks. That makes `PipeFlowItems`'s own mutation of
+    its item queue genuinely transaction-unsafe unless handled: if a caller's transaction rolls back after
+    `injectItem` returns a non-zero accepted count, the item must not silently stay queued while the source
+    inventory also gets its stack back. `PipeFlowItems` (26.x) carries a small, self-contained
+    `net.neoforged.neoforge.transfer.transaction.SnapshotJournal` over its own delay-bucket queue for exactly
+    this -- the same mechanism NeoForge's own `ItemStacksResourceHandler` uses internally for its slot array,
+    hand-rolled here because this flow's state is a moving queue, not a fixed array -- called via
+    `journal.updateSnapshots(transaction)` immediately before every mutating entry point
+    (`injectItem`, `tryExtractItems` when not simulating). The vanilla-interop capability on 26.x is
+    `Capabilities.Item.BLOCK` (`BlockCapability<ResourceHandler<ItemResource>, Direction>`), wrapped by a small
+    private `PipeItemResourceHandler` adapter inside `PipeFlowItems` itself (one virtual slot, `insert` forwards
+    straight to `injectItem`, extraction unsupported) and registered per block entity type in
+    `BCTransportRegistries#registerCapabilities`, following `BCFactoryRegistries#CHUTE`'s own precedent for
+    exposing `ItemHandlerManager` the same way.
+  - **Two of 1.12.2's own `IItemTransactor`/`ItemTransactorHelper` steps are dropped on both platforms, and this
+    is a genuine, deliberate simplification of the *original's* own two-phase ejection logic, not a divergence
+    invented by either platform's own porting pass.** 1.12.2's `onItemReachEnd`'s `TILE` branch tried
+    `IInjectable` first (in case the "tile" neighbour was actually a foreign pipe mod's block exposing that
+    interface directly) and only fell back to a plain `IItemTransactor` insert if that failed. Both platforms'
+    `ItemTransactorHelper` already dropped `getInjectable`/`wrapInjectable` before this batch even started
+    (their own javadoc says so explicitly: "belongs to the entirely unported transport module"), anticipating
+    exactly this batch's own needs; since `updateConnections()`'s own logic never assigns `ConnectedType.TILE`
+    to a neighbour that is itself a real `IPipe` (that always resolves to `ConnectedType.PIPE` instead, handled
+    by a separate branch that calls `injectItem` directly), the `IInjectable`-first step could only ever have
+    mattered for a hypothetical third-party pipe mod that isn't a BuildCraft `IPipe` -- none exists in this
+    ecosystem, so both platforms eject into a `TILE`-connected neighbour with a single, direct
+    `IItemTransactor#insert`/classic-`IItemHandler#insertItem` call.
+  - **A genuine, deliberate scope choice, not a faithful copy of the original's own value, and confirmed rather
+    than guessed: `canBeColoured` is `false` on the cobblestone `PipeDefinition`, even though the real 1.12.2
+    cobblestone pipe is colourable.** Re-reading `common/buildcraft/transport/BCTransportPipes.java` directly
+    shows `builder.builder.enableColouring()` is called once, right after the structure pipe is defined, and
+    that flag then persists on the shared builder for every pipe defined afterwards -- wood, stone, cobblestone,
+    quartz, gold, and so on. This batch disables it anyway: colouring a pipe means applying a dye, which needs
+    interaction/GUI plumbing this batch does not add (dye colours on a pipe are explicitly out of scope), so
+    leaving `canBeColoured` true would advertise `IPipe#setColour` as a working feature nothing in this batch
+    can legitimately trigger. The id/texture-prefix naming (`"cobblestone"`, not 1.12.2's own
+    `"cobblestone_item"`) likewise deliberately diverges: the `_item` suffix existed only to stay unique
+    alongside sibling `cobblestone_fluid`/`cobblestone_power`/`cobblestone_rf` definitions this batch does not
+    register.
+  - **`IWireManager` is implemented for real, not stubbed, the same "implement it properly even though nothing
+    yet exercises it live" standard the Stirling Engine's own `explosionRange()` entry established.**
+    `buildcraft.transport.tile.SimplePipeWireManager` is new to the port (not a port of 1.12.2's own 
+    `buildcraft.transport.wire.WireManager`, which additionally builds and rebuilds cross-pipe "wire system"
+    graphs -- entirely out of scope, since no wire item, gate, or `IWireEmitter` exists anywhere in this port
+    yet): a genuine `EnumMap<EnumWirePart, DyeColor>` backs `addPart`/`removePart`/`getColorOfPart`/
+    `hasPartOfColor`, with real NBT persistence. `isPowered`/`isAnyPowered` are honestly `false` always --
+    correct, not faked, since no `IWireEmitter` could ever legitimately power one -- and `updateBetweens` is a
+    no-op for the same reason (no cross-pipe wire graph exists to update).
+  - **`getRedstoneInput`/`setRedstoneOutput` (`IRedstoneStatementContainer`, part of `IPipeHolder`'s own
+    `extends`) follow `TileEngineBase#isRedstonePowered`'s own already-ported precedent exactly, confirmed
+    identical on both platforms via direct comparison of that class's own two copies**: `level.getSignal(pos
+    .relative(side), side)` (the modern replacement for `world.getRedstonePower(pos.offset(side), side)`) for a
+    specific side, `level.getBestNeighborSignal(pos)` for the "any side" case. `setRedstoneOutput` genuinely
+    no-ops (`return false`) on both platforms -- no gate/statement system exists anywhere in this batch that
+    could ever call it with something real to output.
+  - **Everything pluggable-related is a stub, exactly as scoped, not an oversight.** `getPluggable` always
+    returns `null` on both platforms; `PluggableHolder` is not ported; no `PipePluggable` type is registered
+    anywhere. `canPlayerInteract`/`onPlayerOpen`/`onPlayerClose` are minimal (no GUI exists for this pipe in
+    this batch): `canPlayerInteract` checks the tile is still validly placed and the caller is within reach,
+    matching `Container.stillValidBlockEntity`-style precedent; the open/close hooks are plain no-ops.
+    `scheduleRenderUpdate`/`scheduleNetworkUpdate`/`scheduleNetworkGuiUpdate`/`sendMessage`/`sendGuiMessage` are
+    likewise plain no-ops -- there is no renderer and no client sync to schedule anything for.
+  - **The recipe is skipped, not invented, matching `TilePump`/`TileTank`/`TileFloodGate`'s own established
+    precedent for a genuinely non-portable source, not the "missing ingredient" case those three actually hit.**
+    Checked directly: `buildcraft_resources/assets/buildcrafttransport/recipes/` holds no JSON recipe for any
+    material pipe (only `_factories.json`/a handful of unrelated plug/sealant recipes), confirming the original
+    generates every material pipe's recipe through a Java code-driven factory system rather than plain
+    per-recipe JSON -- and `BCTransportRecipes` (the file that would contain that factory) is explicitly out of
+    this batch's own scope list. Porting the recipe would mean porting that factory system first, which this
+    batch does not do.
+  - **Textures/models/blockstate/loot table reuse the exact real cobblestone-pipe texture, following
+    `BlockTank`/`BlockPump`'s own "plain full-cube, no renderer yet" precedent exactly.**
+    `buildcraft_resources/assets/buildcrafttransport/textures/pipes/cobblestone_item.png` (confirmed 16x16 via
+    `file`, a plain flat texture, not a texture-atlas sheet needing UV cropping) is reused unchanged as both the
+    block's `cube_all` texture and the item's icon on both platforms. Block registered via `REGISTRY.addBlock`
+    (no auto `BlockItem`, since this block's item is the pipe-specific `ItemPipeHolder`, not a generic one --
+    the same `addBlock`-without-`addBlockAndItem` shape `BlockTube` already established a precedent for, for a
+    different reason). Loot table drops a plain `buildcraft:pipe_item_cobblestone` on survival, matching every
+    other block in this port; the genuine `loot_table`-singular-vs-`loot_tables`-plural directory-name split
+    between 26.x and 1.20.1 (already on file in PORTING.md's build-gotchas section) applies here too.
+  - **In-game verification, both platforms, via RCON against a real dedicated server each -- a genuine,
+    end-to-end, tick-by-tick simulation, not hand-set NBT state, and an honest account of the mechanism used.**
+    The rig: a real vanilla hopper (facing sideways) fed by a real vanilla chest sitting directly above it, a
+    straight run of two cobblestone pipe segments, and a second real vanilla chest as the destination -- no
+    fluid/dropped-item trick, no debug insertion into the pipe's own flow. **What *does* need a temporary debug
+    mechanism, and why**: a dedicated server started for RCON testing has no connected player at all (confirmed:
+    every player-targeted command fails with "No player was found" against zero connected clients, the same
+    finding already on file from the paintbrush batch's own verification entry), so there is no real click to
+    place a pipe item with, and 1.12.2's own placement logic (`TilePipeHolder#onPlacedBy`) is only ever invoked
+    through that click -- `/setblock buildcraft:pipe_holder` alone was confirmed, live, to *not* call it (the
+    resulting tile's NBT had no `pipe` key at all: the block existed but held no `Pipe` object, so it could
+    never connect to anything). A temporary `RegisterCommandsEvent` debug command was added to each platform's
+    `BuildCraft.java` (`net.neoforged.neoforge.common.util.FakePlayerFactory`/`net.minecraftforge.common.util.
+    FakePlayerFactory`, the same fake-player construction the paintbrush batch's own debug command already used)
+    that sets the block directly and then calls `TilePipeHolder#onPlacedBy(fakePlayer, stack)` on it directly --
+    the actual new placement logic this batch added, not a re-test of already-known-good `BlockItem`/
+    `Item#useOn` scaffolding underneath it (the same "call the interesting method directly" precedent the
+    paintbrush batch's own debug command established, applied here to the placement-logic equivalent of
+    `useOn`). **What the seed step does *not* need a debug mechanism for, and this is the actual proof of this
+    batch's own goal**: getting an item *into* the pipe network from a source inventory is not seeded by the
+    debug command at all -- a real cobblestone stack was written into the source chest via `/data merge block`
+    (verified round-trip first via `/data get block` before trusting the format on each platform: 26.x's modern
+    lowercase `{id, count}` item shape vs. 1.20.1's classic `{Slot, id, Count}` shape, confirmed different by
+    direct comparison, not assumed), and the real vanilla hopper -- driven entirely by vanilla game logic, with
+    no BuildCraft code involved on the extraction side at all -- pulled from the chest and pushed into the
+    pipe's `Capabilities.Item.BLOCK`/`ForgeCapabilities.ITEM_HANDLER` capability on its own, on its own normal
+    8-tick cooldown, confirmed live by watching a pipe's own NBT accumulate ten separately-timed queued
+    `TravellingItem`s (`tickStarted` values 8 ticks apart, each with `timeToDest: 75` matching the
+    `side`-to-centre distance divided by `PipeBehaviourCobble`'s own `0.01` target speed) purely from repeated
+    real hopper pushes, not a single seeded call. Watched entirely through real elapsed game ticks after that
+    (`time query gametime` advancing between checks, never hand-set): the source chest's `Items` list went from
+    5 cobblestone to empty, both pipe segments' `pipe.flow.items` lists (real internal queue state, not a
+    display value) filled and then drained back to empty as the item(s) travelled centre-to-centre and
+    end-to-end across the two segments, and the destination chest's `Items` list ended with exactly
+    `{count: 5, id: "minecraft:cobblestone"}` (26.x) / `{Count: 5b, id: "minecraft:cobblestone"}` (1.20.1) --
+    confirmed on both platforms independently, in separate RCON sessions against separate fresh worlds. Pipe
+    connection bitmasks (`con`, the two-bits-per-face encoding `Pipe#writeToNbt` documents) were hand-decoded
+    and cross-checked against the actual rig layout on both platforms, not just trusted to be non-zero -- see
+    the connection-capability defect entry above, which this same verification pass is what caught it. The
+    temporary debug command and its `BuildCraft.java` hook were fully removed before this batch finished on both
+    platforms -- confirmed by `git diff` showing each `BuildCraft.java` reduced to exactly the one intended
+    additive `BCTransportRegistries.register(modBus)` line -- and every verification step below (clean rebuild,
+    tests, server boots, `runClient`) was re-run *after* that removal, against the final code. **Honest
+    limitation**: the real right-click placement interaction itself, end to end through a real connected
+    client's input, remains unverified, the same caveat already on file for every prior RCON-verified batch in
+    this document -- what is verified directly is that `TilePipeHolder#onPlacedBy` itself dispatches correctly
+    (constructs the right `Pipe`, registers the right event handlers, fires `PipeEventPlaced`), and that every
+    other new class in this batch behaves correctly under real, un-coached, tick-driven gameplay once a pipe
+    exists.
+  - **Verified with forced `--no-build-cache clean` rebuilds on both platforms (before and after the connection-
+    capability bug fix, and again after the debug command's removal), the full 25-test suite, real dedicated-
+    server boots with zero exceptions on both targets (fresh worlds, deleted and rebooted after the debug
+    command's removal), and a real `:neoforge-26x:runClient` boot that reached full texture-atlas stitching
+    (including `textures/atlas/items.png-atlas`/`blocks.png-atlas`) and a loaded resource manager
+    (`mod/buildcraft` included) with no missing-model/missing-sprite warnings for `pipe_holder`/
+    `pipe_item_cobblestone` and no `IllegalStateException`/`ClassNotFoundError`/`NoClassDefFoundError`/
+    `BootstrapMethodError` anywhere in the log.** Not independently verified: the on-screen appearance of the
+    pipe block/item, any pipe connection shape, and the item-travelling-through-pipe visual -- no client
+    rendering exists in this batch at all, per its own scope (see above), the same caveat already on file for
+    every prior entry in this document.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -2012,7 +2249,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Straight-run cobblestone item pipe (done). Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |

@@ -14,6 +14,7 @@
   "block.buildcraft.marker_path": "Path Mark",
   "block.buildcraft.marker_volume": "Land Mark",
   "block.buildcraft.mining_well": "Mining Well",
+  "block.buildcraft.pipe_holder": "Pipe",
   "block.buildcraft.power_tester": "Power Consumer Tester",
   "block.buildcraft.pump": "Pump",
   "block.buildcraft.spring_water": "Water Spring",
@@ -26,6 +27,7 @@
   "item.buildcraft.goggles": "Goggles",
   "item.buildcraft.marker_connector": "Marker Connector",
   "item.buildcraft.paintbrush": "Paintbrush",
+  "item.buildcraft.pipe_item_cobblestone": "Cobblestone Pipe",
   "item.buildcraft.wrench": "Wrench",
   "itemGroup.buildcraft.main": "BuildCraft"
 }

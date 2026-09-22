@@ -1,0 +1,302 @@
+/*
+ * Copyright (c) 2017 SpaceToad and the BuildCraft team
+ * Copyright (c) 2026 Joshua Kac -- NeoForge port (BuildCraft 10)
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL
+ * was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/
+ */
+package buildcraft.transport.tile;
+
+import java.util.UUID;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import com.mojang.authlib.GameProfile;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+
+import net.minecraftforge.common.capabilities.Capability;
+import net.minecraftforge.common.util.LazyOptional;
+
+import buildcraft.api.core.InvalidInputDataException;
+import buildcraft.api.transport.IWireManager;
+import buildcraft.api.transport.pipe.IItemPipe;
+import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pipe.IPipeHolder;
+import buildcraft.api.transport.pipe.PipeApi;
+import buildcraft.api.transport.pipe.PipeDefinition;
+import buildcraft.api.transport.pipe.PipeEvent;
+import buildcraft.api.transport.pipe.PipeEventPlaced;
+import buildcraft.api.transport.pluggable.PipePluggable;
+
+import buildcraft.lib.tile.TileBC;
+
+import buildcraft.BCTransportRegistries;
+import buildcraft.transport.pipe.Pipe;
+import buildcraft.transport.pipe.PipeEventBus;
+
+/**
+ * The single shared block entity every pipe kind uses -- implements the already-ported {@link IPipeHolder}. See
+ * the 26.x copy of this class for the full account of what is deliberately dropped ({@code PluggableHolder},
+ * every {@code NET_UPDATE_*} network message) and why -- unchanged here.
+ *
+ * <p>The one real per-platform divergence: capabilities. 1.20.1 still has {@code ICapabilityProvider}, so this
+ * tile exposes its own {@link #getCapability} override directly (matching {@code TileChute}'s own precedent on
+ * this target), rather than 26.x's separate {@code RegisterCapabilitiesEvent} listener.
+ */
+public class TilePipeHolder extends TileBC implements IPipeHolder {
+
+    @Nullable
+    private Pipe pipe;
+    public final PipeEventBus eventBus = new PipeEventBus();
+    private final SimplePipeWireManager wireManager = new SimplePipeWireManager(this);
+
+    @Nullable
+    private UUID ownerId;
+    private String ownerName = "";
+
+    public TilePipeHolder(BlockPos pos, BlockState state) {
+        super(BCTransportRegistries.PIPE_HOLDER_TYPE.get(), pos, state);
+    }
+
+    // Read + write
+
+    @Override
+    public void load(CompoundTag nbt) {
+        super.load(nbt);
+        if (nbt.contains("pipe")) {
+            try {
+                // HolderLookup.Provider is unused by every PipeBehaviour/PipeFlow this batch ports on this
+                // target (see TravellingItem's own javadoc) -- kept only for cross-platform constructor parity,
+                // so a null level here (possible mid-deserialisation) is harmless.
+                pipe = new Pipe(this, nbt.getCompound("pipe"), level == null ? null : level.registryAccess());
+                eventBus.registerHandler(pipe.behaviour);
+                eventBus.registerHandler(pipe.flow);
+            } catch (InvalidInputDataException e) {
+                // Unfortunately we can't throw an exception, because then this tile won't persist at all.
+                e.printStackTrace();
+            }
+        }
+        if (nbt.contains("wireManager")) {
+            wireManager.readFromNbt(nbt.getCompound("wireManager"));
+        }
+        ownerId = nbt.hasUUID("ownerId") ? nbt.getUUID("ownerId") : null;
+        ownerName = nbt.getString("ownerName");
+    }
+
+    @Override
+    protected void saveAdditional(CompoundTag nbt) {
+        super.saveAdditional(nbt);
+        if (pipe != null) {
+            nbt.put("pipe", pipe.writeToNbt(level == null ? null : level.registryAccess()));
+        }
+        nbt.put("wireManager", wireManager.writeToNbt());
+        if (ownerId != null) {
+            nbt.putUUID("ownerId", ownerId);
+            nbt.putString("ownerName", ownerName);
+        }
+    }
+
+    // Misc
+
+    public void onPlacedBy(@Nullable LivingEntity placer, ItemStack stack) {
+        if (placer instanceof Player player) {
+            ownerId = player.getUUID();
+            ownerName = player.getGameProfile().getName();
+        }
+        if (stack.getItem() instanceof IItemPipe itemPipe) {
+            PipeDefinition definition = itemPipe.getDefinition();
+            this.pipe = new Pipe(this, definition);
+            eventBus.registerHandler(pipe.behaviour);
+            eventBus.registerHandler(pipe.flow);
+            eventBus.fireEvent(new PipeEventPlaced(this, placer, stack));
+        }
+    }
+
+    /** Driven by {@code BlockPipeHolder#getTicker}. */
+    public void serverTick() {
+        if (pipe != null) {
+            pipe.onTick();
+        }
+        if (pipe != null) {
+            pipe.postPluggableTick();
+        }
+        setChanged();
+    }
+
+    public void onNeighbourChanged() {
+        if (pipe != null) {
+            pipe.markForUpdate();
+        }
+    }
+
+    // IPipeHolder
+
+    @Override
+    public Level getPipeLevel() {
+        return getLevel();
+    }
+
+    @Override
+    public BlockPos getPipePos() {
+        return getBlockPos();
+    }
+
+    @Override
+    public BlockEntity getPipeTile() {
+        return this;
+    }
+
+    @Override
+    @Nullable
+    public IPipe getPipe() {
+        return pipe;
+    }
+
+    @Override
+    public boolean canPlayerInteract(Player player) {
+        return level != null && level.getBlockEntity(worldPosition) == this
+            && player.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= 64.0;
+    }
+
+    @Override
+    @Nullable
+    public PipePluggable getPluggable(Direction side) {
+        return null;
+    }
+
+    @Override
+    @Nullable
+    public BlockEntity getNeighbourTile(Direction side) {
+        if (level == null) {
+            return null;
+        }
+        return level.getBlockEntity(worldPosition.relative(side));
+    }
+
+    @Override
+    @Nullable
+    public IPipe getNeighbourPipe(Direction side) {
+        BlockEntity neighbour = getNeighbourTile(side);
+        if (neighbour == null) {
+            return null;
+        }
+        return neighbour.getCapability(PipeApi.CAP_PIPE, side.getOpposite()).orElse(null);
+    }
+
+    @Override
+    @Nullable
+    public <T> T getCapabilityFromPipe(Direction side, Capability<T> capability) {
+        if (pipe == null || !pipe.isConnected(side)) {
+            return null;
+        }
+        BlockEntity neighbour = getNeighbourTile(side);
+        if (neighbour == null) {
+            return null;
+        }
+        return neighbour.getCapability(capability, side.getOpposite()).orElse(null);
+    }
+
+    @Override
+    public IWireManager getWireManager() {
+        return wireManager;
+    }
+
+    @Override
+    public GameProfile getOwner() {
+        return new GameProfile(ownerId != null ? ownerId : new UUID(0L, 0L), ownerName);
+    }
+
+    @Override
+    public boolean fireEvent(PipeEvent event) {
+        return eventBus.fireEvent(event);
+    }
+
+    @Override
+    public void scheduleRenderUpdate() {
+    }
+
+    @Override
+    public void scheduleNetworkUpdate(PipeMessageReceiver... parts) {
+    }
+
+    @Override
+    public void scheduleNetworkGuiUpdate(PipeMessageReceiver... parts) {
+    }
+
+    @Override
+    public void sendMessage(PipeMessageReceiver to, IWriter writer) {
+    }
+
+    @Override
+    public void sendGuiMessage(PipeMessageReceiver to, IWriter writer) {
+    }
+
+    @Override
+    public void onPlayerOpen(Player player) {
+    }
+
+    @Override
+    public void onPlayerClose(Player player) {
+    }
+
+    // IRedstoneStatementContainer
+
+    @Override
+    public int getRedstoneInput(@Nullable Direction side) {
+        if (level == null) {
+            return 0;
+        }
+        if (side == null) {
+            return level.getBestNeighborSignal(worldPosition);
+        }
+        return level.getSignal(worldPosition.relative(side), side);
+    }
+
+    @Override
+    public boolean setRedstoneOutput(@Nullable Direction side, int value) {
+        return false;
+    }
+
+    // Caps
+
+    /** {@link PipeApi#CAP_PIPE_HOLDER}/{@link PipeApi#CAP_PIPE}/{@link PipeApi#CAP_PLUG} expose the tile/pipe/
+     * pluggable objects themselves -- see the 26.x copy of this file's own {@code registerCapabilities} javadoc
+     * for why this is load-bearing, not decorative: without it, {@code getNeighbourPipe} can never detect a
+     * neighbouring pipe as a pipe, so two adjacent pipe segments never actually connect to each other. Direct
+     * 1.20.1-shaped equivalent of 1.12.2's own {@code TilePipeHolder} constructor's
+     * {@code caps.addCapabilityInstance}/{@code addCapability} calls. */
+    @NotNull
+    @Override
+    public <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap, @Nullable Direction side) {
+        if (cap == PipeApi.CAP_PIPE_HOLDER) {
+            return LazyOptional.of(() -> (IPipeHolder) this).cast();
+        }
+        if (cap == PipeApi.CAP_PIPE && pipe != null) {
+            IPipe p = pipe;
+            return LazyOptional.of(() -> p).cast();
+        }
+        if (cap == PipeApi.CAP_PLUG) {
+            PipePluggable plug = getPluggable(side);
+            if (plug != null) {
+                return LazyOptional.of(() -> plug).cast();
+            }
+        }
+        if (pipe != null) {
+            T val = pipe.getCapability(cap, side);
+            if (val != null) {
+                return LazyOptional.of(() -> val).cast();
+            }
+        }
+        return super.getCapability(cap, side);
+    }
+}
