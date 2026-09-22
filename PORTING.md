@@ -560,6 +560,11 @@ Ported (compiling, tested):
     `ConfiguredFeature`/`PlacedFeature` JSON pair). A real feature to write, not a rename. Until
     this lands, `BlockSpringWater` (ported) has no way to spawn naturally -- same "foundation
     ported, not yet wired to its trigger" situation as `DeltaManager`/`lib.cache` and `TileBC`.
+
+    Update: the water half is done -- see the `core.gen.SpringGenerator` progress entry below. This
+    guess at the modern shape was also only half right: 26.x turned out to have collapsed
+    `Feature`/`ConfiguredFeature` into one tier, not kept the classic three-tier system this note
+    assumed applies uniformly -- see that entry for the real, `javap`-verified shape on each target.
   - `core.tile.ITileOilSpring` is a two-method marker interface with nothing wrong with it, but
     its only implementor is `buildcraft.energy.tile.TileSpringOil`, entirely unported; nothing
     to port it *for* yet. `BlockSpringOil` (the other `EnumSpring` half) waits alongside it: its
@@ -723,6 +728,99 @@ Ported (compiling, tested):
     `Level#getBestNeighborSignal(pos) -> int` on both targets (confirmed via `javap` against `SignalGetter`,
     identical signature on both) -- the direct modern successor, alongside the already-known
     `isBlockPowered`/`hasNeighborSignal` (boolean) rename `BlockMarkerVolume` already uses.
+
+- **`core.gen.SpringGenerator` (both platforms), replacing 1.12.2's `core.gen.SpringPopulate` -- the last
+  piece of `core.block.BlockSpringWater` (registered since the `ItemWrench`/`BlockSpringWater` progress entry
+  above, but never spawned anywhere until now).** 1.12.2's version was a `@SubscribeEvent`-driven
+  `PopulateChunkEvent.Post` handler calling `TerrainGen.populate` for permission, then placing blocks directly
+  with `World#setBlockState`. That whole imperative, cancellable-event world-gen style is gone on both
+  targets, replaced by a declarative `Feature`/datapack system -- but the earlier guess in the
+  `buildcraft.core` survey above (that both targets share one `Feature<FC>`/`ConfiguredFeature`/`PlacedFeature`
+  three-tier shape) turned out to be wrong for 26.x specifically, confirmed by real `javap`/decompiled-source
+  research against both merged jars rather than assumed:
+  - **1.20.1 keeps the classic shape.** `Feature<FC extends FeatureConfiguration>` (abstract class,
+    `place(FeaturePlaceContext<FC>)`) is wrapped in a `ConfiguredFeature<FC, Feature<FC>>` (datapack JSON,
+    `Registries.CONFIGURED_FEATURE`) which is wrapped in a `PlacedFeature` (also datapack JSON,
+    `Registries.PLACED_FEATURE`). Only the bare `Feature<FC>` type itself is a static code registry
+    (`Registries.FEATURE`, confirmed via `javap`: `ResourceKey<Registry<Feature<?>>>`) -- registered here via
+    a new `BCCoreFeatures` (`DeferredRegister<Feature<?>>`, mirroring the pattern `BCCoreRegistries` already
+    uses for every other registry). `SpringGenerator extends Feature<NoneFeatureConfiguration>` (vanilla's own
+    "no config" marker type, since this feature has no real configuration beyond which block to place) and the
+    `ConfiguredFeature`/`PlacedFeature` pair are plain JSON under
+    `data/buildcraft/worldgen/{configured_feature,placed_feature}/spring_water.json` -- the former still needs
+    an explicit empty `"config": {}` even with `NoneFeatureConfiguration`, confirmed against vanilla's own
+    bundled `void_start_platform.json`.
+  - **26.x collapsed this into two tiers, not three.** `javap` against the real 26.x merged jar returns "class
+    not found" for `net.minecraft.world.level.levelgen.feature.ConfiguredFeature` -- it does not exist at all.
+    `Feature` itself is now a plain **interface** (`place(WorldGenLevel, ChunkGenerator, RandomSource,
+    BlockPos)`, no `FeaturePlaceContext`), and a concrete feature is a **record implementing `Feature`
+    directly**, carrying its own configuration as record fields and its own `codec()` -- confirmed against
+    vanilla's own decompiled `SpringFeature` (`record SpringFeature(FluidState, boolean, int, int,
+    HolderSet<Block>) implements Feature`), which this port's `SpringGenerator` (a zero-field record, since
+    there's nothing to configure) follows exactly. The "configured feature" concept folded into the feature
+    instance itself, and the two old registries traded roles: `Registries.FEATURE_TYPE` is now the *static*,
+    code registry (holds `MapCodec<? extends Feature>` -- the codec a feature deserializes through, confirmed
+    via `javap` and vanilla's own `FeatureTypes.bootstrap`, which registers vanilla's `SpringFeature.CODEC`
+    under id `spring_feature` this way), while `Registries.FEATURE` is now the *dynamic*, datapack registry
+    (holds actual, fully-configured `Feature` instances -- confirmed via `javap`:
+    `ResourceKey<Registry<Feature>>`, not `Feature<?>`). `PlacedFeature` is unchanged in role on both targets
+    (a `Holder<Feature>` + placement modifiers, still `Registries.PLACED_FEATURE`, still pure JSON). So on
+    26.x, `BCCoreFeatures` registers a `DeferredRegister<MapCodec<? extends Feature>>` against
+    `Registries.FEATURE_TYPE` (a `DeferredHolder<MapCodec<? extends Feature>, MapCodec<SpringGenerator>>`,
+    `SpringGenerator.CODEC` built with `MapCodec.unit(SpringGenerator::new)` since there are no fields to
+    serialize), and the actual feature/placed-feature entries are JSON under
+    `data/buildcraft/worldgen/{feature,placed_feature}/spring_water.json` -- the former just
+    `{"type": "buildcraft:spring_water"}`, no config block needed at all.
+  - **Generation-rarity and column placement moved into declarative `PlacementModifier`s, not hand-rolled
+    Java.** 1.12.2's "every 40th chunk" (`random.nextFloat() > 0.025f`) and `random.nextInt(16)` column pick
+    are now a `minecraft:rarity_filter` (`"chance": 40`) and `minecraft:in_square` in this feature's
+    `placed_feature` JSON (identical field names/ids on both targets, confirmed via `javap` and vanilla's own
+    bundled `spring_water.json`/`lake_lava.json`) -- decompiled `RarityFilter#shouldPlace` computes exactly
+    `random.nextFloat() < 1.0F / chance`, the same 1-in-40 odds. A closing `minecraft:height_range` (pinned to
+    `above_bottom: 0` via a `minecraft:constant` height provider) anchors the scan to the world floor in place
+    of the original's implicit `y=0`, and a trailing `minecraft:biome` filter matches the sanity check every
+    real vanilla placed feature ends its chain with. The bedrock scan and water-fill loop themselves stayed in
+    Java (in `SpringGenerator#place`) rather than being expressed declaratively too, since they need to inspect
+    real block state column-by-column -- not something a `PlacementModifier` can do; the divide drawn here is
+    "pure probability/position decisions go in JSON, world-state inspection stays in Java."
+  - **Nether/End exclusion moved from a runtime dimension check to biome targeting, per the task's own
+    suggested (and confirmed cleaner) approach.** 1.12.2 checked `dimId == -1 || dimId == 1` in Java; this
+    feature instead is simply never attached to a Nether/End biome, via the `#minecraft:is_overworld` biome
+    tag (confirmed present and correctly excluding Nether/End in both real merged jars' bundled data) on a
+    biome-modifier JSON targeting the `fluid_springs` `GenerationStep.Decoration` step -- the same step
+    vanilla's own spring features use (confirmed via `javap` against `GenerationStep$Decoration`). The biome
+    modifier's own registered type id and JSON shape needed real, per-target verification, not an assumption
+    that NeoForge kept Forge's `forge:add_features` unchanged: decompiled source confirms 26.x's
+    `net.neoforged.neoforge.common.world.BiomeModifiers$AddFeaturesBiomeModifier` registers under
+    `neoforge:add_features`, and the registry itself (`NeoForgeRegistries.Keys.BIOME_MODIFIERS`) lives under
+    the `neoforge` namespace -- so the JSON is `data/buildcraft/neoforge/biome_modifier/spring_water.json`.
+    1.20.1 keeps Forge's own `net.minecraftforge.common.world.ForgeBiomeModifiers$AddFeaturesBiomeModifier`
+    under `forge:add_features` (`ForgeRegistries.Keys.BIOME_MODIFIERS` confirmed keyed `forge:biome_modifier`
+    via decompiled source), so `data/buildcraft/forge/biome_modifier/spring_water.json` -- matching this
+    project's own existing `data/forge/tags/items` convention for that namespace.
+  - **`EnumSpring.WATER.canGen`** is checked at the top of `SpringGenerator#place`, matching 1.12.2's own guard
+    in its event handler -- it's a plain mutable field, not config-driven yet (see its own javadoc), so there's
+    no declarative way to gate a `PlacementModifier` chain on it from JSON.
+  - **A faithfully-preserved quirk, not a new decision: the original's "handle flat bedrock maps" special
+    case.** On finding bedrock at the very first scanned layer (the world floor, always solid bedrock on every
+    world type), 1.12.2 shifted the target position one layer *below* the floor, which its Y&gt;=0 chunk
+    storage silently discarded -- a no-op, not a crash, for that specific roll. A modern level's chunk storage
+    isn't safely assumed to tolerate the same out-of-range write (26.x in particular gives every dimension a
+    real, configurable minimum Y rather than a hard-coded 0), so this port reproduces the same *outcome* (that
+    attempt places nothing) as an explicit early return instead of reproducing the out-of-bounds write itself.
+    `World#getHeight()` as the water-fill loop's upper bound is the trap PORTING.md's structural-changes list
+    already documents as item 15 -- replaced with `Level#getMaxY()` (26.x) / `Level#getMaxBuildHeight()`
+    (1.20.1), paired with `getMinY()`/`getMinBuildHeight()` in place of the original's implicit `y=0` floor.
+  - Verified with forced rebuilds, the full 25-test suite, and real dedicated-server boots on both targets
+    against a **freshly deleted world save** (not a stale one from an earlier session's testing) -- a bad
+    feature codec, a malformed placement/biome-modifier JSON, or a missing registration would surface as a
+    datapack/registry error exactly here, at world load and spawn-chunk generation, not at compile time. Both
+    booted clean with no exceptions and genuinely regenerated region files (26.x: 5 `.mca` files in ~2s;
+    1.20.1: 10 `.mca` files in ~12s, logging real "Preparing spawn area: N%" progress throughout) -- not
+    verified beyond that clean-boot-plus-generation ceiling: nothing in this sandboxed environment could
+    confirm a spring block actually rolled a successful 1-in-40 placement and is sitting in one of those
+    regenerated chunks (interactive server-console commands aren't reliably reachable here either, matching
+    this file's other "not verified" notes on in-game interaction).
 
 Deliberately not ported, with reasons:
 
@@ -1158,6 +1256,18 @@ way — `VecUtil.convertCeiling` for instance — has to cast explicitly.
     1.20.1 -- 26.x has `getMinY()`, 1.20.1 still has `getMinBuildHeight()`. Easy to miss because
     both compile against completely different, unrelated things if you get it backwards on one
     target and the IDE doesn't catch it, since both classes have plenty of other methods.
+16. **World generation's `Feature`/`ConfiguredFeature`/`PlacedFeature` three-tier system collapsed to two
+    tiers on 26.x, between 1.20.1 and 26.x specifically -- not a 1.12.2-era change at all.** `ConfiguredFeature`
+    does not exist as a class any more on 26.x (confirmed via `javap`: "class not found"); `Feature` became a
+    plain interface, implemented directly by a record carrying its own configuration as fields plus its own
+    `codec()` (vanilla's own `SpringFeature` is exactly this shape). `Registries.FEATURE_TYPE` and
+    `Registries.FEATURE` effectively swapped what they hold between the two targets: on 1.20.1,
+    `Registries.FEATURE` is the static registry (holding the bare `Feature<FC>` type) and
+    `Registries.CONFIGURED_FEATURE` is the datapack registry (type+config pair); on 26.x,
+    `Registries.FEATURE_TYPE` is the static registry (holding just the codec) and `Registries.FEATURE` is now
+    the datapack one (holding the fully-configured instance). `PlacedFeature` is unchanged in role on both.
+    See `core.gen.SpringGenerator`'s progress entry (and its own class javadoc, on each platform) for the full
+    worked example, including the real registration code and datapack JSON shape on each target.
 
 ### Things that differ *between* our two targets
 
@@ -1203,6 +1313,8 @@ These are the traps when porting a file to both at once.
 | `FluidStack` existence | still exists (`net.neoforged.neoforge.fluids.FluidStack`), as a plain value type -- just not what a handler moves any more | `net.minecraftforge.fluids.FluidStack`, unchanged in shape from 1.12.2 |
 | Block-entity genuine-removal hook | `Block#onRemove` is gone (confirmed via `javap` against `BlockBehaviour`); `BlockEntity#preRemoveSideEffects(BlockPos, BlockState)` fires directly on the tile, only for a genuine block change, never a chunk unload | `BlockBehaviour#onRemove(state, level, pos, newState, movedByPiston)`, unchanged in shape from 1.12.2 |
 | Wearable/armor items | `ArmorItem` doesn't exist (confirmed via `javap`); a helmet is a plain `Item` carrying a `DataComponents.EQUIPPABLE` (`Equippable`) component, which has no defense field at all -- defense needs a separate, opt-in `ItemAttributeModifiers` component that `ItemGoggles` simply never adds | `ArmorItem`/`ArmorMaterial` still exist; `ArmorMaterial` is a plain interface (`getDefenseForType`/`getDurabilityForType`/...) `ArmorItem`'s constructor reads to build its `Attributes.ARMOR` modifiers -- Forge's old `ISpecialArmor` side interface is gone (confirmed via `javap`: class not found), so a zero-defense item implements `ArmorMaterial` itself with every value zeroed instead of overriding a side hook |
+| World-gen `Feature` shape | interface, implemented directly by a record carrying its own config + `codec()`; `ConfiguredFeature` class is gone (confirmed via `javap`: class not found). `Registries.FEATURE_TYPE` (static) holds the codec, `Registries.FEATURE` (datapack) holds the configured instance | classic `Feature<FC>` abstract class + separate `ConfiguredFeature<FC, Feature<FC>>` datapack wrapper. `Registries.FEATURE` (static) holds the bare `Feature<FC>`, `Registries.CONFIGURED_FEATURE` (datapack) holds the type+config pair |
+| Biome-modifier registry/type namespace | `net.neoforged.neoforge.common.world.BiomeModifiers`; registry key `neoforge:biome_modifier`; stock "add features" type id `neoforge:add_features` | `net.minecraftforge.common.world.ForgeBiomeModifiers`; registry key `forge:biome_modifier`; stock "add features" type id `forge:add_features` |
 
 For the 1.20.1 Gradle target, note that `legacyForge { version = ... }` selects
 *MinecraftForge*. NeoForge's 1.20.1 fork needs

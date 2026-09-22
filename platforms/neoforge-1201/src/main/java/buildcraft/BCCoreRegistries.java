@@ -139,9 +139,10 @@ public final class BCCoreRegistries {
         REGISTRY.addBlockEntity("engine_creative", TileEngineCreative::new, ENGINE_CREATIVE);
 
     /** The water half of 1.12.2's single metadata-subtyped {@code BlockSpring} -- see
-     * {@link BlockSpringWater}'s own javadoc. Not yet spawned anywhere: {@code core.gen.SpringPopulate}, the
-     * world-generation hook that placed it in 1.12.2, needs its own redesign against the modern
-     * {@code Feature}/datapack world-gen system (PORTING.md's {@code buildcraft.core} survey). */
+     * {@link BlockSpringWater}'s own javadoc. Spawned by {@code core.gen.SpringGenerator}, registered
+     * alongside its {@code Feature} type in {@link BCCoreFeatures} -- see that class and
+     * {@code SpringGenerator}'s own javadoc for the modern {@code Feature}/datapack world-gen system this
+     * replaces 1.12.2's {@code SpringPopulate} event handler with. */
     public static final RegistryObject<BlockSpringWater> SPRING_WATER =
         REGISTRY.addBlockAndItem("spring_water", () -> new BlockSpringWater(
             BlockBehaviour.Properties.of()
@@ -193,6 +194,7 @@ public final class BCCoreRegistries {
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         CREATIVE_TABS.register(modBus);
+        BCCoreFeatures.register(modBus);
         // MarkerCache.registerCache has no other caller yet (see buildcraft.lib.marker's PORTING.md entry) --
         // without this, VolumeSubCache/PathSubCache's own MarkerCache.CACHES.indexOf(...) lookup returns -1,
         // and every MessageMarker they send would carry an invalid cache id.
