@@ -89,7 +89,14 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         super.loadAdditional(input);
         input.read("pipe", CompoundTag.CODEC).ifPresent(tag -> {
             try {
-                pipe = new Pipe(this, tag, input.lookup());
+                Pipe loaded = new Pipe(this, tag, input.lookup());
+                // A reload replaces an existing Pipe (every client sync, /data merge), so the old one's handlers
+                // must leave the bus or they keep firing -- e.g. a stale directional behaviour vetoing sides.
+                if (pipe != null) {
+                    eventBus.unregisterHandler(pipe.behaviour);
+                    eventBus.unregisterHandler(pipe.flow);
+                }
+                pipe = loaded;
                 eventBus.registerHandler(pipe.behaviour);
                 eventBus.registerHandler(pipe.flow);
             } catch (InvalidInputDataException e) {

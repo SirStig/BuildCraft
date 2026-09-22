@@ -86,7 +86,14 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
                 // HolderLookup.Provider is unused by every PipeBehaviour/PipeFlow this batch ports on this
                 // target (see TravellingItem's own javadoc) -- kept only for cross-platform constructor parity,
                 // so a null level here (possible mid-deserialisation) is harmless.
-                pipe = new Pipe(this, nbt.getCompound("pipe"), level == null ? null : level.registryAccess());
+                Pipe loaded = new Pipe(this, nbt.getCompound("pipe"), level == null ? null : level.registryAccess());
+                // A reload replaces an existing Pipe (every client sync, /data merge), so the old one's handlers
+                // must leave the bus or they keep firing -- e.g. a stale directional behaviour vetoing sides.
+                if (pipe != null) {
+                    eventBus.unregisterHandler(pipe.behaviour);
+                    eventBus.unregisterHandler(pipe.flow);
+                }
+                pipe = loaded;
                 eventBus.registerHandler(pipe.behaviour);
                 eventBus.registerHandler(pipe.flow);
             } catch (InvalidInputDataException e) {

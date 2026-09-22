@@ -3660,6 +3660,22 @@ Deliberately not ported, with reasons:
     `build/classes` other agents' running dev servers were loading from), the full 25-test suite (25/25, both in
     the shared tree and in the snapshot), and the server/client boots above.
 
+- **`TilePipeHolder` leaked every replaced `Pipe`'s event handlers -- found while independently re-verifying the
+  gold/void/clay/iron batch above, not by it.** `loadAdditional` (26.x) / `load` (1.20.1) built a fresh `Pipe`
+  and registered its behaviour and flow on the tile's `final` `eventBus`, but never unregistered the `Pipe` it
+  was replacing. On a server that only bites on an in-place reload (`/data merge block`), but since the
+  item-in-pipe batch every client-side sync goes through `loadAdditional` too, and items trigger a sync on
+  every new travel segment -- so every client-side pipe on a busy line accumulated stale behaviour/flow
+  handler objects without bound. 1.12.2 never hit this because its client got in-place payload updates, not
+  whole-`Pipe` rebuilds. Found live: an iron pipe auto-faced west, then set to face south via
+  `/data merge block <pos> {pipe:{beh:{currentDir:"SOUTH"}}}`, bounced every item back west into its feeding
+  hopper instead of out the south face into a cobblestone pipe -- the stale west-facing behaviour and the new
+  south-facing one each ran `SideCheck.disallowAllExcept(...)`, which together disallowed every side, so each
+  item took the `TryBounce` path. Fix, both platforms: unregister the old `Pipe`'s behaviour and flow before
+  registering the rebuilt one. Re-verified on a dedicated server with the same rig: all 6 of 6 ingots left
+  through the south face, crossed the cobblestone pipe and landed in the far chest, none went north, zero
+  exceptions; 25/25 tests.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
