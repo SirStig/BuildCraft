@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screens.MenuScreens;
 
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
+import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
 
 import buildcraft.BCFactoryRegistries;
@@ -29,6 +30,9 @@ public final class BCFactoryClientRegistries {
     private BCFactoryClientRegistries() {}
 
     public static void registerScreens(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new));
+        event.enqueueWork(() -> {
+            MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new);
+            MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_FLUIDS_MENU.get(), GuiAutoCraftFluids::new);
+        });
     }
 }

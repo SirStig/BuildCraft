@@ -9,6 +9,7 @@ package buildcraft.factory.client;
 
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
+import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
 
 import buildcraft.BCFactoryRegistries;
@@ -32,5 +33,6 @@ public final class BCFactoryClientRegistries {
 
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new);
+        event.register(BCFactoryRegistries.AUTO_WORKBENCH_FLUIDS_MENU.get(), GuiAutoCraftFluids::new);
     }
 }

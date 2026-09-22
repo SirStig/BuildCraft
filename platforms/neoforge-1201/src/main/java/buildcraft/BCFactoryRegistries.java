@@ -20,6 +20,7 @@ import buildcraft.api.inventory.ItemTransactorCapabilities;
 
 import buildcraft.lib.registry.BCRegistry;
 
+import buildcraft.factory.block.BlockAutoWorkbenchFluids;
 import buildcraft.factory.block.BlockAutoWorkbenchItems;
 import buildcraft.factory.block.BlockChute;
 import buildcraft.factory.block.BlockFloodGate;
@@ -27,7 +28,9 @@ import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
+import buildcraft.factory.container.ContainerAutoCraftFluids;
 import buildcraft.factory.container.ContainerAutoCraftItems;
+import buildcraft.factory.tile.TileAutoWorkbenchFluids;
 import buildcraft.factory.tile.TileAutoWorkbenchItems;
 import buildcraft.factory.tile.TileChute;
 import buildcraft.factory.tile.TileFloodGate;
@@ -146,6 +149,27 @@ public final class BCFactoryRegistries {
      * registration this pairs with. */
     public static final RegistryObject<MenuType<ContainerAutoCraftItems>> AUTO_WORKBENCH_ITEMS_MENU =
         REGISTRY.addMenu("auto_workbench_item", ContainerAutoCraftItems::new);
+
+    /** Same default properties as {@link #CHUTE}/etc -- see {@link #CHUTE}'s own javadoc. Registry name
+     * {@code auto_workbench_fluid} is this port's own choice, not a carried-over original -- see the 26.x copy of
+     * this file, and {@code buildcraft.factory.tile.TileAutoWorkbenchFluids}'s own javadoc, for why 1.12.2 never
+     * actually registered this block (or created any asset for it) at all. Unlike 26.x, this tile exposes its own
+     * fluid capability through {@code getCapability} (see that class's own javadoc), so there is nothing to add
+     * to a capability-registration listener here -- this file has none, matching {@link #CHUTE}'s own precedent. */
+    public static final RegistryObject<BlockAutoWorkbenchFluids> AUTO_WORKBENCH_FLUIDS = REGISTRY.addBlockAndItem(
+        "auto_workbench_fluid", () -> new BlockAutoWorkbenchFluids(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileAutoWorkbenchFluids>> AUTO_WORKBENCH_FLUIDS_TYPE =
+        REGISTRY.addBlockEntity("auto_workbench_fluid", TileAutoWorkbenchFluids::new, AUTO_WORKBENCH_FLUIDS);
+
+    /** See {@link #AUTO_WORKBENCH_ITEMS_MENU}'s own javadoc. */
+    public static final RegistryObject<MenuType<ContainerAutoCraftFluids>> AUTO_WORKBENCH_FLUIDS_MENU =
+        REGISTRY.addMenu("auto_workbench_fluid", ContainerAutoCraftFluids::new);
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);

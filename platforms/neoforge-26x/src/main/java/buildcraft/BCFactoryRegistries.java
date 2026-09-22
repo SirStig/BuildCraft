@@ -25,6 +25,7 @@ import buildcraft.api.tiles.TilesAPI;
 import buildcraft.lib.inventory.AutomaticProvidingTransactor;
 import buildcraft.lib.registry.BCRegistry;
 
+import buildcraft.factory.block.BlockAutoWorkbenchFluids;
 import buildcraft.factory.block.BlockAutoWorkbenchItems;
 import buildcraft.factory.block.BlockChute;
 import buildcraft.factory.block.BlockFloodGate;
@@ -32,7 +33,9 @@ import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
+import buildcraft.factory.container.ContainerAutoCraftFluids;
 import buildcraft.factory.container.ContainerAutoCraftItems;
+import buildcraft.factory.tile.TileAutoWorkbenchFluids;
 import buildcraft.factory.tile.TileAutoWorkbenchItems;
 import buildcraft.factory.tile.TileChute;
 import buildcraft.factory.tile.TileFloodGate;
@@ -148,6 +151,28 @@ public final class BCFactoryRegistries {
     public static final DeferredHolder<MenuType<?>, MenuType<ContainerAutoCraftItems>> AUTO_WORKBENCH_ITEMS_MENU =
         REGISTRY.addMenu("auto_workbench_item", ContainerAutoCraftItems::new);
 
+    /** Same default properties as {@link #CHUTE}/etc -- see {@link #CHUTE}'s own javadoc. Registry name
+     * {@code auto_workbench_fluid} (singular, matching {@link #AUTO_WORKBENCH_ITEMS}'s own {@code auto_workbench_item})
+     * is this port's own choice, not a carried-over original: confirmed via {@code common/buildcraft/factory/
+     * BCFactoryBlocks.java}, 1.12.2 never actually registered this block at all (its registration line is
+     * commented out there), so there is no real original id to match -- see
+     * {@code buildcraft.factory.tile.TileAutoWorkbenchFluids}'s own javadoc for the full account of this block's
+     * unfinished 1.12.2 history. */
+    public static final DeferredBlock<BlockAutoWorkbenchFluids> AUTO_WORKBENCH_FLUIDS = REGISTRY.addBlockAndItem(
+        "auto_workbench_fluid", BlockAutoWorkbenchFluids::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileAutoWorkbenchFluids>> AUTO_WORKBENCH_FLUIDS_TYPE =
+        REGISTRY.addBlockEntity("auto_workbench_fluid", TileAutoWorkbenchFluids::new, AUTO_WORKBENCH_FLUIDS);
+
+    /** See {@link #AUTO_WORKBENCH_ITEMS_MENU}'s own javadoc. */
+    public static final DeferredHolder<MenuType<?>, MenuType<ContainerAutoCraftFluids>> AUTO_WORKBENCH_FLUIDS_MENU =
+        REGISTRY.addMenu("auto_workbench_fluid", ContainerAutoCraftFluids::new);
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCFactoryRegistries::registerCapabilities);
@@ -192,5 +217,25 @@ public final class BCFactoryRegistries {
         event.registerBlockEntity(Capabilities.Item.BLOCK, AUTO_WORKBENCH_ITEMS_TYPE.get(), (tile, side) -> tile.itemManager.getHandlerForFace(side));
         event.registerBlockEntity(MjCapabilities.RECEIVER, AUTO_WORKBENCH_ITEMS_TYPE.get(), (tile, side) -> tile);
         event.registerBlockEntity(TilesAPI.HAS_WORK, AUTO_WORKBENCH_ITEMS_TYPE.get(), (tile, side) -> tile);
+
+        // Same reasoning as the items variant just above for the item/MJ/work capabilities. The fluid capability
+        // is the one genuinely new shape here: unlike every other fluid-tile in this port (TilePump/TileFloodGate/
+        // TileTank, all of which expose one tank identically on every side), this tile needs *different* tanks on
+        // different sides -- 1.12.2's own CapUtil wiring split DOWN/NORTH/WEST from UP/SOUTH/EAST, with CENTER
+        // (a query with no specific side) covering both at once. Since this lookup function already receives the
+        // queried Direction directly, that's just a branch here -- no per-side logic needed inside the tile itself
+        // (see TileAutoWorkbenchFluids' own javadoc).
+        event.registerBlockEntity(Capabilities.Fluid.BLOCK, AUTO_WORKBENCH_FLUIDS_TYPE.get(), (tile, side) -> {
+            if (side == null) {
+                return tile.combinedTanks;
+            }
+            return switch (side) {
+                case DOWN, NORTH, WEST -> tile.tank1;
+                case UP, SOUTH, EAST -> tile.tank2;
+            };
+        });
+        event.registerBlockEntity(Capabilities.Item.BLOCK, AUTO_WORKBENCH_FLUIDS_TYPE.get(), (tile, side) -> tile.itemManager.getHandlerForFace(side));
+        event.registerBlockEntity(MjCapabilities.RECEIVER, AUTO_WORKBENCH_FLUIDS_TYPE.get(), (tile, side) -> tile);
+        event.registerBlockEntity(TilesAPI.HAS_WORK, AUTO_WORKBENCH_FLUIDS_TYPE.get(), (tile, side) -> tile);
     }
 }
