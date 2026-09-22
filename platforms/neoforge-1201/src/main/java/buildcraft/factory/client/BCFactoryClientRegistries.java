@@ -9,21 +9,26 @@ package buildcraft.factory.client;
 
 import net.minecraft.client.gui.screens.MenuScreens;
 
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
 import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
+import buildcraft.factory.tile.RenderTileTank;
 
 import buildcraft.BCFactoryRegistries;
 
 /**
- * Client-only menu screen registration for {@code buildcraft.factory}. Mirrors the 26.x class of the same name
- * -- see that one's javadoc for the full account of why this has to be gated at the *listener registration*
- * itself (never unconditionally reachable from a dedicated server), not just inside the method body.
+ * Client-only menu screen and renderer registration for {@code buildcraft.factory}. Mirrors the 26.x class of the
+ * same name -- see that one's javadoc for the full account of why this has to be gated at the *listener
+ * registration* itself (never unconditionally reachable from a dedicated server), not just inside the method body.
  *
  * <p>{@code MenuScreens.register} has to run once client setup begins, so this listens for
  * {@link FMLClientSetupEvent} rather than reacting to a NeoForge-style {@code RegisterMenuScreensEvent} (which
  * doesn't exist on this target -- Forge/NeoForge 1.20.1 never grew a dedicated registration event for this).
+ * {@link #registerRenderers} still uses {@link EntityRenderersEvent.RegisterRenderers}, matching
+ * {@code buildcraft.energy.client.BCEnergyClientRegistries#registerRenderers} on this same target -- that event
+ * already exists here, unlike the menu-screen registration event.
  */
 public final class BCFactoryClientRegistries {
 
@@ -34,5 +39,9 @@ public final class BCFactoryClientRegistries {
             MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new);
             MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_FLUIDS_MENU.get(), GuiAutoCraftFluids::new);
         });
+    }
+
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(BCFactoryRegistries.TANK_TYPE.get(), RenderTileTank::new);
     }
 }

@@ -56,6 +56,7 @@ public final class BuildCraft {
         // they reference -- at all. See BCFactoryClientRegistries' own javadoc.
         if (FMLEnvironment.dist.isClient()) {
             modBus.addListener(BCFactoryClientRegistries::registerScreens);
+            modBus.addListener(BCFactoryClientRegistries::registerRenderers);
             modBus.addListener(BCEnergyClientRegistries::registerScreens);
             modBus.addListener(BCEnergyClientRegistries::registerRenderers);
         }

@@ -2947,6 +2947,115 @@ Deliberately not ported, with reasons:
     reload, zero exceptions in either server log, on both platforms.
   - Verified with a forced `--no-build-cache clean` rebuild on both platforms and the full 25-test suite.
 
+- **`TileTank` gets a real fluid-level render -- the second `BlockEntityRenderer` registered anywhere in this
+  port, closing the gap both `TileTank`'s own class javadoc and `buildcraft.lib.fluid.Tank`'s own class javadoc
+  had been documenting since the tank column-balancing batch: `getFluidForRender` (client-side fluid-level
+  interpolation) and `Tank`'s own `clientFluid`/`clientAmount`/`colorRenderCache` were dropped purely for "there
+  is no renderer in this port to consume it" -- the identical situation the engines' piston-rod render closed for
+  `TileEngineBase#progress` two batches above.** An empty tank still renders as the plain static block model with
+  no floating quad; a non-empty one gets a real inset fluid box whose height scales with `tank.getAmountAsInt(0) /
+  tank.getCapacity()`, textured and tinted with the fluid's own real still sprite.
+  - **No client-side interpolation field, unlike the engines' `clientProgress`/`lastClientProgress`.** That
+    machinery exists because `TileEngineBase#progress` moves every tick without a sync to match, so the renderer
+    has to fake smooth motion between infrequent full syncs. A tank's fill level is the opposite case, confirmed
+    by re-reading `Tank`'s own `onChange` wiring (both platforms' `TileTank`, constructor: `new Tank(TANK_CAPACITY,
+    this::onTankChanged)`) and `onTankChanged`'s own body (`markDirtyAndSync()`): every single fill/drain call
+    that actually changes the tank's contents fires a full-NBT sync immediately, not once a tick on a timer -- so
+    whatever the client's own `tile.tank` holds is never more than one network round-trip stale, and it only ever
+    moves in small per-tick increments relative to a 16-bucket (16000 mB) capacity. `RenderTileTank` therefore
+    reads `tile.tank` directly, every frame, with no smoothing layer of its own -- a deliberate, justified call,
+    not an oversight, documented in the renderer's own class javadoc on both platforms.
+  - **Real fluid sprite/tint API, and it genuinely diverges between the two targets -- confirmed via `javap`
+    against the real jars, not assumed to be symmetric.** On 1.20.1, `javap` against
+    `net.minecraftforge:forge:1.20.1-47.1.106-universal.jar` shows `net.minecraftforge.client.extensions.common.
+    IClientFluidTypeExtensions` keeping the classic, well-established shape: `IClientFluidTypeExtensions.of(Fluid)`
+    returns an instance whose `getStillTexture(FluidStack)`/`getTintColor(FluidStack)` give the sprite's
+    `ResourceLocation` and an `0xRRGGBB` tint directly; the location is then resolved to a real
+    `TextureAtlasSprite` through `Minecraft.getInstance().getTextureAtlas(InventoryMenu.BLOCK_ATLAS)`, the same
+    atlas-lookup idiom every Forge-family fluid-rendering mod uses. On 26.x, `javap` against the real
+    `neoforge-26.3.0.7-beta-universal.jar` shows the *same-named* `net.neoforged.neoforge.client.extensions.
+    common.IClientFluidTypeExtensions` interface has lost `getStillTexture()`/`getTintColor()` entirely -- only
+    fog/overlay hooks remain -- because fluid rendering itself moved into vanilla as a real, data-driven system on
+    this target: confirmed by reading the real classes in `minecraft-merged-deobf-26.3.jar`,
+    `net.minecraft.client.renderer.block.FluidStateModelSet` (reachable via
+    `Minecraft.getInstance().getModelManager().getFluidStateModelSet()`) maps a `FluidState` to a `FluidModel`
+    record whose `stillMaterial().sprite()` is the real baked `TextureAtlasSprite` and whose `tintSource().
+    color(FluidState.createLegacyBlock())` gives the real tint -- a genuinely different, newer API shape with no
+    1.20.1 counterpart, not a rename. Each platform's `RenderTileTank` is therefore a separately-researched
+    implementation, exactly like `RenderTileEngine` already is for the classic-vs-split render contract.
+  - **Geometry is real, faithfully reproduced from 1.12.2's own `RenderTank`** (`common/buildcraft/factory/client
+    /render/RenderTank.java`, 120 lines): the fluid box is inset from the tank's full-block bounds by `0.13`/
+    `0.86` on X/Z, `0.01`/`0.99` on Y by default, with the actual fill height scaling up from `0.01` by
+    `amount / capacity` -- a real, load-bearing piece of behaviour, not a placeholder. **Deliberately cut, and
+    said so plainly rather than silently skipped**: the original's connected-tank seamless stretching
+    (`MIN_CONNECTED`/`MAX_CONNECTED`, which pushes the shared face of two full, same-fluid, vertically-adjacent
+    tanks flush to the block edge so a tall stack reads as one unbroken column) needs a same-fluid/fullness check
+    against the neighbour tank above and below every frame for a purely cosmetic seam-hiding refinement whose
+    actual on-screen result cannot be checked visually in this project anyway -- this first pass always renders
+    the plain inset box. `TileTank.canTanksConnect` is already public and ready for whoever re-adds this.
+  - **Deliberately not a reproduction of 1.12.2's quad technique** (a bespoke `MutableQuad`/`FluidRenderer`/
+    immediate-mode `BufferBuilder` framework with no counterpart anywhere in this port, the same call already made
+    for `RenderTileEngine`). Both platforms hand-build one box (six faces) directly against `VertexConsumer`
+    (`SubmitNodeCollector#submitCustomGeometry` on 26.x, `MultiBufferSource#getBuffer` on 1.20.1) using a
+    non-culling `RenderType` (`RenderTypes.entityTranslucent`/`RenderType.entityTranslucent`, not the `Cull`
+    suffixed variant) specifically because a hand-built quad's winding order cannot be checked on screen in this
+    environment -- non-culling costs a few invisible backfaces on one small box per tank and guarantees every face
+    actually draws regardless of winding. Every face reuses the same still-texture UV rect (matching the
+    original, which also only ever asked for `FluidSpriteType.STILL`), not a separately-scaled top/side/bottom
+    mapping.
+  - **Registration mirrors `BCEnergyClientRegistries#registerRenderers` exactly**: a new
+    `BCFactoryClientRegistries#registerRenderers(EntityRenderersEvent.RegisterRenderers)` registers
+    `BCFactoryRegistries.TANK_TYPE.get()` to `RenderTileTank::new`, and `BuildCraft.java` (both platforms) gets one
+    new listener line, `modBus.addListener(BCFactoryClientRegistries::registerRenderers);`, added next to the
+    existing `registerScreens` line for the same module and grouped ahead of the pre-existing
+    `BCEnergyClientRegistries::registerRenderers` line -- inside the same pre-existing client-only
+    `FMLEnvironment` guard, so a dedicated server has exactly as much reason to load `RenderTileTank` as it does
+    `RenderTileEngine`: none.
+  - **Input-range safety, read back carefully rather than assumed**: `fraction` is computed as
+    `capacity > 0 ? Mth.clamp(amount / (float) capacity, 0f, 1f) : 0f` on both platforms -- clamped `[0, 1]`
+    regardless of any transient over/under-fill, and guarded against a zero-capacity divide even though
+    `TANK_CAPACITY = 16 * FluidType.BUCKET_VOLUME` is a compile-time-constant positive value that can never
+    actually be zero. Manually traced with concrete numbers in place of a display: capacity `16000`, amount
+    `4000` gives `fraction = 0.25`, `topY = 0.01 + (0.99 - 0.01) * 0.25 = 0.25`; amount `16000` (full) gives
+    `fraction = 1.0`, `topY = 0.99` exactly, matching the original's own uninset ceiling; amount `0` short-circuits
+    before any of this runs (the empty-tank early return), so `topY` is never computed as `0.01` and drawn as a
+    zero-height sliver.
+  - **This working tree was shared, live, with a concurrent `buildcraft.transport` task while this batch was
+    written** (a `Pipe`/`TilePipeHolder`/`BlockPipeHolder`/`EnumPipeMaterial` connected-pipe-shape effort, per this
+    task's own brief) -- two effects of that were observed directly, not assumed. First, an early
+    `:neoforge-26x:compileJava` failed on `Pipe.java:268` (`updateConnectionBlockState(Pipe, EnumMap<Direction,
+    ConnectedType>) is not public in TilePipeHolder`) while `:neoforge-1201:compileJava` compiled clean in the same
+    invocation -- confirmed unrelated to this batch by reading the compiler's own single-error output (nothing in
+    `buildcraft.factory`/`buildcraft.lib.fluid` named in it) and left alone rather than stashed/fixed, per this
+    task's own explicit instruction never to touch `buildcraft.transport`; a later re-run of the exact same forced
+    `--no-build-cache clean` rebuild succeeded on both platforms once that concurrent task's own fix landed in the
+    same tree. Second, a `:neoforge-26x:runServer` boot attempted for this batch's own dedicated-server
+    verification failed immediately with `DirectoryLock$LockException: .../run/server/./world/session.lock:
+    already locked (possibly by other Minecraft instance?)` -- a real, already-running dedicated server (the
+    concurrent task's own live RCON test session against that same world) held the lock. Starting a second server
+    against a world another task is actively using would risk corrupting or disturbing that task's in-progress
+    verification, so this was not retried or forced.
+  - **Honest limitation, same category as every render-adjacent entry in this file**: the actual on-screen visual
+    result -- whether the fluid box's size, position, texture, or tint genuinely look right -- is not verified,
+    per this project's own standing limitation that rendering needs a real display. What *is* verified: both
+    platforms compile clean via a forced `--no-build-cache clean` rebuild (`:neoforge-26x:compileJava
+    :neoforge-1201:compileJava`), the full 25-test suite passes (`--no-build-cache test --rerun`, all 25 green:
+    12 in `:shared:test` -- `MjBatteryTester`/`BitSetTester` -- and 13 in `:expression:test`), every real API
+    called on both platforms was confirmed against the real jars via `javap`/decompiled source rather than
+    guessed, and the fill-fraction math was traced by hand above. Not reached this session, for the
+    world-lock reason above: a dedicated-server boot proving the client-only registration never loads
+    `RenderTileTank` server-side (the same check the piston-rod batch got via RCON), and a `runClient` boot
+    proving the texture atlas stitches with the new sprite lookup and no missing-model/missing-sprite warnings.
+    Both are exactly the kind of check the piston-rod batch already established as the right fallback when the
+    visual result itself can't be judged -- re-run them once the concurrent `buildcraft.transport` task's own
+    server session is no longer holding the world.
+  - **New files, both platforms**: `buildcraft.factory.tile.RenderTileTank`. Modified, both platforms:
+    `buildcraft.factory.client.BCFactoryClientRegistries` (`registerRenderers`), `buildcraft.BuildCraft` (the one
+    listener line above). Modified, 26.x only: `buildcraft.factory.tile.TileTank` and `buildcraft.lib.fluid.Tank`
+    (javadoc only -- both classes' own "no renderer to consume it" wording updated now that one exists, and both
+    explicitly note that the dropped `getFluidForRender`/`clientFluid`/`clientAmount` fields are still not
+    resurrected, per the interpolation call above).
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

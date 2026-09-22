@@ -73,11 +73,14 @@ import buildcraft.BCFactoryRegistries;
  * Java does not allow two same-parameter-list methods that differ only in return type. Both copies use
  * {@link #getConnectedTanks()} so the two files read the same way.
  *
- * <p><b>Everything render/old-network/GUI-only is dropped</b>, matching every precedent already established in
- * this pass ({@code TilePump}, {@code TileChute}): {@code FluidSmoother}/{@code smoothedTank}/
- * {@code getFluidForRender} (client-side fluid-level interpolation with no renderer in this port to consume it),
- * the id-tagged {@code writePayload}/{@code readPayload}/{@code NET_FLUID_DELTA} network-cache system (NeoForge's
- * own sync already covers what is left), and {@code onActivated}'s two behaviours -- {@code FluidUtilBC
+ * <p><b>Old-network/GUI-only machinery is dropped</b>, matching every precedent already established in this pass
+ * ({@code TilePump}, {@code TileChute}): {@code FluidSmoother}/{@code smoothedTank}/{@code getFluidForRender}
+ * (client-side fluid-level interpolation) is <em>not</em> re-added even now that a renderer -- {@code RenderTileTank}
+ * -- exists to consume one: that renderer reads {@link #tank} directly every frame rather than through a separate
+ * interpolated cache, since {@link Tank}'s {@code onChange} callback already syncs on every content change (see
+ * {@code RenderTileTank}'s own javadoc for why that makes a second smoothing layer unnecessary here, unlike the
+ * engines' piston rod). The id-tagged {@code writePayload}/{@code readPayload}/{@code NET_FLUID_DELTA} network-cache
+ * system (NeoForge's own sync already covers what is left), and {@code onActivated}'s two behaviours -- {@code FluidUtilBC
  * .onTankActivated} (still not ported anywhere; see that class's own javadoc for why) and
  * {@code BCFactoryGuis.TANK.openGUI} (no GUI/container framework exists yet, the same "first genuinely new GUI
  * deferral" reasoning {@code BlockChute}'s dropped {@code onBlockActivated} already established). Right-clicking a

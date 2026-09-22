@@ -22,9 +22,12 @@ import net.neoforged.neoforge.transfer.fluid.FluidStacksResourceHandler;
  * {@code map}/{@code FluidGetResult} (all {@code ContainerBC_Neptune}-dependent, and there is still no GUI/
  * container framework anywhere in this port), {@code writeToBuffer}/{@code readFromBuffer}/{@code clientFluid}/
  * {@code clientAmount}/{@code getFluidForRender}/{@code colorRenderCache}/{@code refreshTooltip}/{@code toolTip}/
- * {@code helpInfo}/{@code ElementHelpInfo} (render/old-network-cache machinery with no renderer in this port to
- * consume it, the same "no renderer to serve it" reasoning {@code TileMiningWell}'s dropped render fields already
- * used). {@code onContentsChanged}'s {@code markChunkDirty()} call becomes a caller-supplied {@link #onChange}
+ * {@code helpInfo}/{@code ElementHelpInfo} (old-network-cache/tooltip machinery; {@code TileMiningWell}'s dropped
+ * render fields used the same reasoning). Now that {@code buildcraft.factory.tile.RenderTileTank} exists, note that
+ * it does <em>not</em> resurrect {@code clientFluid}/{@code clientAmount}/{@code getFluidForRender} -- it reads
+ * {@link #getResource(int)}/{@link #getAmountAsInt(int)} directly every frame instead, since {@link #onChange}
+ * already fires a full sync on every content change (see that renderer's own javadoc). {@code onContentsChanged}'s
+ * {@code markChunkDirty()} call becomes a caller-supplied {@link #onChange}
  * callback instead ({@code TileBC#markDirtyAndSync()}, wired up by whichever tile owns the tank) -- this class has
  * no {@code TileEntity} reference of its own to call back into any more, unlike 1.12.2's constructor-injected
  * {@code tile} field.
