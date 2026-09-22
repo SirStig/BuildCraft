@@ -1323,6 +1323,117 @@ Deliberately not ported, with reasons:
     review and the already-proven `move` primitive it is built on, not by a live cross-block transfer. Both dev
     servers booted and shut down cleanly with zero exceptions in the log either time.
 
+- **`buildcraft.factory` — `TileTank`/`BlockTank` (both platforms), the storage tank.** Stacked vertically with
+  others of its own kind, a tank behaves as one combined multi-block fluid reservoir: filling the bottom tank
+  spills upward once it is full, draining pulls from the top down for a liquid (bottom up for a gas), and a
+  capability query landing on *any* tile in the column sees the whole column's combined contents. This is the
+  first machine in this port whose defining behaviour genuinely spans multiple physical block entities at once,
+  not just one tile talking to its immediate neighbours.
+  - **The column walk itself ports unchanged in shape**: starting from `this`, walk upward one block at a time
+    while the neighbour above is a `TileTank` and `canTanksConnect` agrees, then the same downward, returning the
+    run bottom to top. It only ever looks straight up/down (a stack is 1-wide by definition), so it is not a
+    flood-fill and needs no visited-set. Every fluid method (`fill`/`drain`/`insert`/`extract`/
+    `balanceTankFluids`) calls this first, then spreads its work across the resulting list, reversing the list's
+    iteration order for a gas versus a liquid (liquid settles toward the bottom -> fill packs bottom-first, drain
+    empties top-first; gas rises -> both flip). **Renamed from 1.12.2's private `getTanks()` to
+    `getConnectedTanks()` on both platforms** -- not optional on 1.20.1, where `IFluidHandler` itself declares an
+    unrelated same-signature `int getTanks()` ("how many tank slots does this handler have") that this class also
+    has to implement; Java does not allow two same-parameter-list methods differing only in return type. 26.x has
+    no such collision but uses the same name for consistency between the two files.
+  - **The multi-tank capability aggregation needed real, different per-platform designs, confirmed via `javap`
+    against both merged jars -- not a mechanical trim of `TilePump`'s own single-tank capability.**
+    - On 26.x, `TileTank` implements `net.neoforged.neoforge.transfer.ResourceHandler<FluidResource>` *directly*
+      (confirmed via `javap`: `size()`, `getResource(int)`, `getAmountAsLong(int)`, `getCapacityAsLong(int, T)`,
+      `isValid(int, T)`, `insert(int, T, int, TransactionContext)`, `extract(int, T, int, TransactionContext)`),
+      as a single logical slot (`size() -> 1`) whose every method calls `getConnectedTanks()` and fans out across
+      the column -- the direct modern equivalent of 1.12.2's own `TileTank implements IFluidHandlerAdv`. Each
+      physical tile's own `tank` field (a plain one-slot `Tank`) still holds and serialises that block's own share
+      of the fluid; the aggregate view is assembled fresh from every tile's `tank` on each call, never cached.
+      Registered in `BCFactoryRegistries` exactly like `TilePump`'s own `Capabilities.Fluid.BLOCK` registration,
+      just handing back `tile` itself (now a `ResourceHandler<FluidResource>`) instead of a `tank` field.
+    - On 1.20.1, `IFluidTankProperties`/`FluidTankProperties` (what 1.12.2's `getTankProperties()` returned) do
+      not exist on this target at all -- confirmed via `javap` against the Forge 1.20.1 universal jar, neither
+      type is present. The modern `IFluidHandler` surface replaces that single properties array with
+      `getTanks()`/`getFluidInTank(int)`/`getTankCapacity(int)`/`isFluidValid(int, FluidStack)` directly, so
+      `TileTank` implements those four (plus `fill`/`drain`/`IFluidHandlerAdv#drain`) instead, still presenting
+      the whole column as slot `0`. Exposed through the tile's own `getCapability`/`invalidateCaps` override for
+      `ForgeCapabilities.FLUID_HANDLER`, the same per-instance pattern `TilePump`/`TileChute` already established,
+      returning `this` rather than a wrapped field.
+  - **The comparator hook's modern names, confirmed via `javap` against `BlockBehaviour` on both merged jars, with
+    a real signature divergence between the two targets.** 26.x: `protected boolean hasAnalogOutputSignal
+    (BlockState)` / `protected int getAnalogOutputSignal(BlockState, Level, BlockPos, Direction)` -- the extra
+    trailing `Direction` parameter (unused here, matching how 1.12.2's own `getComparatorInputOverride` never used
+    `world`/`pos` for anything beyond the tile lookup either) is genuinely not present on 1.20.1's copy of the
+    same two hooks, which are `public boolean hasAnalogOutputSignal(BlockState)` / `public int
+    getAnalogOutputSignal(BlockState, Level, BlockPos)`. `getComparatorLevel()`'s own math is unchanged 1.12.2
+    logic, unmoved, still reading this tile's own physical `tank` (not the whole column) -- a stacked column's
+    comparator output is per physical block, matching 1.12.2's own behaviour exactly.
+  - **No ticker.** 1.12.2's `update()` had two jobs: tick the dropped `FluidSmoother` (no renderer to serve it,
+    same reasoning as everywhere else in this port), and re-check the comparator level once a tick, calling
+    `markDirty()` again if it had changed -- but `Tank`'s own `onContentsChanged` already calls
+    `markChunkDirty()`/`markChunkDirty` on *every* content change regardless of whether the comparator level
+    actually moved, so that tick-polled recheck was already redundant in 1.12.2 itself the moment any fill/drain
+    had happened at all. Wiring `Tank`'s `onChange` callback straight to `markDirtyAndSync()` reproduces the one
+    behaviour that callback ever actually caused, with no ticker and no `getTicker` override on `BlockTank` at
+    all -- a deliberate simplification, not an oversight, documented here so a future reader does not assume a
+    ticker was simply forgotten.
+  - **`ITankBlockConnector` needed no port at all and is dropped, not just left unported.** It was a marker
+    interface 1.12.2's `BlockTank` implemented purely so `getActualState`/`shouldSideBeRendered` (the cosmetic
+    "block below is also a tank" face-culling blockstate) could check for it on a neighbour -- 1.12.2's own real
+    fluid-column logic (`TileTank#getTanks()`) already used a direct `instanceof TileTank` check, never the
+    marker. With `getActualState` gone entirely (no such hook exists any more -- see PORTING.md's structural-
+    changes list) and `shouldSideBeRendered` dropped with it (no renderer), nothing is left to read the marker.
+  - **Everything render/old-network/GUI-only is dropped**, matching every precedent already set by `TilePump`/
+    `TileChute`: `FluidSmoother`/`smoothedTank`/`getFluidForRender`, the id-tagged network-cache payload system,
+    and `onActivated`'s two behaviours (`FluidUtilBC.onTankActivated`, still not ported anywhere -- see that
+    class's own javadoc -- and `BCFactoryGuis.TANK.openGUI`, no GUI/container framework exists yet). Right-
+    clicking a tank is a no-op for now, matching `BlockChute`.
+  - **A full-cube default block shape was chosen deliberately, not by default neglect**, over reproducing
+    1.12.2's real non-cube bounding box (`2/16 .. 14/16` horizontally) and its matching `JOINED_BELOW`-aware
+    model: nothing in this pass exercises collision or occlusion fidelity for a tank, and there is no renderer to
+    show a faithful shape off either way -- the same call already made for `BlockPump`/`BlockEngineWood`'s own
+    non-cube 1.12.2 render types. The block model uses the real tank textures (`tank/end.png`, `tank/side.png`
+    from `buildcraft_resources`) on a plain cube parent; `tank/side_joined_below.png` is not pulled in, since
+    `JOINED_BELOW` itself is dropped (see above). `ICustomPipeConnection`/`getExtension` (pipe-connection-shape
+    hints) are dropped too -- `buildcraft.transport` is not ported at all, so there is no reader.
+  - The 1.12.2 recipe (`buildcraftfactory:tank`, a hollow ring of `#blockGlassColorless`) is **not** ported: same
+    "wait for a real ingredient rather than invent a substitute" reasoning `TilePump`'s own skipped recipe already
+    used for its own missing `buildcraftfactory:tank` ingredient (a coincidence of naming -- that pump recipe note
+    was about *this* block, now landed, but the glass-colour ore-tag ingredient this tank's own recipe needs is a
+    separate, still-unaddressed gap).
+  - Registered in the existing `BCFactoryRegistries` (additive, same shape as `PUMP`'s own registration, inserted
+    directly after it and before the `TUBE` block so as not to disturb the javadoc comment already anchored to
+    `TUBE`). Textures/blockstate/block+item model/loot table/lang pulled from `buildcraft_resources/assets/
+    buildcraftfactory/` following the established pattern.
+  - **Verified with forced rebuilds, the full 25-test suite, real dedicated-server boots on both targets with
+    zero exceptions in either log, and a real, observed, multi-tank fluid-balancing column via RCON on both --
+    not just single-tank fill/drain the way `TilePump`'s own verification was.** A `TilePump` was placed with a
+    three-tall `TileTank` column directly above it, over a 3x3 water pond, with its battery hand-filled via
+    `data merge block` (the same technique `TileMiningWell`/`TilePump` verification already established, looping
+    short RCON round trips rather than one long sleep to keep the idle dedicated server's world actually
+    ticking). On 26.x: after the battery fully drained, `data get block` on each of the three tank tiles showed
+    `16000`/`16000`/`3000` mB of `minecraft:water` bottom to top -- the bottom two tanks completely full and the
+    third correctly catching the overflow, entirely through the real `TilePump -> FluidUtilBC.pushFluidAround ->
+    TileTank.insert()` capability path (the first time `pushFluidAround` has ever been observed moving fluid
+    into a real second block in this port -- `TilePump`'s own verification pass had no fluid-accepting neighbour
+    to test against yet and said so explicitly). The apparent shortfall against a naive battery/10,000,000 x
+    1,000 mB estimate (35,000 mB delivered against a 500,000,000-microjoule battery that would suggest 50,000)
+    is fully accounted for, not a bug: that battery value was more than double `TilePump`'s real 50,000,000-
+    microjoule capacity, so `MjEffects.tick`'s `shedExcessPower()` (unit-tested, unchanged 1.12.2 arithmetic --
+    see `MjBatteryTester`) was faithfully burning off the excess above 2x capacity every tick throughout the
+    test, exactly as designed. A second run on 26.x and a fresh run on 1.20.1, both kept deliberately under that
+    2x-capacity shed threshold, confirmed exact accounting instead: 1.20.1's bottom tank read `9000`/`16000` mB
+    after 9 completed drain cycles (9,000 mB expected, 9,000 mB observed), and after a second battery top-up,
+    `16000`/`2000`/`0` mB bottom to top after 18 total cycles (18,000 mB expected, 18,000 mB observed) -- the
+    overflow into the second tank confirmed on this platform too, with zero loss once the shed mechanic was
+    avoided. Draining (top-down for a liquid) was **not** independently observed live -- there is still no real
+    in-game path to trigger `TileTank`'s own `extract`/`drain` at all in this build (`FluidUtilBC.onTankActivated`
+    is still unported, so right-clicking a tank with a bucket does nothing, and nothing else in this port drains
+    *from* a `TileTank`), so that half of the column logic is verified by code review and the same
+    already-proven `getConnectedTanks()`/direction-reversal machinery the fill path just demonstrated live, not
+    by an observed live drain -- worth a human double-check once a real fluid consumer exists to test it against.
+    Both dev servers booted and shut down cleanly with zero exceptions in the log either time.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -1341,7 +1452,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 49 | Chute, mining well + tube, pump (done). Tank block, autoworkbench. |
+| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank (done). Autoworkbench. |
 | `buildcraft.energy` | 41 | Combustion/stirling engines, oil, fuel. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
