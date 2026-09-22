@@ -23,6 +23,10 @@ import net.minecraft.util.StringRepresentable;
  * {@code "void"} -- is the real, live material name, not a guess). New values are appended: a blockstate property
  * value is saved by its serialized name, so the order does not affect existing worlds either way.
  *
+ * <p>The nine {@code *_fluid} values belong to the fluid pipes ({@code PIPE_*_FLUID}), whose definition ids keep
+ * 1.12.2's own {@code <material>_fluid} naming ({@code buildcraft:cobblestone_fluid}, ...), so the same
+ * {@code identifier.getPath()} lookup covers them with no special case.
+ *
  * <p>New, transport-local, following the exact shape {@code buildcraft.api.enums.EnumEngineType} already
  * established for a custom blockstate enum on this port ({@link StringRepresentable}, a lower-case
  * {@link #getSerializedName()} enforced by the same static assertion) -- kept inside {@code buildcraft.transport}
@@ -40,7 +44,18 @@ public enum EnumPipeMaterial implements StringRepresentable {
     GOLD("gold"),
     IRON("iron"),
     CLAY("clay"),
-    VOID("void");
+    VOID("void"),
+    // The fluid-carrying variants of the nine materials above: same behaviours, a different PipeDefinition
+    // (flowFluid() instead of flowItem()) and their own textures -- see BCTransportRegistries.
+    COBBLESTONE_FLUID("cobblestone_fluid"),
+    WOOD_FLUID("wood_fluid"),
+    STONE_FLUID("stone_fluid"),
+    SANDSTONE_FLUID("sandstone_fluid"),
+    QUARTZ_FLUID("quartz_fluid"),
+    GOLD_FLUID("gold_fluid"),
+    IRON_FLUID("iron_fluid"),
+    CLAY_FLUID("clay_fluid"),
+    VOID_FLUID("void_fluid");
 
     public static final EnumPipeMaterial[] VALUES = values();
 

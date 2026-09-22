@@ -17,16 +17,22 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 
 import net.neoforged.neoforge.capabilities.BlockCapability;
+import net.neoforged.neoforge.transfer.fluid.FluidResource;
+import net.neoforged.neoforge.transfer.resource.ResourceStack;
+import net.neoforged.neoforge.transfer.transaction.Transaction;
 
 import buildcraft.api.mj.IMjConnector;
 import buildcraft.api.mj.IMjRedstoneReceiver;
 import buildcraft.api.mj.MjAPI;
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.tiles.IDebuggable;
+import buildcraft.api.transport.pipe.IFlowFluid;
 import buildcraft.api.transport.pipe.IFlowItems;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.IPipe.ConnectedType;
 import buildcraft.api.transport.pipe.PipeBehaviour;
+import buildcraft.api.transport.pipe.PipeEventFluid;
+import buildcraft.api.transport.pipe.PipeEventHandler;
 
 import buildcraft.lib.inventory.filter.StackFilter;
 
@@ -37,17 +43,17 @@ import buildcraft.lib.inventory.filter.StackFilter;
  * re-reading that file directly for this batch's own design research, not assumed from memory of any other
  * BuildCraft version's own wooden pipe).
  *
- * <p><b>The fluid-extraction branch is dropped outright, not stubbed.</b> 1.12.2's {@code extract} tried both an
- * {@code IFlowItems} and an {@code IFlowFluid} branch; no fluid pipe of any kind is registered anywhere in this
- * port yet, so {@code pipe.getFlow() instanceof IFlowFluid} could never be true here -- an {@code instanceof}
- * that can never match is less honest than simply not writing the branch, so it (and the {@code fluidSideCheck}
- * {@code @PipeEventHandler}, which only ever mattered to a fluid-flow pipe) are both gone.
+ * <p><b>The fluid-extraction branch is back</b> now that the wooden fluid pipe ({@code PIPE_WOOD_FLUID}) exists:
+ * with an {@code IFlowFluid} flow, {@link #extract} pulls up to one millibucket per {@link #MJ_PER_MILLIBUCKET}
+ * of power from the active face's tank via {@code IFlowFluid#tryExtractFluid}, and {@link #fluidSideCheck} stops
+ * the flow pushing fluid back out through that same face -- both straight from 1.12.2, which the item batch had
+ * dropped while no fluid flow existed.
  *
  * <p><b>{@code BCTransportConfig.mjPerItem} becomes a plain local constant, not a ported config class.</b>
  * {@code BCTransportConfig} is a whole 1.12.2 Forge {@code Configuration}-file system with no equivalent anywhere
  * in this port; only the one numeric value this behaviour actually reads is kept here, at its 1.12.2 default
- * ({@code MjAPI.MJ}, i.e. a full Minecraft Joule per item). {@code mjPerMillibucket} is not needed at all, since
- * the fluid branch above is not ported.
+ * ({@code MjAPI.MJ}, i.e. a full Minecraft Joule per item), and likewise {@code mjPerMillibucket} as
+ * {@link #MJ_PER_MILLIBUCKET} (its default, 1000 micro-MJ -- a thousandth of an MJ per millibucket).
  *
  * <p><b>{@code addActions}/{@code onActionActivate} and {@code getTextureData}/network payload sync stay
  * dropped</b> -- see {@link PipeBehaviourDirectional}'s own javadoc for all of them (the active face now reaches
@@ -80,6 +86,9 @@ public class PipeBehaviourWood extends PipeBehaviourDirectional implements IMjRe
     /** 1.12.2's {@code BCTransportConfig.mjPerItem} default -- see this class's own javadoc. */
     private static final long MJ_PER_ITEM = MjAPI.MJ;
 
+    /** 1.12.2's {@code BCTransportConfig.mjPerMillibucket} default -- see this class's own javadoc. */
+    private static final long MJ_PER_MILLIBUCKET = 1_000;
+
     public PipeBehaviourWood(IPipe pipe) {
         super(pipe);
     }
@@ -98,13 +107,30 @@ public class PipeBehaviourWood extends PipeBehaviourDirectional implements IMjRe
         return dir != null && pipe.getConnectedType(dir) == ConnectedType.TILE;
     }
 
+    @PipeEventHandler
+    public void fluidSideCheck(PipeEventFluid.SideCheck sideCheck) {
+        if (currentDir.face != null) {
+            sideCheck.disallow(currentDir.face);
+        }
+    }
+
     protected long extract(long power, boolean simulate) {
-        if (power > 0 && pipe.getFlow() instanceof IFlowItems flow) {
-            int maxItems = (int) (power / MJ_PER_ITEM);
-            if (maxItems > 0) {
-                int extracted = extractItems(flow, getCurrentDir(), maxItems, simulate);
-                if (extracted > 0) {
-                    return power - extracted * MJ_PER_ITEM;
+        if (power > 0) {
+            if (pipe.getFlow() instanceof IFlowItems flow) {
+                int maxItems = (int) (power / MJ_PER_ITEM);
+                if (maxItems > 0) {
+                    int extracted = extractItems(flow, getCurrentDir(), maxItems, simulate);
+                    if (extracted > 0) {
+                        return power - extracted * MJ_PER_ITEM;
+                    }
+                }
+            } else if (pipe.getFlow() instanceof IFlowFluid flow) {
+                int maxMillibuckets = (int) Math.min(Integer.MAX_VALUE, power / MJ_PER_MILLIBUCKET);
+                if (maxMillibuckets > 0) {
+                    int extracted = extractFluid(flow, getCurrentDir(), maxMillibuckets, simulate);
+                    if (extracted > 0) {
+                        return power - extracted * MJ_PER_MILLIBUCKET;
+                    }
                 }
             }
         }
@@ -113,6 +139,25 @@ public class PipeBehaviourWood extends PipeBehaviourDirectional implements IMjRe
 
     protected int extractItems(IFlowItems flow, @Nullable Direction dir, int count, boolean simulate) {
         return flow.tryExtractItems(count, dir, null, StackFilter.ALL, simulate);
+    }
+
+    /** 1.12.2 returned the extracted {@code FluidStack}; only its amount was ever used. The simulate flag becomes a
+     * root transaction that is only committed when not simulating -- the same shape
+     * {@code PipeFlowItems#tryExtractItems} uses on this target. */
+    protected int extractFluid(IFlowFluid flow, @Nullable Direction dir, int millibuckets, boolean simulate) {
+        if (dir == null) {
+            return 0;
+        }
+        try (Transaction transaction = Transaction.openRoot()) {
+            ResourceStack<FluidResource> extracted = flow.tryExtractFluid(millibuckets, dir, null, transaction);
+            if (extracted == null || extracted.isEmpty()) {
+                return 0;
+            }
+            if (!simulate) {
+                transaction.commit();
+            }
+            return extracted.amount();
+        }
     }
 
     // IMjRedstoneReceiver

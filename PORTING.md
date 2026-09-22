@@ -3985,6 +3985,168 @@ Deliberately not ported, with reasons:
   `FluidStateModelSet.LAVA_MODEL`). Both call sites now fall back to untinted white. 1.20.1 is unaffected: its
   `IClientFluidTypeExtensions#getTintColor` always returns a colour.
 
+- **`buildcraft.transport` -- fluid pipes: `PipeFlowFluids` and nine fluid-pipe materials (cobblestone, wood,
+  stone, sandstone, quartz, gold, iron, clay, void), with fluid rendering.** Each material is a new
+  `PipeDefinition` (same behaviour class as its item sibling, `flowFluid()` instead of `flowItem()`, id
+  `buildcraft:<material>_fluid` as in 1.12.2) and an `ItemPipeHolder` `pipe_fluid_<material>`. No new block or
+  tile, per the one-block-many-materials architecture.
+  - **`PipeFlowFluids` (both platforms) is the original's movement logic line for line**: seven sections (six
+    faces and the centre); `moveFromPipe` (side -> neighbour), `moveFromCenter` (centre -> sides, split evenly by
+    the transfer rate, shuffled), `moveToCenter` (sides -> centre, via the `PreMoveToCentre`/`OnMoveToCentre`
+    events). Each section has a `ticksInDirection` state machine: set to -60 when fluid comes in and +60 when it
+    goes out, and it decays one per tick. Only non-negative sections output and only non-positive ones input, so
+    fluid can move in, out and back. Each section also has an `incoming[]` ring buffer of `currentDelay` ticks
+    that holds new fluid before it can move on. Capacity is 1.12.2's `max(1000, rate x 10)`. Rates are
+    `BCTransportConfig`'s `fluidTransfer` calls with the default `baseFlowRate` 10: cobble/wood 10 mB/t,
+    stone/sandstone 20, clay/iron/quartz 40, gold 80 (delay 2), void 80. They go into `PipeApi.fluidTransferData`
+    from a static block in `BCTransportRegistries`. The `PipeEventFluid` API was already ported and needed no
+    change. NBT keys match 1.12.2: `fluid`, and `tank[0..6]` indexed by `EnumPipePart` with 6 as the centre.
+    That includes the original's misleading `capacity` key, which holds a section's *amount*.
+  - **26.x: the transfer API, transaction-safe like `PipeFlowItems`.** Each section is a
+    `ResourceHandler<FluidResource>`, registered under `Capabilities.Fluid.BLOCK` in `registerCapabilities` (it is
+    null for item pipes). `javap` of `neoforge-26.3.0.7-beta-universal.jar`: `Capabilities$Fluid.BLOCK` is a
+    `BlockCapability<ResourceHandler<FluidResource>, Direction>`, and `ResourceHandler` declares `insert(int, T,
+    int, TransactionContext)` plus a *default* `insert(T, int, TransactionContext)`. The decompiled source shows
+    the default loops `for (index < size())`. That is why a section reports one slot (the pipe's fluid and that
+    section's amount) where 1.12.2 reported zero tank properties: with zero slots, `FluidUtilBC.move`/
+    `pushFluidAround` could never insert. Extraction returns 0, as 1.12.2's `drain`s did.
+    - Every mutation reachable from someone else's transaction (`Section#insert`, `tryExtractFluid`,
+      `insertFluidsForce`, `extractFluidsForce`) first calls `journal.updateSnapshots(tx)`. The
+      `SnapshotJournal<FlowSnapshot>` covers the fluid, the delay, and each section's amount, direction,
+      `currentTime` and ring buffer. The flow's own pushes open a root `Transaction`, and the flow drains its
+      section only after that transaction commits.
+    - The current fluid is a `FluidResource`: 1.12.2's `FluidStack` amount meant nothing, and
+      `FluidResource.CODEC` stores just the id and components. The `PipeEventFluid` events still take a
+      `FluidStack`, so one is built per event.
+    - `tryExtractFluidAdv` merges into `tryExtractFluid(IFluidFilter)` through `FluidFilters.findExtractable`, as
+      the 26.x `IFlowFluid` javadoc already specifies.
+  - **1.20.1 is 1.12.2's shape almost verbatim.** Each section is a classic `IFluidHandler`, reached from
+    `PipeFlow#getCapability(ForgeCapabilities.FLUID_HANDLER)` through `TilePipeHolder#getCapability`, so no
+    registration is needed. Simulation uses `FluidAction.execute()` (`javap`: `IFluidHandler$FluidAction` has
+    `execute()`) and needs no journal. `tryExtractFluidAdv` keeps 1.12.2's fallback of walking `getTanks()` for
+    non-`IFluidHandlerAdv` tanks, and returns null only where 1.12.2 returned `PASS` (no handler on that side).
+    The `fluid` tag is a classic `FluidStack` tag, so it carries the pipe's total as `Amount`. One small fix to
+    the original: its `extractSimple` compared the filter with itself (`!filter.isFluidEqual(filter)`), so its
+    "drained the wrong fluid" check could never fire. It now compares against what was actually drained.
+  - **Connections.** `canConnect(face, PipeFlow)` is `other instanceof IFlowFluid` (item flows:
+    `instanceof IFlowItems`). `canConnect(face, BlockEntity)` asks the neighbour for the fluid capability. Since
+    `Pipe#updateConnections` handles a neighbouring *pipe* only through `canPipesConnect` and then `continue`s,
+    item and fluid pipes can never connect to each other. Tanks, pumps and the auto workbench expose fluids, so
+    fluid pipes connect to them and item pipes don't.
+  - **Behaviours: the fluid handlers the item batches dropped "while no fluid flow existed" are back**, both
+    platforms, straight from 1.12.2:
+    - Wood gets its `IFlowFluid` extraction branch (`MJ_PER_MILLIBUCKET` = 1000 micro-MJ, the `mjPerMillibucket`
+      default; on 26.x `simulate` is a root transaction committed only when not simulating) and `fluidSideCheck`
+      (never push back out of the extraction face).
+    - Iron gets `fluidSideCheck` (output only through the active face) and `fluidInsert` (refuse fluid offered
+      through the active face).
+    - Void gets a static `OnMoveToCentre` handler that zeroes `fluidEnteringCentre`.
+    - Clay gets its `PipeEventFluid.SideCheck` `orderSides` overload.
+    - Stone/cobblestone/quartz (`PipeBehaviourSeparate`) and sandstone (pipes only) keep their connection rules.
+  - **Client sync, and the bandwidth choice.** A client-side pipe never ticks, so it sees only what the last
+    whole-tile sync wrote. 1.12.2 sent `NET_FLUID_AMOUNTS` when any section's amount or direction differed from
+    what was last sent, throttled by a `SafeTimeTracker` at `networkUpdateRate` (10 ticks). The port keeps that
+    policy: compare with the last-sent values each tick, and call `scheduleNetworkUpdate(FLOW)` (a whole-tile
+    `markDirtyAndSync`, the same route as items) at most once per 10 ticks. A settled or full pipe never syncs,
+    and a flowing one costs at most 2 tile updates a second. Client-side smoothing
+    (`clientAmountLast`/`clientAmountThis`, flow offsets) is dropped, because each sync rebuilds the client's
+    `Pipe`, so nothing survives to interpolate between.
+  - **Rendering (`RenderTilePipeHolder`, both platforms)** uses 1.12.2's `PipeFlowRendererFluids` geometry:
+    - A horizontal side section is a box filled to `amount/capacity` of its height (from the top for a gas,
+      `FluidType#getDensity() < 0`). A vertical one is a full-height column of width `sqrt(fill)`.
+    - The centre is a filled cube when anything horizontal flows (or nothing leaves vertically), topped by a
+      column when fluid leaves upward.
+    - Sprite and tint follow `RenderTileTank`: on 26.x the `FluidStateModelSet` `FluidModel` with a nullable
+      `tintSource()` (lava), inside the state-extraction/`submitCustomGeometry` split; on 1.20.1
+      `IClientFluidTypeExtensions` and `RenderType.entityTranslucent(BLOCK_ATLAS)`. UVs come from each vertex's
+      block-space position (1.20.1 `TextureAtlasSprite#getU(double)` takes 0..16), so small boxes don't stretch
+      the sprite.
+    - The animated flow offsets are not reproduced.
+  - **Blockstate: 9 new `EnumPipeMaterial` values (`cobblestone_fluid` ... `void_fluid`)**, so each fluid pipe
+    has its own core/arm/cube models and textures. Wood/iron fluid get `_filled` arms for the active face.
+    - `pipe_holder.json` (both platforms, byte-identical, 150 entries: 18 cores + 14 x 6 plain arms + 4 x 6 x 2
+      clear/filled arms) is generated by a script. The script was first checked to reproduce the old 75-entry
+      file byte for byte, then run with the 9 fluid materials appended.
+    - **State count: 18 materials x 7 `active` values x 2^6 connections = 8064** (was 4032), noted on
+      `BlockPipeHolder.ACTIVE`.
+    - Textures are byte-identical copies from `buildcraft_resources/.../textures/pipes/`: `pipe_<m>_fluid.png` =
+      `<m>_fluid.png`; for wood and iron, `pipe_<m>_fluid.png` = `<m>_fluid_clear.png` and `_filled` =
+      `<m>_fluid_filled.png`. Core/arm/cube models are string-substituted from wood's.
+    - Item models: `items/pipe_fluid_<m>.json` on 26.x, `models/item/` on 1.20.1. Lang: "<Material> Fluid Pipe"
+      (1.12.2's `item.PipeFluids*` names).
+    - A Python check parsed every JSON (286 on 26.x, 258 on 1.20.1) and resolved every multipart/item model and
+      every texture those models reference, with 0 missing. It also confirmed the PNGs are byte-identical.
+      Atlas stitching and on-screen appearance are left for the consolidated client check.
+  - **In-game verification, both platforms.** Private dedicated servers ran from an `rsync` snapshot's
+    Gradle-generated `runServer.sh` (`createServerLaunchScript`) with `--nogui`, private game dirs, ports
+    25631/25632 and 25633/25634, a flat world, `pause-when-empty-seconds=0` on 26.x, and `MOD_CLASSES` on 1.20.1.
+    Pipes were placed with `setblock` + `data merge {pipe:{def:"buildcraft:<m>_fluid"}}`, and each wooden pipe
+    was powered by a creative engine above it. Results were identical on 26.x and 1.20.1 unless noted:
+    - *Pump -> wood -> 3 cobblestone -> tank* over a 5x5 water pool:
+      - The tank filled at exactly the cobblestone rate: 3870 -> 5870 -> 7880 mB at t = 1250/1450/1651 on 26.x,
+        and 5390 -> 7400 over 201 ticks on 1.20.1.
+      - Mid-transfer section NBT, cobble pipe 5 (26.x): `"tank[4]": {ticksInDirection: -59s, capacity: 90s}`,
+        `"tank[6]": {capacity: 100s}`, `"tank[5]": {ticksInDirection: 59s, capacity: 100s}`, `fluid: {id:
+        "minecraft:water"}`, with the ring buffer holding `in[i]: 10s`.
+      - Blockstates: `[material=wood_fluid,west=true,east=true,active=west]` and
+        `[material=cobblestone_fluid,...]` both `Test passed`.
+      - Pump-path rollback check (26.x): pump engine removed and an empty tank swapped in. Pump tank + four pipes
+        + tank stayed at 26020-26030 while the pump tank drained 8410 -> 0 into the line, then settled at
+        26000 (tank full). That is no creation from the pump's never-committed simulate insert. The +/-10-30 is
+        read skew between consecutive RCON reads of a moving line.
+    - *Wood extraction from a tank (oil)*: tank (8000 `buildcraft:oil`) -> wood -> cobble -> tank. Everything
+      arrived: source 0, destination 8000, pipes empty afterwards (`fluid` tag gone).
+    - *Iron*: wood -> iron junction with tanks north/south/east.
+      - The iron pipe first auto-picked `WEST`, its input side. `fluidInsert` then refused all input: every tank
+        stayed empty.
+      - After `data merge {pipe:{beh:{currentDir:"SOUTH"}}}`, `[active=south,north/south/east/west=true]`, and
+        only the south tank filled: 26.x N 0 / S 3980 / E 0; 1.20.1 N 0 / S 1990 / E 0.
+    - *Void*: tank (8000 oil) -> wood -> void -> tank. The source drained (2010 left on 26.x, 4050 on 1.20.1 at
+      the reading), the far tank stayed at 0, and the void pipe held only its inbound side section
+      (`"tank[4]": capacity 90s`) with the centre at `0s`.
+    - *Every material*: tank (4000 lava) -> wood -> stone -> gold -> quartz -> clay -> sandstone -> cobble ->
+      tank. 3750 mB arrived with 250 in transit, on both. Every pipe's `[material=..,west=true,east=true]`
+      passed. Sandstone stayed unconnected to a tank beside it (`south=false`), and that tank stayed empty.
+      Stone next to quartz did not connect (`PipeBehaviourSeparate`), confirmed in a first layout.
+    - *Item vs fluid*: fluid, fluid, item, item cobblestone pipes in a row, with a tank south and a chest north of
+      the middle two.
+      - Middle fluid pipe: `[west=true,east=false,south=true,north=false]` (`con: 384` = PIPE west + TILE
+        south).
+      - Middle item pipe: `[west=false,east=true,south=false,north=true]` (`con: 1056` = TILE north + PIPE
+        east).
+      - So item and fluid pipes don't connect to each other, fluid pipes connect to tanks and not chests, and item
+        pipes the reverse. Both platforms.
+    - *Save/restart with contents*:
+      - 26.x: `tick freeze`, then line B read at 16000 total mid-transfer (source 6000, wood `{4: 410, 5: 100, 6:
+        1000}`, cobble `{4: 90, 5: 100, 6: 100}`, dest 8200). Then `save-all flush`, `stop`, restart, freeze
+        again. The world ran 7 ticks before the second freeze and 16000 was still exact (60 mB had moved on),
+        with the full pump line's 4 x 3000 mB unchanged. After `tick unfreeze` it kept flowing.
+      - 1.20.1 has no `/tick`, so conservation was checked instead: 15990 before and 15990 after, the same read
+        skew both times. The mid-transfer pump line came back with the same section pattern
+        (`{4: 990, 5: 100, 6: 1000}` ...).
+    - Every server log across all boots and restarts has zero exceptions. The only `ERROR` line is vanilla's
+      flat-preset `No key layers in MapLike[{}]` on first world creation.
+  - **Not verified / scope cuts.**
+    - On-screen fluid rendering is deferred to the coordinator's visual check. The renderer only compiles here.
+    - `addDrops`: 1.12.2 dropped the fluid as a fragile fluid shard, an unported `BCCoreItems` item, so a broken
+      pipe's fluid is lost.
+    - `addTriggers`/gates are not ported, and neither are diamond/diamond-wood/obsidian fluid pipes or colours.
+    - A pipe changed in place between item and fluid by `/data merge` does not call `invalidateCapabilities()`.
+      Normal placement never changes a pipe's flow.
+  - **Files, both platforms.**
+    - New: `transport/pipe/flow/PipeFlowFluids.java`, plus the assets: 9 textures + 2 `_filled`, 9 x
+      core/arm/cube models + 2 `_filled` arms, and 9 item models.
+    - Modified: `BCTransportRegistries` (`flowFluids`, definitions, rates, items; on 26.x also the
+      `Capabilities.Fluid.BLOCK` registration), `EnumPipeMaterial`, `BlockPipeHolder` (javadoc: state count),
+      `PipeBehaviour{Wood,Iron,Void,Clay}`, `RenderTilePipeHolder`, `blockstates/pipe_holder.json`,
+      `lang/en_us.json`.
+    - Nothing outside `buildcraft.transport` and the shared lang file changed. The `buildcraft.api.transport`
+      fluid API needed no change.
+  - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` in a
+    private `rsync` snapshot (with other agents' in-progress files reverted to HEAD in the snapshot only) and the
+    full test suite (25/25). An incremental compile of both platforms in the shared tree, with everyone's current
+    changes, is also green.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -4000,7 +4162,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood item pipes, colours, wires, gates, pluggables, fluid/power flow still to come. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables, power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves). |

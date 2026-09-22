@@ -14,6 +14,7 @@ import net.minecraft.nbt.CompoundTag;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.IPipe.ConnectedType;
 import buildcraft.api.transport.pipe.PipeBehaviour;
+import buildcraft.api.transport.pipe.PipeEventFluid;
 import buildcraft.api.transport.pipe.PipeEventHandler;
 import buildcraft.api.transport.pipe.PipeEventItem;
 
@@ -25,9 +26,9 @@ import buildcraft.api.transport.pipe.PipeEventItem;
  * first (highest-priority) group and {@code PipeFlowItems} only ever falls back to a pipe face once none are left
  * (e.g. every inventory refused the item and it bounced).
  *
- * <p><b>The {@code PipeEventFluid.SideCheck} overload of {@code orderSides} is dropped</b> -- no fluid pipe flow
- * exists in this port yet, the same reasoning {@code PipeBehaviourWood}/{@link PipeBehaviourVoid} already give.
- * Extends {@link PipeBehaviour} directly, not {@link PipeBehaviourSeparate}, matching the original.
+ * <p>The {@code PipeEventFluid.SideCheck} overload of {@link #orderSides} does the same for the clay fluid pipe
+ * ({@code PIPE_CLAY_FLUID}): the centre fills tank faces before pipe faces. (Dropped by the item batch while no
+ * fluid flow existed; restored with it.) Extends {@link PipeBehaviour} directly, not {@link PipeBehaviourSeparate}, matching the original.
  */
 public class PipeBehaviourClay extends PipeBehaviour {
     public PipeBehaviourClay(IPipe pipe) {
@@ -46,6 +47,17 @@ public class PipeBehaviourClay extends PipeBehaviour {
                 /* We only really need to increase the priority, but using a larger number (100) means that it doesn't
                  * matter what plugs are attached (e.g. filters) and this will always prefer to go into inventories
                  * above the correct filters. (Although note that the filters still matter) */
+                ordering.increasePriority(face, 100);
+            }
+        }
+    }
+
+    @PipeEventHandler
+    public void orderSides(PipeEventFluid.SideCheck ordering) {
+        for (Direction face : Direction.values()) {
+            ConnectedType type = pipe.getConnectedType(face);
+            if (type == ConnectedType.TILE) {
+                // Same reasoning as the item overload above.
                 ordering.increasePriority(face, 100);
             }
         }

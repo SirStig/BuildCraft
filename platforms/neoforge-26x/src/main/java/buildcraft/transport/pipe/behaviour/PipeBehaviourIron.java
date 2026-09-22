@@ -15,6 +15,7 @@ import net.minecraft.nbt.CompoundTag;
 
 import buildcraft.api.core.EnumPipePart;
 import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pipe.PipeEventFluid;
 import buildcraft.api.transport.pipe.PipeEventHandler;
 import buildcraft.api.transport.pipe.PipeEventItem;
 
@@ -29,8 +30,11 @@ import buildcraft.api.transport.pipe.PipeEventItem;
  * dropped -- so an item entering through the active face itself (the one direction this pipe refuses to send
  * it back out of) returns to its sender rather than spilling on the ground, matching the original exactly.
  *
- * <p><b>Dropped, for the same no-fluid-flow reason {@code PipeBehaviourWood}/{@link PipeBehaviourClay} give:</b>
- * {@code fluidSideCheck} and {@code fluidInsert}. {@code getTextureIndex} is dropped too, matching
+ * <p>The fluid pipe ({@code PIPE_IRON_FLUID}) uses this same behaviour: {@link #fluidSideCheck} is the fluid twin
+ * of {@link #sideCheck} (the centre only ever pushes fluid out of the active face), and {@link #fluidInsert}
+ * refuses fluid offered <em>through</em> the active face, so a neighbour on the output side cannot push back in.
+ * (Both were dropped by the item batch while no fluid flow existed; restored with it.) {@code getTextureIndex} is
+ * dropped, matching
  * {@code PipeBehaviourWood}'s own {@code getTextureData} drop: it is {@code @Deprecated} on this port's
  * {@code PipeBehaviour} and nothing in this port reads either method -- the active face's "filled" texture is
  * driven by the {@code active} blockstate property instead (see {@code BlockPipeHolder#ACTIVE}), for both
@@ -62,5 +66,21 @@ public class PipeBehaviourIron extends PipeBehaviourDirectional {
     @PipeEventHandler
     public static void tryBounce(PipeEventItem.TryBounce tryBounce) {
         tryBounce.canBounce = true;
+    }
+
+    @PipeEventHandler
+    public void fluidSideCheck(PipeEventFluid.SideCheck sideCheck) {
+        if (currentDir == EnumPipePart.CENTER) {
+            sideCheck.disallowAll();
+        } else {
+            sideCheck.disallowAllExcept(currentDir.face);
+        }
+    }
+
+    @PipeEventHandler
+    public void fluidInsert(PipeEventFluid.TryInsert insert) {
+        if (currentDir.face == insert.from) {
+            insert.cancel();
+        }
     }
 }

@@ -7,11 +7,14 @@
  */
 package buildcraft.transport.pipe.behaviour;
 
+import java.util.Arrays;
+
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.PipeBehaviour;
+import buildcraft.api.transport.pipe.PipeEventFluid;
 import buildcraft.api.transport.pipe.PipeEventHandler;
 import buildcraft.api.transport.pipe.PipeEventItem;
 
@@ -22,10 +25,11 @@ import buildcraft.api.transport.pipe.PipeEventItem;
  * {@code PipeEventItem.ReachCenter#getStack()} comes back empty -- the exact short-circuit the original relied on,
  * confirmed present in this port's own {@code PipeFlowItems} rather than assumed.
  *
- * <p><b>The {@code PipeEventFluid.OnMoveToCentre} handler is dropped</b>, the same call {@code PipeBehaviourWood}
- * already made for its own {@code fluidSideCheck}: no fluid pipe flow is registered anywhere in this port yet, so
- * no {@code PipeEventFluid} could ever reach this behaviour. (The original's sound-effect block inside that
- * handler was already commented out in 1.12.2 itself -- nothing is lost there either.)
+ * <p>The void fluid pipe ({@code PIPE_VOID_FLUID}) uses this same behaviour: {@link #moveFluidToCentre} zeroes
+ * every {@code PipeEventFluid.OnMoveToCentre#fluidEnteringCentre} entry, so fluid drained out of a side section
+ * towards the centre never arrives there -- it is destroyed. (Dropped by the item batch while no fluid flow
+ * existed; restored with it. The original's sound-effect block inside that handler was already commented out in
+ * 1.12.2 itself, so nothing is lost there.)
  */
 public class PipeBehaviourVoid extends PipeBehaviour {
     public PipeBehaviourVoid(IPipe pipe) {
@@ -39,5 +43,10 @@ public class PipeBehaviourVoid extends PipeBehaviour {
     @PipeEventHandler
     public static void reachCenter(PipeEventItem.ReachCenter reachCenter) {
         reachCenter.getStack().setCount(0);
+    }
+
+    @PipeEventHandler
+    public static void moveFluidToCentre(PipeEventFluid.OnMoveToCentre move) {
+        Arrays.fill(move.fluidEnteringCentre, 0);
     }
 }

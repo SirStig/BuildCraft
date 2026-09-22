@@ -77,9 +77,10 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
      * {@link EnumPipeActiveFace#NONE} -- always {@code NONE} for every other material. Pushed by
      * {@code TilePipeHolder#updateConnectionBlockState} exactly like {@link #MATERIAL}; {@code pipe_holder.json}
      * uses it to swap that one direction's arm onto the material's {@code _filled} arm model, reproducing
-     * 1.12.2's clear/filled face textures. Multiplies the state count by 7 (9 materials x 64 connection
-     * combinations x 7 = 4032 states) -- acceptable for a single block, and far simpler than a custom baked
-     * model. */
+     * 1.12.2's clear/filled face textures. Multiplies the state count by 7: 18 materials (9 item + 9 fluid) x 64
+     * connection combinations x 7 = 8064 states (4032 before the fluid pipes) -- still acceptable for a single
+     * block (the state table is built once at startup; vanilla redstone wire, for comparison, has 1296), and far
+     * simpler than a custom baked model. */
     public static final EnumProperty<EnumPipeActiveFace> ACTIVE = EnumProperty.create("active", EnumPipeActiveFace.class);
 
     public BlockPipeHolder(BlockBehaviour.Properties properties) {
