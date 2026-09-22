@@ -131,7 +131,15 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
 
     public PipeFlowItems(IPipe pipe, CompoundTag nbt, HolderLookup.Provider registries) {
         super(pipe, nbt, registries);
-        long tickNow = pipe.getHolder().getPipeLevel().getGameTime();
+        // getPipeLevel() is genuinely null here on a real disk-loaded chunk (confirmed live: BlockEntity#load runs
+        // before BlockEntity#setLevel during vanilla chunk deserialization, not after, so this constructor -- run
+        // from TilePipeHolder's own loadAdditional -- has no level yet). TravellingItem's own tickStarted/
+        // tickFinished are stored as *relative* offsets from whatever tickNow writeToNbt used, so any consistent
+        // placeholder works here without corrupting the pipe's own material/connection data the way an uncaught
+        // NullPointerException did (every pipe on every platform silently lost its Pipe entirely on world reload).
+        // The only cost of the placeholder is that an item genuinely mid-transit at save time reads as "already
+        // arrived" the instant this tile starts ticking for real, rather than finishing its remaining travel time.
+        long tickNow = pipe.getHolder().getPipeLevel() != null ? pipe.getHolder().getPipeLevel().getGameTime() : 0;
         for (Tag itemTag : nbt.getListOrEmpty("items")) {
             if (itemTag instanceof CompoundTag itemCompound) {
                 TravellingItem item = new TravellingItem(itemCompound, tickNow, registries);
@@ -145,7 +153,9 @@ public final class PipeFlowItems extends PipeFlow implements IFlowItems {
     @Override
     public CompoundTag writeToNbt(HolderLookup.Provider registries) {
         CompoundTag nbt = super.writeToNbt(registries);
-        long tickNow = pipe.getHolder().getPipeLevel().getGameTime();
+        // Same null guard as the NBT-loading constructor above, for the symmetric (unconfirmed but plausible) case
+        // of a tool that copies a placed tile's NBT into an ItemStack without ever attaching it to a level.
+        long tickNow = pipe.getHolder().getPipeLevel() != null ? pipe.getHolder().getPipeLevel().getGameTime() : 0;
         ListTag list = new ListTag();
         for (List<TravellingItem> bucket : buckets) {
             for (TravellingItem item : bucket) {

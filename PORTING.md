@@ -2671,6 +2671,282 @@ Deliberately not ported, with reasons:
     files still compile against the latest state of the rest of the codebase), the full 25-test suite, and real
     dedicated-server boots on both platforms with zero exceptions in either log.
 
+- **`buildcraft.factory` — `TileAutoWorkbenchFluids`/`BlockAutoWorkbenchFluids` (both platforms), the auto
+  workbench's fluids half, closing out `buildcraft.factory` entirely** (see the remaining-modules table below).
+  Extends the same `TileAutoWorkbenchBase` the items half already ported (unchanged, shared crafting/MJ logic --
+  see that half's own entry above), adding two `Tank` fields instead of a 3x3 blueprint's worth of material
+  slots: `super(..., 2, 2)` (a 2x2 blueprint, confirmed against `TileAutoWorkbenchBase`'s own constructor --
+  the two ints are the phantom grid's width/height, the same thing `TileAutoWorkbenchItems`'s own `super(..., 3,
+  3)` already established, not an input/output slot count), `tank1`/`tank2` each `FluidType.BUCKET_VOLUME * 6`
+  capacity, exposed per-side: `DOWN`/`NORTH`/`WEST` reach `tank1`, `UP`/`SOUTH`/`EAST` reach `tank2`, and a query
+  with no specific side reaches both combined -- the exact `EnumPipePart` split 1.12.2's own `CapUtil` wiring
+  used, translated straight onto `Direction`.
+  - **A genuine, `git`-verified finding worth recording up front: this block never actually shipped in 1.12.2
+    at all, despite its source existing.** Read `common/buildcraft/factory/BCFactoryBlocks.java` directly before
+    assuming otherwise (the coordinator's own brief flagged this as worth confirming, not guessing): the
+    registration line is commented out --- `// public static BlockAutoWorkbenchFluids autoWorkbenchFluids;` ---
+    and `buildcraft_resources/` has no asset of any kind for it: no block texture (only
+    `textures/blocks/auto_workbench_item/{top,side,side_alt,bottom}.png` exists, nothing under a `_fluid`/
+    `_fluids` name), no GUI texture (only `textures/gui/autobench_item.png`), no blockstate, no model, no loot
+    table, no recipe. `TileAutoWorkbenchFluids`/`BlockAutoWorkbenchFluids` themselves are real, complete, 39-
+    and 42-line classes -- this was a finished feature with its registration and assets simply never wired up,
+    not an abandoned half-write. Given that, "match the exact original registry id/texture" (the brief's own
+    starting assumption) had no real target to match: `auto_workbench_fluid` (singular, mirroring
+    `auto_workbench_item`) is this port's own choice, and the block/GUI textures are the items variant's own
+    textures reused directly (documented as a placeholder in `TileAutoWorkbenchFluids`/`BlockAutoWorkbenchFluids`'s
+    own javadoc and in the new model JSON's own directory), not invented new art. No crafting recipe was added
+    either, for the same reason 1.12.2 never had one: matching upstream's own unfinished state rather than
+    inventing new game content this pass wasn't asked to design.
+  - **New files, both platforms**: `buildcraft.factory.tile.TileAutoWorkbenchFluids`,
+    `buildcraft.factory.block.BlockAutoWorkbenchFluids`, `buildcraft.factory.container.ContainerAutoCraftFluids`,
+    `buildcraft.factory.gui.GuiAutoCraftFluids`, plus `assets/buildcraft/{blockstates,models/block}/
+    auto_workbench_fluid.json`, a 26.x-only `assets/buildcraft/items/auto_workbench_fluid.json` (1.20.1's
+    `models/item/auto_workbench_fluid.json` mirrors `auto_workbench_item`'s own platform-specific item-model
+    convention, already established), `data/buildcraft/loot_table{,s}/blocks/auto_workbench_fluid.json`, and a
+    `block.buildcraft.auto_workbench_fluid` lang entry on both platforms.
+  - **`TileAutoWorkbenchBase#createMenu` is overridden, not modified.** The shared base's own `createMenu`
+    (both platforms) is hardcoded to build a `ContainerAutoCraftItems` -- fine for the items half, wrong for
+    this one. Since that method carries no `final` on either target (confirmed by reading it, not assumed),
+    `TileAutoWorkbenchFluids` simply overrides it to build a `ContainerAutoCraftFluids` instead; the shared base
+    itself needed no edit at all, keeping this pass entirely inside `buildcraft.factory` as scoped.
+  - **No `TankManager` port exists in this codebase, and this pass didn't add one** -- nothing else has needed
+    a multi-tank capability-combining handler yet, so the "expose both tanks combined" (`side == null`) case
+    uses a small, purpose-built substitute per platform instead of a full port of 1.12.2's own class. On 26.x,
+    confirmed via `javap` against the real universal jar that NeoForge already ships exactly this shape ready-
+    made -- `net.neoforged.neoforge.transfer.CombinedResourceHandler<T>` (the same class
+    `ItemHandlerManager#getHandlerForFace` already uses to combine multiple item handlers onto one face) -- so
+    `combinedTanks` is a two-element `CombinedResourceHandler<FluidResource>` and the per-side branch lives
+    entirely inside `BCFactoryRegistries#registerCapabilities`'s own registration lambda, which already receives
+    the queried `Direction` directly: `side == null -> combinedTanks`, `DOWN/NORTH/WEST -> tank1`,
+    `UP/SOUTH/EAST -> tank2` -- the tile itself needs no per-side capability logic of its own at all, exactly as
+    the coordinator's own brief predicted once the registration lambda's shape was confirmed. On 1.20.1, `javap`
+    against the real Forge 1.20.1 universal jar found no equivalent combinator for fluids at all -- unlike
+    items' own `net.minecraftforge.items.wrapper.CombinedInvWrapper`, nothing under
+    `net.minecraftforge.fluids.**` combines multiple `IFluidHandler`s into one. Capabilities are exposed by the
+    tile itself on this target (matching `TilePump`/`TileFloodGate`'s own `getCapability` precedent, not a
+    registration-event lookup), so `TileAutoWorkbenchFluids` gets a small private `CombinedTanks implements
+    IFluidHandler` inner class instead, backed by a `Tank[] {tank1, tank2}` array, with `fill`/`drain` trying
+    each tank in turn and merging what came back -- the same "first handler that accepts, then the next" rule
+    `CombinedInvWrapper` itself already uses for items, just hand-written since no fluid equivalent exists to
+    reuse. `TileAutoWorkbenchFluids#getCapability` itself only adds the `FLUID_HANDLER` branch and falls through
+    to `super.getCapability` for everything else (MJ/has-work/items), since `TileAutoWorkbenchBase` already
+    handles those.
+  - **The GUI is a deliberate, explicitly-scoped-down screen, not a full port** -- flagged in the coordinator's
+    own brief as an acceptable cut if no precedent existed, and confirmed live that none does: no other tile
+    with a `Tank` field anywhere in this port (`TilePump`, `TileFloodGate`, `TileTank`) has a GUI/container at
+    all yet, so there is no existing "show a fluid tank in a GUI" pattern to follow, and (per the finding above)
+    no genuine `autobench_fluid.png` GUI texture ever existed to reuse either. `GuiAutoCraftFluids` therefore
+    paints a plain flat panel (`GuiGraphicsExtractor#fill`/`GuiGraphics#fill`) and renders both tanks' contents
+    plus the craft progress as plain text (`GuiGraphicsExtractor#text`/`GuiGraphics#drawString`) instead of
+    inventing a fluid-level bar/sprite from nothing -- the item/blueprint/material slot layout itself is a
+    straight copy of `GuiAutoCraftItems`'s own approach, just over `ContainerAutoCraftFluids`'s 2x2 grid instead
+    of 3x3. `ContainerAutoCraftFluids` adds no network plumbing for the tank contents at all: `TileBC`'s
+    existing full-NBT `getUpdateTag`/`markDirtyAndSync` sync (both platforms, already established, see
+    `TilePump`'s own `Tank` field for precedent) already mirrors `tank1`/`tank2` onto the client copy of the
+    tile for free, so the screen reads `menu.tile.tank1`/`tank2` straight off the synced tile rather than adding
+    a `DataSlot` the way the craft-progress bar needed to.
+  - **In-game verification, both platforms, via RCON against real dedicated servers, with a genuinely different
+    rig than every prior fluid-adjacent batch: a direct capability probe rather than a pump/tick simulation.**
+    Tried the more realistic route first, as the brief asked: since `BlockAutoWorkbenchFluids#useWithoutItem`/
+    `#use` always opens the GUI unconditionally on right-click (matching the items half's own no-wrench-check
+    precedent, confirmed by reading it, not assumed), a bucket right-click never reaches the block's fluid
+    capability at all -- the same "GUI swallows every right-click regardless of held item" behaviour the items
+    half already has. Driving a real `TilePump` into it instead was considered and rejected: this environment's
+    own documented tick-rate throttling with no connected player would have made an actual multi-tick pump dig-
+    and-push cycle impractically slow to observe inside a single RCON session. Instead, a temporary, self-
+    registering debug command (`buildcraft.debugtemp.DebugFluidCapCommand`, its own new file per platform,
+    deleted along with the whole `debugtemp` package before this task finished) called
+    `level.getCapability(Capabilities.Fluid.BLOCK, pos, side)` (26.x) / `blockEntity.getCapability(
+    ForgeCapabilities.FLUID_HANDLER, side)` (1.20.1) directly -- the exact same lookup a real neighbouring
+    block's capability query would perform -- and inserted 500 mB of water through whatever handler came back,
+    once per `Direction` plus once with no side at all. Self-registered via 26.x's `@EventBusSubscriber`/1.20.1's
+    `@Mod.EventBusSubscriber(bus = FORGE)` specifically so nothing in either platform's `BuildCraft.java` needed
+    touching (out of scope for this task), confirmed clean afterward: `git status` shows zero changes to either
+    `BuildCraft.java`, and the whole `debugtemp` package left no trace once deleted (never committed, so nothing
+    to `git diff` against). On both platforms, independently: `DOWN`/`NORTH`/`WEST` each inserted 500 mB
+    (`tank1` read back at 1500), `UP`/`SOUTH`/`EAST` each inserted another 500 mB (`tank2` at 1500), and the
+    final no-side insert landed in `tank1` (bringing it to 2000, `tank2` unchanged at 1500) -- proving the
+    combined handler genuinely delegates to the underlying tanks in order and respects each one's own remaining
+    capacity, not just that a non-null object came back. `/data get block` after every insert showed the exact
+    expected `tank1`/`tank2` NBT on both platforms (`{stacks: [{amount: 2000, id: "minecraft:water"}]}`/`{...
+    1500...}` on 26.x, `{FluidName: "minecraft:water", Amount: 2000}`/`{...1500...}` on 1.20.1), and a full
+    server restart in between (26.x) re-confirmed the same numbers read back unchanged, proving the NBT
+    round-trips through save/load correctly, not just that the in-memory object was mutated. The GUI-open check
+    used the same debug command to call `tile.createMenu(0, fakePlayer.getInventory(), fakePlayer)` directly
+    (the exact factory method a real player's `openMenu(tile)` reaches) rather than `FakePlayer#openMenu`
+    itself, which turned out to be a documented no-op with no real client connection to push the open-screen
+    packet to (confirmed live: it silently left `containerMenu` pointing at the default `InventoryMenu`, with no
+    exception either way) -- `createMenu` returned a real `ContainerAutoCraftFluids` with the expected 50 slots
+    (1 output + 4 blueprint + 4×2 material/filter + 1 display + 36 player inventory) on both platforms, with
+    zero exceptions anywhere in either server log.
+  - **A real, unrelated obstacle hit and worked around during this batch, not a bug in this batch's own code:**
+    mid-verification, `:neoforge-1201:compileJava` briefly failed with `cannot find symbol:
+    ResourceLocation.fromNamespaceAndPath` inside `buildcraft.energy.client.BCEnergyClientRegistries` -- a
+    concurrent, unrelated, uncommitted in-progress edit from a different task working on
+    `buildcraft.energy`/`buildcraft.core` engine rendering (outside this task's own scope, per the standing
+    rule against touching those packages), momentarily broken mid-edit in the same shared working tree. Not
+    fixed here, per that same rule -- simply waited out (a few automatic retries of the same compile command)
+    until the other task's own edit landed correctly, then proceeded. Also hit, and did not touch: the two
+    dev-server `run/server` directories are shared with whatever else is running concurrently against this same
+    checkout -- `neoforge-26x`'s `server.properties` port/rcon-port were temporarily bumped
+    (25566/25576) for this batch's own verification session, purely to avoid a real `Address already in use`
+    collision with another concurrently-running dev server on the default ports, and restored to the defaults
+    (25565/25575) afterward; `run/` is gitignored, so this never touched anything tracked.
+  - **Honest limitation, same category as every GUI-adjacent entry in this file**: no mouse/keyboard input
+    automation exists in this environment, so `GuiAutoCraftFluids`'s on-screen rendering (the plain panel, the
+    tank-content text) was never checked with a real client. What was verified is a clean compile, a clean
+    dedicated-server boot, and the underlying tile/container/capability logic via RCON exactly as described
+    above.
+  - Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite, and real
+    dedicated-server boots on both platforms with zero exceptions in either log, all re-run one final time after
+    the `debugtemp` packages and the temporary server-port bump were both removed/reverted, against the exact
+    code left behind for review.
+
+- **The three ported engines (`TileEngineWood`/`TileEngineCreative`/`TileEngineStone`) get a real animated
+  piston-rod render -- the first `BlockEntityRenderer` registered anywhere in this port, closing exactly the
+  gap `TileEngineBase`'s own javadoc had been documenting since the facing-visibility batch above ("nothing in
+  this port can register a `BlockEntityRenderer` yet ... it costs nothing to re-add once a renderer exists to
+  read `progress` from").** A small box slides out along the engine's own facing direction and back as
+  `progress` cycles, only while the engine is genuinely pumping -- not a reproduction of 1.12.2's real
+  `RenderEngine_BC8`/`MutableQuad` quad-based model framework, which has no counterpart anywhere in this port
+  and stayed explicitly out of scope; a from-scratch `ModelPart` cuboid is both simpler and idiomatic to the
+  modern rendering API on both targets.
+  - **`TileEngineBase#getRenderProgress(float)` (shared base, both platforms) is a small client-side-only mirror
+    of the server's own `progress`, not a literal read of it.** Read `serverTick()` again with this specifically
+    in mind: its `progress += getPistonSpeed()` increments happen every tick unconditionally, but nothing calls
+    `markDirtyAndSync()` for them -- only a `powerStage` change or an `isPumping` flip does, both comparatively
+    rare -- so a renderer naively lerping toward the client's copy of `progress` would see it jump rarely and
+    sit stale the rest of the time, never actually looking like smooth motion. 1.12.2 never had this problem
+    because its client half ran its *own* independent tick loop (`world.isRemote` branch of `update()`), driven
+    off the already-reliably-synced `isPumping` boolean rather than trusting a frequently-resynced `progress`
+    value at all. `getRenderProgress` reproduces exactly that shape as new, small, clearly-scoped fields
+    (`clientProgress`/`lastClientProgress`/`lastClientProgressTick`, never saved, never synced): advance by
+    `getPistonSpeed()` while `isPumping`, ease back down by a fixed step when not, at most once per real game
+    tick (a `level.getGameTime()` guard, since the renderer calls this once per frame -- far more often than
+    once per tick), then lerp the last two tick values by `partialTick` -- reusing 1.12.2's own
+    `getProgressClient(float)` wrap-around fixup verbatim for the moment the value rolls from just under 1 back
+    to just over 0 between the two ticks being interpolated. Bounded `[0, 1)` on every call, including the very
+    first frame after a chunk loads (both new fields default to `0f`, so the lerp is `0` before `level` is even
+    non-null) -- no NaN, no division by zero, the exact bug class this kind of first-renderer task tends to hit.
+  - **The registration API itself is a genuine, `javap`/decompiled-source-confirmed divergence between the two
+    targets, not a rename -- the task brief's own suspicion, confirmed rather than assumed.** On 1.20.1, `javap`
+    against `net.minecraftforge:forge:1.20.1-47.1.106-universal.jar` confirms the classic shape unchanged from
+    1.12.2's own `TileEntitySpecialRenderer` era: `BlockEntityRenderer<T>` with a single immediate-mode
+    `render(T, float, PoseStack, MultiBufferSource, int, int)`, registered via
+    `EntityRenderersEvent.RegisterRenderers#registerBlockEntityRenderer` (`net.minecraftforge.client.event`) --
+    an `IModBusEvent`, wired the same `modBus.addListener` way as `registerScreens`. On 26.x, the real client jar
+    (`minecraft_26.3_client.jar`) shows this was replaced entirely by a state-extraction/`submit` split:
+    `BlockEntityRenderer<T, S extends BlockEntityRenderState>` with `createRenderState()`/`extractRenderState(T,
+    S, float, Vec3, CrumblingOverlay)` (run against the real tile) and `submit(S, PoseStack,
+    SubmitNodeCollector, CameraRenderState)` (run later against only the captured state, never touching the tile
+    again) -- confirmed against real decompiled vanilla renderers using the identical shape
+    (`DecoratedPotRenderer`, `ChestRenderer`) rather than guessed from the interface alone, since the interface
+    alone doesn't show which `SubmitNodeCollector#submitModelPart` overload real code actually calls or how a
+    `null` sprite is meant to be used. The event class itself is the same name in both places
+    (`EntityRenderersEvent.RegisterRenderers`, package `net.neoforged.neoforge.client.event` on 26.x) with the
+    same `registerBlockEntityRenderer` method name, just a different second generic parameter -- so each
+    platform's `RenderTileEngine` is a genuinely separate implementation, not a renamed copy, while
+    `TileEngineBase#getRenderProgress` itself is byte-identical on both.
+  - **Two smaller, `javap`-confirmed 26.x renames worth recording, in the same "invisible until you need it"
+    spirit as the `DirectionProperty` divergence noted in the facing-visibility batch above.** `ResourceLocation`
+    itself is renamed `net.minecraft.resources.Identifier` on 26.x (`fromNamespaceAndPath`/`withDefaultNamespace`
+    carried over unchanged in shape); `Direction#getNormal()` -- used to turn `currentDirection` into a
+    translation vector -- no longer exists on 26.x at all (`javap`: "class not found" for that specific method),
+    replaced by `getUnitVec3i()` (1.20.1 keeps the classic `getNormal()` name). Both platforms' `RenderTileEngine`
+    read facing straight off `BlockState.getValue(BlockStateProperties.FACING)` rather than the tile, per this
+    task's own brief -- the facing-visibility batch above already made that reliably synced.
+  - **Geometry and texture are a deliberate, honestly-scoped placeholder, not a claim of visual accuracy.** The
+    rod is one plain cuboid (`CubeListBuilder.addBox(5, 5, 5, 6, 6, 6)` inside a 16x16x16 `MeshDefinition`, baked
+    directly in each `RenderTileEngine`'s own constructor -- no `RegisterLayerDefinitions` event needed, since
+    nothing else references this layer) that translates up to `0.3` blocks along the facing direction and back,
+    textured with each engine's own existing `block/engine_{wood,creative,stone}_side.png` (already a real,
+    16x16 resource shipped for the static baked model) rather than an all-new texture asset -- the UVs do not
+    claim to line up with anything meaningful on that image, only to look like *something* textured rather than
+    a flat colour. One shared `RenderTileEngine` class per platform covers all three engine types (registered
+    three times in `BCEnergyClientRegistries#registerRenderers`, once per texture); nothing about the three
+    engines' animation genuinely differs enough to justify per-type subclasses, so none were written -- if
+    1.12.2's real per-tier piston geometry ever needs reproducing faithfully, that is new work on top of this,
+    not something this pass silently dropped.
+  - **`isPumping`, unlike the task brief's own hedge ("if `isPumping` itself wasn't ported..."), was already on
+    the tile from the facing-visibility batch's own untouched code** (`protected boolean isPumping`, flipped only
+    via `setPumping`, already reliably synced since every flip calls `markDirtyAndSync()`) -- no proxy field was
+    needed, only reading it from the new client-local tick loop above.
+  - **The one-line, in-scope `BuildCraft.java` touch, both platforms**: a single
+    `modBus.addListener(BCEnergyClientRegistries::registerRenderers);`, added immediately next to the existing
+    `registerScreens` listener line, inside the same pre-existing `FMLEnvironment.getDist().isClient()` /
+    `FMLEnvironment.dist.isClient()` guard -- so a dedicated server has exactly as much reason to load
+    `RenderTileEngine` as it already had to load `GuiEngineStone`: none. Confirmed live: RCON-driven dedicated-
+    server boots on both platforms placed and fully powered a Creative Engine into a `TilePowerConsumerTester`
+    (`data get block` showing `progressPart` cycling `1`/`2`, `progress` moving through the full `0..1` range,
+    and the tester's own `total` climbing by real MJ every tick) with zero exceptions in either server log --
+    proving the client-only renderer registration is never even reached server-side, and that none of this
+    batch's tile-side changes (the three new client-only fields, `getRenderProgress` itself) disturbed the
+    real, already-working pump cycle.
+  - **New files, both platforms**: `buildcraft.lib.engine.RenderTileEngine`. Modified, both platforms:
+    `buildcraft.lib.engine.TileEngineBase` (the three new client-only fields plus `getRenderProgress`, and an
+    updated "Ticking" javadoc entry noting the renderer now exists), `buildcraft.energy.client.
+    BCEnergyClientRegistries` (`registerRenderers`), `buildcraft.BuildCraft` (the one listener line above).
+  - **Honest limitation, explicitly not claimed otherwise**: the actual on-screen visual result -- whether the
+    rod's position, size, or texture genuinely look right -- is not verified, per this project's own standing
+    limitation that rendering needs a real display. What is verified: real `:neoforge-26x:runClient` and
+    `:neoforge-1201:runClient` boots, both reaching a fully textured main menu (`TextureAtlas` stitching
+    including `blocks.png-atlas`, sound engine started) with zero `Exception`/`Error` lines anywhere in either
+    log -- proving `EntityRenderersEvent.RegisterRenderers#registerBlockEntityRenderer` succeeds on both targets
+    at the exact point a bad generic signature or a wrong real API call would throw. Not reached: an actual
+    loaded chunk with a placed, pumping engine rendered in either client, since this environment has no mouse/
+    keyboard input automation to reach a world from the title screen -- so `RenderTileEngine#render`/`submit`
+    were never invoked live, only read back carefully for input-range safety (see `getRenderProgress` above).
+  - Verified with forced `--no-build-cache clean` rebuilds on both platforms, the full 25-test suite, real
+    dedicated-server boots on both platforms with a genuine RCON-driven pump cycle and zero exceptions in either
+    log, and real `runClient` boots on both platforms reaching a fully stitched main menu with zero exceptions.
+
+- **A critical, previously-undiscovered bug, found only by accident while independently re-verifying the pipe-
+  materials batch above: every placed pipe, on both platforms, silently lost its material and reverted to a bare
+  `pipe_holder` with no `Pipe` at all on the very first real server restart.** Every prior pipe batch's own RCON
+  verification (cobblestone, wood, this session's stone/sandstone/quartz) used `/data merge block` to attach a
+  `Pipe` to an already-running tile within the same server session, and never once restarted the server to force
+  a genuine disk-based reload -- a real gap in this project's own testing methodology, not just bad luck, since
+  every one of those verification passes reported "zero exceptions" truthfully for the scenario it actually
+  tested. Caught here specifically because a concurrent task's own hand-back mentioned an unrelated-looking
+  `NullPointerException` from `PipeFlowItems` seen once in a shared dev world; re-testing that exact scenario
+  directly (place a pipe, `save-all flush`, `stop`, restart the same world, re-read the block) reproduced it
+  reliably, on both platforms, using pipe materials that predate this whole session's own work (wood,
+  cobblestone) -- proving this is not a defect in anything ported today, just never previously exercised.
+  - **Root cause**: `PipeFlowItems`'s own NBT-loading constructor (both platforms) calls
+    `pipe.getHolder().getPipeLevel().getGameTime()` unconditionally, before even checking whether there are any
+    travelling items to reconstruct. `getPipeLevel()` delegates straight to `BlockEntity#getLevel()`, which is
+    genuinely `null` at this exact point during a real disk-based chunk load: vanilla calls
+    `BlockEntity#loadAdditional`/`#load` (which is what reconstructs `TilePipeHolder`'s own `Pipe`, and
+    transitively this constructor) *before* `BlockEntity#setLevel(Level)` during chunk deserialization, not
+    after -- confirmed live, not assumed, by reproducing the crash and reading the exact
+    `NullPointerException` message (`Cannot invoke "Level.getGameTime()" because the return value of
+    "IPipeHolder.getPipeLevel()" is null`). This ordering is invisible to every prior in-session test because
+    `/data merge block` always targets a tile that is already fully attached to a live level.
+  - **Consequence, confirmed live, not assumed**: NeoForge/Forge both catch a block entity's own load exception
+    per-tile rather than crashing the whole chunk/server (a real vanilla robustness feature) -- so the practical
+    effect was not a server crash but silent, total data loss: the tile's own `pipe` field simply stayed `null`
+    after the failed load, with no error visible to a player beyond "my pipe network reset itself" after every
+    single world reload, forever, on both platforms, for every material including the two (cobblestone, wood)
+    already shipped in a deployed jar before this was caught.
+  - **Fix, both platforms, in `PipeFlowItems`'s NBT constructor and its `writeToNbt`**: guard
+    `pipe.getHolder().getPipeLevel()` for `null` and fall back to `0` for `tickNow` when it is. Safe specifically
+    because `TravellingItem`'s own `tickStarted`/`tickFinished` are stored as NBT-relative *offsets* from
+    whatever `tickNow` `writeToNbt` used, not absolute values -- any single consistent placeholder at load time
+    reconstructs internally-consistent (if not clock-accurate) absolute times, which is a vastly smaller problem
+    than losing the `Pipe` object entirely. The only real cost: an item genuinely mid-transit at save time will
+    read as "already arrived" the instant the tile starts ticking for real after a reload (`getCurrentDelay`
+    clamps a large negative `tickFinished - realNow` to `0`), rather than finishing its remaining travel time --
+    a minor, rare, purely cosmetic timing hiccup, not data loss, not a crash, not a stuck item. The identical
+    guard was also applied to `writeToNbt`'s own eager `getPipeLevel()` call for symmetry, even though no live
+    crash was reproduced there -- a plausible (if unconfirmed) equivalent risk exists for any future tool that
+    copies a placed tile's NBT into an `ItemStack` without ever attaching it to a level.
+  - **Re-verified live, both platforms, with the exact reload sequence that reproduced the original crash**: a
+    fresh pipe (with connections and no in-flight items, and separately re-tested against the same wood/
+    cobblestone pair that first reproduced the bug) placed, `save-all flush`, `stop`, restart the same world,
+    re-read via `/data get block` -- the `Pipe`'s `def`/`con`/`beh`/`flow` all present and correct after the
+    reload, zero exceptions in either server log, on both platforms.
+  - Verified with a forced `--no-build-cache clean` rebuild on both platforms and the full 25-test suite.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -2689,7 +2965,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. Cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier) item pipes done, plus the `pipe_holder` per-material loot-drop fix. Every other material, colours, wires, gates, pluggables, fluid/power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 46 | Chute, mining well + tube, pump, tank, flood gate, auto workbench (items half, done). Auto workbench (fluids half) still to come. |
+| `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves). |
 | `buildcraft.energy` | 41 | Stirling engine (done). Iron/RF combustion engines, oil, fuel still to come. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
