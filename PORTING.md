@@ -1195,6 +1195,18 @@ Deliberately not ported, with reasons:
     (underground, in a hole its own removal destroys almost immediately, so nobody noticed). Ported faithfully
     rather than "fixed" with the unused `mining_well/tube.png`/`pump/tube.png` art assets sitting in
     `buildcraft_resources` but referenced by no model anywhere in the shipped resource pack.
+    - **Reversed later, at the user's own explicit request, not silently.** After actually playing the mod, the
+      user reported not seeing the mining well "drop its pipe that goes down" -- confirmed live via RCON first,
+      not assumed: the mining well genuinely digs and the tube shaft genuinely gets placed block-by-block
+      (`execute if block <pos> buildcraft:tube` passed all the way down a real dig column), it was just invisible
+      the whole time, exactly as documented above. Since the user asked directly to see it, this is no longer
+      "preserve a genuine upstream oddity nobody asked to fix" territory (see `TileFloodGate`'s own precedent for
+      when that reasoning applies) -- it is now a real, requested fix: `tube.json` (both platforms) is a plain
+      `minecraft:block/cube_all` using `buildcraft_resources/assets/buildcraftfactory/textures/blocks/tube/
+      default.png` (the one real, correctly-sized -- 16x16, matching every other block texture in this port --
+      tube texture already sitting unused in the resource pack; `end.png` is 8x8 and would need scaling, so was
+      not used). Verified via a real `runClient` boot: no missing-model/missing-texture warnings for `tube`
+      anywhere in the log.
 
 - **`buildcraft.factory`'s fluid foundation lands, and `TilePump`/`BlockPump` is the third factory machine.**
   This batch is `buildcraft.lib.fluid.Tank` (both platforms), `buildcraft.lib.misc.FluidUtilBC#pushFluidAround`
