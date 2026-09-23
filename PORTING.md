@@ -28,8 +28,13 @@ common/                 The 1.12.2 source tree. NOT COMPILED -- this is the refe
 buildcraft_resources/   are porting from, and is deleted module by module as each one lands.
 BuildCraftAPI/          git submodule; the 1.12.2 API, also being ported.
 legacy/                 The old ForgeGradle 2 build files, kept for reference.
-src_old_license/        Dead. It was already commented out of the 1.12.2 build.
 ```
+
+`src_old_license/` (dead, already commented out of the 1.12.2 build) has been removed rather than kept
+around -- it's the one item in this list that genuinely had nothing left to reference. `common/`/
+`buildcraft_resources/` have grown large again since the "delete module by module" note above was
+written; a proper module-by-module prune (checking each remaining subtree against what's actually
+landed and committed) is real, separate cleanup work, not something to rush as a side task.
 
 The root project applies no `java` plugin on purpose, so the 1.12.2 trees at the repository
 root are never fed to the compiler.
