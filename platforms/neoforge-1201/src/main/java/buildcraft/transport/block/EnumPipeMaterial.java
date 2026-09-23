@@ -45,7 +45,17 @@ public enum EnumPipeMaterial implements StringRepresentable {
     IRON("iron"),
     CLAY("clay"),
     VOID("void"),
-    // The fluid-carrying variants of the nine materials above: same behaviours, a different PipeDefinition
+    // The exotic materials -- see BCTransportRegistries#PIPE_OBSIDIAN/PIPE_LAPIS/PIPE_DAIZULI/PIPE_EMZULI/
+    // PIPE_STRIPES. Item-only, matching 1.12.2's own registration for every one of these five.
+    OBSIDIAN("obsidian"),
+    LAPIS("lapis"),
+    DAIZULI("daizuli"),
+    EMZULI("emzuli"),
+    STRIPES("stripes"),
+    // The diamond pipes (sorting/filtering) -- see BCTransportRegistries#PIPE_DIAMOND/PIPE_DIAMOND_WOOD.
+    DIAMOND("diamond"),
+    DIAMOND_WOOD("diamond_wood"),
+    // The fluid-carrying variants of the materials above: same behaviours, a different PipeDefinition
     // (flowFluid() instead of flowItem()) and their own textures -- see BCTransportRegistries.
     COBBLESTONE_FLUID("cobblestone_fluid"),
     WOOD_FLUID("wood_fluid"),
@@ -56,14 +66,19 @@ public enum EnumPipeMaterial implements StringRepresentable {
     IRON_FLUID("iron_fluid"),
     CLAY_FLUID("clay_fluid"),
     VOID_FLUID("void_fluid"),
+    DIAMOND_FLUID("diamond_fluid"),
+    DIAMOND_WOOD_FLUID("diamond_wood_fluid"),
     // The power (kinesis) variants -- see the 26.x copy of this enum's own javadoc for the full account of the
-    // naming and which three of 1.12.2's nine materials are not ported this batch.
+    // naming.
     COBBLESTONE_POWER("pipe_power_cobblestone"),
     WOOD_POWER("pipe_power_wood"),
     STONE_POWER("pipe_power_stone"),
     SANDSTONE_POWER("pipe_power_sandstone"),
     QUARTZ_POWER("pipe_power_quartz"),
-    GOLD_POWER("pipe_power_gold");
+    GOLD_POWER("pipe_power_gold"),
+    IRON_POWER("pipe_power_iron"),
+    DIAMOND_POWER("pipe_power_diamond"),
+    DIAMOND_WOOD_POWER("pipe_power_diamond_wood");
 
     public static final EnumPipeMaterial[] VALUES = values();
 

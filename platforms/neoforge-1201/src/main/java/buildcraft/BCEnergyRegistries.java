@@ -17,6 +17,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.api.enums.EnumSpring;
 import buildcraft.api.fuels.BuildcraftFuelRegistry;
 
 import buildcraft.lib.fluid.CoolantRegistry;
@@ -27,11 +28,16 @@ import buildcraft.energy.BCEnergyFluids;
 import buildcraft.energy.BCEnergyRecipes;
 
 import buildcraft.energy.block.BlockEngineIron;
+import buildcraft.energy.block.BlockEngineRF;
 import buildcraft.energy.block.BlockEngineStone;
+import buildcraft.energy.block.BlockSpringOil;
 import buildcraft.energy.container.ContainerEngineIron;
+import buildcraft.energy.container.ContainerEngineRF;
 import buildcraft.energy.container.ContainerEngineStone;
 import buildcraft.energy.tile.TileEngineIron;
+import buildcraft.energy.tile.TileEngineRF;
 import buildcraft.energy.tile.TileEngineStone;
+import buildcraft.energy.tile.TileSpringOil;
 
 /**
  * Registrations belonging to the old {@code buildcraftenergy} module -- the first ones. Mirrors
@@ -84,6 +90,23 @@ public final class BCEnergyRegistries {
     public static final RegistryObject<MenuType<ContainerEngineIron>> ENGINE_IRON_MENU =
         REGISTRY.addMenu("engine_iron", ContainerEngineIron::new);
 
+    /** The RF Engine -- see the 26.x copy of this class for why it gets a dedicated {@link BlockEngineRF} here,
+     * unlike 1.12.2's shared {@code BlockEngine_BC8}. Same block properties as {@link #ENGINE_STONE}/
+     * {@link #ENGINE_IRON}. */
+    public static final RegistryObject<BlockEngineRF> ENGINE_RF = REGISTRY.addBlockAndItem(
+        "engine_rf", () -> new BlockEngineRF(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileEngineRF>> ENGINE_RF_TYPE =
+        REGISTRY.addBlockEntity("engine_rf", TileEngineRF::new, ENGINE_RF);
+
+    public static final RegistryObject<MenuType<ContainerEngineRF>> ENGINE_RF_MENU =
+        REGISTRY.addMenu("engine_rf", ContainerEngineRF::new);
+
     /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
      * thirty, all defined in BCEnergyFluids. Called here, after the engines, so the buckets follow them in the
      * creative tab. */
@@ -91,19 +114,38 @@ public final class BCEnergyRegistries {
         BCEnergyFluids.preInit(REGISTRY);
     }
 
+    /** The oil half of 1.12.2's {@code BlockSpring} -- see {@link BlockSpringOil}'s own javadoc. Same block
+     * properties as {@code BCCoreRegistries#SPRING_WATER}. */
+    public static final RegistryObject<BlockSpringOil> SPRING_OIL = REGISTRY.addBlockAndItem(
+        "spring_oil", () -> new BlockSpringOil(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.STONE)
+                .strength(-1.0F, 6000000.0F)
+                .sound(SoundType.STONE)
+                .noLootTable()));
+
+    public static final RegistryObject<BlockEntityType<TileSpringOil>> SPRING_OIL_TYPE =
+        REGISTRY.addBlockEntity("spring_oil", TileSpringOil::new, SPRING_OIL);
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         BCEnergyFluids.register(modBus);
+        BCEnergyFeatures.register(modBus);
         // 1.12.2 installed these in BCLibRegistries#preInit; energy is the only module that fills them.
         BuildcraftFuelRegistry.fuel = FuelRegistry.INSTANCE;
         BuildcraftFuelRegistry.coolant = CoolantRegistry.INSTANCE;
         modBus.addListener(BCEnergyRegistries::commonSetup);
     }
 
-    /** 1.12.2's {@code FMLInitializationEvent} step: the fuel/coolant values need the registered fluids. Queued
-     * onto the main thread because the two registries are plain unsynchronised lists and common setup itself runs
-     * in parallel across mods. */
+    /** 1.12.2's {@code FMLInitializationEvent} step: the fuel/coolant values need the registered fluids, and so
+     * does {@link EnumSpring#OIL}'s {@code liquidBlock} -- deferred to this same safe point (registries are fully
+     * bound by the time {@link FMLCommonSetupEvent} fires) rather than done inline in {@link #register}, where
+     * {@code RegistryObject#get()} would still throw. Queued onto the main thread because the fuel/coolant
+     * registries are plain unsynchronised lists and common setup itself runs in parallel across mods. */
     private static void commonSetup(FMLCommonSetupEvent event) {
-        event.enqueueWork(BCEnergyRecipes::init);
+        event.enqueueWork(() -> {
+            EnumSpring.OIL.liquidBlock = BCEnergyFluids.crudeOil[0].getBlock().get().defaultBlockState();
+            BCEnergyRecipes.init();
+        });
     }
 }

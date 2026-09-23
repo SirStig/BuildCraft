@@ -15,6 +15,10 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import buildcraft.lib.block.BlockBCTile;
 
@@ -32,13 +36,12 @@ import buildcraft.factory.tile.TileTank;
  *     "no renderer, no {@code getActualState} any more" reasoning {@code TileChute}'s dropped {@code CONNECTED_MAP}
  *     already established. {@code shouldSideBeRendered}/{@code getBlockLayer} (the client-side face-culling and
  *     transparency hooks that consumed it) go with it.</li>
- * <li><b>A non-cube {@code VoxelShape}.</b> 1.12.2's real bounding box shaved two pixels off every horizontal
- *     side ({@code 2/16 .. 14/16}), matching a real, non-cube block model. Nothing in this pass exercises
- *     collision or occlusion fidelity for a tank -- there is no renderer to show the shape off, and no gameplay
- *     system in this port reads a tank's bounding box for anything other than the default full-cube placement/
- *     collision Minecraft already provides -- so this pass deliberately keeps the default full cube, the same
- *     call already made for {@code BlockPump}/{@code BlockEngineWood}'s own non-cube 1.12.2 render types. The
- *     block model below is a plain cube using the real tank textures, not the faithfully-shaped original.</li>
+ * <li><b>A non-cube {@code VoxelShape} -- now real, not deferred.</b> 1.12.2's real bounding box shaved two
+ *     pixels off every horizontal side ({@code 2/16 .. 14/16}). The block model now matches that exactly (see
+ *     {@code models/block/tank.json}), and {@link #getShape}/{@link #getCollisionShape} return the matching
+ *     {@link VoxelShape} -- the earlier "no renderer to show the shape off" reasoning stopped applying once
+ *     {@code RenderTileTank} landed in a later batch, and a real client session confirmed the stale full-cube
+ *     collision/outline visibly disagreed with the real model by then.</li>
  * <li><b>{@code ICustomPipeConnection}/{@code getExtension}</b> (pipe-connection-shape hints). {@code
  *     buildcraft.transport} is not ported at all in this port, so there is no reader for this interface --
  *     dropped rather than stubbed, matching how {@code BlockChute}/{@code BlockPump} needed no pipe-connection
@@ -85,4 +88,18 @@ public class BlockTank extends BlockBCTile {
     protected int getAnalogOutputSignal(BlockState state, Level level, BlockPos pos, Direction direction) {
         return level.getBlockEntity(pos) instanceof TileTank tank ? tank.getComparatorLevel() : 0;
     }
+
+    /** The real shape: 1.12.2's bounding box shaved two pixels off every horizontal side. See this class's own
+     * javadoc for why this is no longer deferred. */
+    @Override
+    protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE;
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE;
+    }
+
+    private static final VoxelShape SHAPE = Shapes.box(2 / 16.0, 0, 2 / 16.0, 14 / 16.0, 1, 14 / 16.0);
 }

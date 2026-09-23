@@ -14,6 +14,7 @@ import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
 import buildcraft.energy.gui.GuiEngineIron;
+import buildcraft.energy.gui.GuiEngineRF;
 import buildcraft.energy.gui.GuiEngineStone;
 
 import buildcraft.BCCoreRegistries;
@@ -34,6 +35,7 @@ public final class BCEnergyClientRegistries {
         event.enqueueWork(() -> {
             MenuScreens.register(BCEnergyRegistries.ENGINE_STONE_MENU.get(), GuiEngineStone::new);
             MenuScreens.register(BCEnergyRegistries.ENGINE_IRON_MENU.get(), GuiEngineIron::new);
+            MenuScreens.register(BCEnergyRegistries.ENGINE_RF_MENU.get(), GuiEngineRF::new);
         });
     }
 
@@ -60,6 +62,12 @@ public final class BCEnergyClientRegistries {
         event.registerBlockEntityRenderer(
             BCEnergyRegistries.ENGINE_IRON_TYPE.get(),
             context -> new RenderTileEngine(context, new ResourceLocation("buildcraft", "block/engine_iron_side"))
+        );
+        // No dedicated engine_rf texture was authored this pass -- reuses the Stirling Engine's side texture as
+        // a placeholder, see the 26.x copy of this class for the same call.
+        event.registerBlockEntityRenderer(
+            BCEnergyRegistries.ENGINE_RF_TYPE.get(),
+            context -> new RenderTileEngine(context, new ResourceLocation("buildcraft", "block/engine_stone_side"))
         );
     }
 }

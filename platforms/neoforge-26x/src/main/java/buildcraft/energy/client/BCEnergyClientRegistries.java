@@ -22,6 +22,7 @@ import buildcraft.energy.BCEnergyFluids;
 import buildcraft.energy.BCEnergyFluids.BCFluid;
 
 import buildcraft.energy.gui.GuiEngineIron;
+import buildcraft.energy.gui.GuiEngineRF;
 import buildcraft.energy.gui.GuiEngineStone;
 
 import buildcraft.BCCoreRegistries;
@@ -42,6 +43,7 @@ public final class BCEnergyClientRegistries {
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(BCEnergyRegistries.ENGINE_STONE_MENU.get(), GuiEngineStone::new);
         event.register(BCEnergyRegistries.ENGINE_IRON_MENU.get(), GuiEngineIron::new);
+        event.register(BCEnergyRegistries.ENGINE_RF_MENU.get(), GuiEngineRF::new);
     }
 
     /**
@@ -67,6 +69,13 @@ public final class BCEnergyClientRegistries {
         event.registerBlockEntityRenderer(
             BCEnergyRegistries.ENGINE_IRON_TYPE.get(),
             context -> new RenderTileEngine(context, Identifier.fromNamespaceAndPath("buildcraft", "block/engine_iron_side"))
+        );
+        // No dedicated engine_rf texture was authored this pass (see BCEnergyRegistries#ENGINE_RF's own javadoc);
+        // reuses the Stirling Engine's side texture as a placeholder, the same "no new texture asset" call
+        // BCFactoryRegistries#AUTO_WORKBENCH_FLUIDS already made for its own unfinished 1.12.2 block.
+        event.registerBlockEntityRenderer(
+            BCEnergyRegistries.ENGINE_RF_TYPE.get(),
+            context -> new RenderTileEngine(context, Identifier.fromNamespaceAndPath("buildcraft", "block/engine_stone_side"))
         );
     }
 

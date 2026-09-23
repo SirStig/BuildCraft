@@ -21,6 +21,7 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.transfer.fluid.BucketResourceHandler;
 
+import buildcraft.api.enums.EnumSpring;
 import buildcraft.api.fuels.BuildcraftFuelRegistry;
 import buildcraft.api.mj.MjCapabilities;
 
@@ -32,11 +33,16 @@ import buildcraft.energy.BCEnergyFluids;
 import buildcraft.energy.BCEnergyRecipes;
 
 import buildcraft.energy.block.BlockEngineIron;
+import buildcraft.energy.block.BlockEngineRF;
 import buildcraft.energy.block.BlockEngineStone;
+import buildcraft.energy.block.BlockSpringOil;
 import buildcraft.energy.container.ContainerEngineIron;
+import buildcraft.energy.container.ContainerEngineRF;
 import buildcraft.energy.container.ContainerEngineStone;
 import buildcraft.energy.tile.TileEngineIron;
+import buildcraft.energy.tile.TileEngineRF;
 import buildcraft.energy.tile.TileEngineStone;
+import buildcraft.energy.tile.TileSpringOil;
 
 /**
  * Registrations belonging to the old {@code buildcraftenergy} module -- the first ones, and the first module in
@@ -85,6 +91,23 @@ public final class BCEnergyRegistries {
     public static final DeferredHolder<MenuType<?>, MenuType<ContainerEngineIron>> ENGINE_IRON_MENU =
         REGISTRY.addMenu("engine_iron", ContainerEngineIron::new);
 
+    /** The RF Engine -- 1.12.2's {@code TileEngineRF} had no dedicated block class of its own (it shared
+     * {@code BlockEngine_BC8}); this port gives it {@link BlockEngineRF}. Same block properties as
+     * {@link #ENGINE_STONE}/{@link #ENGINE_IRON}. */
+    public static final DeferredBlock<BlockEngineRF> ENGINE_RF = REGISTRY.addBlockAndItem(
+        "engine_rf", BlockEngineRF::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileEngineRF>> ENGINE_RF_TYPE =
+        REGISTRY.addBlockEntity("engine_rf", TileEngineRF::new, ENGINE_RF);
+
+    public static final DeferredHolder<MenuType<?>, MenuType<ContainerEngineRF>> ENGINE_RF_MENU =
+        REGISTRY.addMenu("engine_rf", ContainerEngineRF::new);
+
     /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
      * thirty, all defined in BCEnergyFluids. Called here, after the engines, so the buckets follow them in the
      * creative tab. */
@@ -92,9 +115,25 @@ public final class BCEnergyRegistries {
         BCEnergyFluids.preInit(REGISTRY);
     }
 
+    /** The oil half of 1.12.2's {@code BlockSpring} -- see {@link BlockSpringOil}'s own javadoc. Registered after
+     * the {@code static} fluid block above so {@link BCEnergyFluids#crudeOil} is already populated when
+     * {@link EnumSpring#OIL}'s {@code liquidBlock} is wired below. Same block properties as
+     * {@code BCCoreRegistries#SPRING_WATER}: unbreakable, matching 1.12.2's shared {@code BlockSpring}. */
+    public static final DeferredBlock<BlockSpringOil> SPRING_OIL = REGISTRY.addBlockAndItem(
+        "spring_oil", BlockSpringOil::new,
+        properties -> properties
+            .mapColor(MapColor.STONE)
+            .strength(-1.0F, 6000000.0F)
+            .sound(SoundType.STONE)
+            .noLootTable());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileSpringOil>> SPRING_OIL_TYPE =
+        REGISTRY.addBlockEntity("spring_oil", TileSpringOil::new, SPRING_OIL);
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         BCEnergyFluids.register(modBus);
+        BCEnergyFeatures.register(modBus);
         // 1.12.2 installed these in BCLibRegistries#preInit; energy is the only module that fills them.
         BuildcraftFuelRegistry.fuel = FuelRegistry.INSTANCE;
         BuildcraftFuelRegistry.coolant = CoolantRegistry.INSTANCE;
@@ -133,6 +172,13 @@ public final class BCEnergyRegistries {
      * reasoning for the guard.
      */
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        // EnumSpring.OIL.liquidBlock stays null (see that enum's own javadoc) until this module -- the one that
+        // actually defines the crude-oil fluid -- fills it in. Deferred to this event, not done inline in
+        // register(IEventBus), because DeferredBlock#get() throws until the RegisterEvent that
+        // BCEnergyFluids.register(modBus) queues has actually fired -- RegisterCapabilitiesEvent always runs
+        // later than that, exactly like every ENGINE_*_TYPE.get() call already below relies on.
+        EnumSpring.OIL.liquidBlock = BCEnergyFluids.crudeOil[0].getBlock().get().defaultBlockState();
+
         event.registerBlockEntity(Capabilities.Item.BLOCK, ENGINE_STONE_TYPE.get(),
             (tile, side) -> tile.itemManager.getHandlerForFace(side));
         event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_STONE_TYPE.get(),
@@ -153,5 +199,13 @@ public final class BCEnergyRegistries {
             event.registerItem(Capabilities.Fluid.ITEM, (stack, access) -> new BucketResourceHandler(access),
                 fluid.getBucket().get());
         }
+
+        // The RF Engine's upgrade slots are EnumAccess.NONE (see TileEngineRF), so -- like BCRoboticsRegistries'
+        // own paintbrush grid -- there is no external item handler to expose for them; only the MJ connector and
+        // the RF energy buffer itself are real capabilities here.
+        event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_RF_TYPE.get(),
+            (tile, side) -> side == tile.getCurrentFacing() ? tile.mjConnector : null);
+        event.registerBlockEntity(Capabilities.Energy.BLOCK, ENGINE_RF_TYPE.get(),
+            (tile, side) -> side == tile.getCurrentFacing() ? tile.rfEnergy : null);
     }
 }

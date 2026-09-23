@@ -15,8 +15,11 @@ import net.minecraftforge.fml.loading.FMLLoader;
 
 import buildcraft.api.core.BCDebugging;
 
+import buildcraft.builders.client.BCBuildersClientRegistries;
 import buildcraft.energy.client.BCEnergyClientRegistries;
 import buildcraft.factory.client.BCFactoryClientRegistries;
+import buildcraft.robotics.client.BCRoboticsClientRegistries;
+import buildcraft.silicon.client.BCSiliconClientRegistries;
 import buildcraft.transport.client.BCTransportClientRegistries;
 
 import org.slf4j.Logger;
@@ -50,6 +53,8 @@ public final class BuildCraft {
         BCEnergyRegistries.register(modBus);
         BCTransportRegistries.register(modBus);
         BCBuildersRegistries.register(modBus);
+        BCRoboticsRegistries.register(modBus);
+        BCSiliconRegistries.register(modBus);
         BCNetwork.register();
 
         // Screen registration is inherently client-only. Gating the *listener registration itself* (rather than
@@ -59,10 +64,15 @@ public final class BuildCraft {
         if (FMLEnvironment.dist.isClient()) {
             modBus.addListener(BCFactoryClientRegistries::registerScreens);
             modBus.addListener(BCFactoryClientRegistries::registerRenderers);
+            modBus.addListener(BCBuildersClientRegistries::registerScreens);
+            modBus.addListener(BCBuildersClientRegistries::registerRenderers);
             modBus.addListener(BCEnergyClientRegistries::registerScreens);
             modBus.addListener(BCEnergyClientRegistries::registerRenderers);
+            modBus.addListener(BCTransportClientRegistries::registerScreens);
             modBus.addListener(BCTransportClientRegistries::registerRenderers);
             modBus.addListener(buildcraft.core.client.BCCoreClientRegistries::registerRenderers);
+            modBus.addListener(BCRoboticsClientRegistries::registerScreens);
+            modBus.addListener(BCSiliconClientRegistries::registerScreens);
         }
     }
 }

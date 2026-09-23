@@ -8,18 +8,21 @@
 package buildcraft.transport.client;
 
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
+import buildcraft.transport.gui.GuiDiamondPipe;
+import buildcraft.transport.gui.GuiDiamondWoodPipe;
+import buildcraft.transport.gui.GuiGate;
 import buildcraft.transport.tile.RenderTilePipeHolder;
 
 import buildcraft.BCTransportRegistries;
 
 /**
- * Client-only renderer registration for {@code buildcraft.transport} -- the first this module has needed, now
- * that {@link RenderTilePipeHolder} exists. Mirrors {@code buildcraft.energy.client.BCEnergyClientRegistries}/
- * {@code buildcraft.factory.client.BCFactoryClientRegistries} exactly, including why this has to be gated at the
- * *listener registration itself* (in {@code BuildCraft}'s constructor), never just inside the method body -- see
- * either of those classes' own javadoc for the full account. No {@code registerScreens} exists here: no pipe has
- * a GUI in this port yet.
+ * Client-only renderer/screen registration for {@code buildcraft.transport}. Mirrors
+ * {@code buildcraft.energy.client.BCEnergyClientRegistries}/{@code buildcraft.factory.client.BCFactoryClientRegistries}
+ * exactly, including why this has to be gated at the *listener registration itself* (in {@code BuildCraft}'s
+ * constructor), never just inside the method body -- see either of those classes' own javadoc for the full
+ * account. {@link #registerScreens} is new this batch: the diamond pipes are the first pipe material with a GUI.
  */
 public final class BCTransportClientRegistries {
 
@@ -27,5 +30,11 @@ public final class BCTransportClientRegistries {
 
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(BCTransportRegistries.PIPE_HOLDER_TYPE.get(), RenderTilePipeHolder::new);
+    }
+
+    public static void registerScreens(RegisterMenuScreensEvent event) {
+        event.register(BCTransportRegistries.PIPE_DIAMOND_MENU.get(), GuiDiamondPipe::new);
+        event.register(BCTransportRegistries.PIPE_DIAMOND_WOOD_MENU.get(), GuiDiamondWoodPipe::new);
+        event.register(BCTransportRegistries.GATE_MENU.get(), GuiGate::new);
     }
 }

@@ -8,6 +8,7 @@
 package buildcraft.transport.tile;
 
 import java.util.EnumMap;
+import java.util.Map;
 import java.util.UUID;
 
 import org.jetbrains.annotations.NotNull;
@@ -17,9 +18,15 @@ import com.mojang.authlib.GameProfile;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -40,6 +47,7 @@ import buildcraft.api.transport.pipe.PipeDefinition;
 import buildcraft.api.transport.pipe.PipeEvent;
 import buildcraft.api.transport.pipe.PipeEventPlaced;
 import buildcraft.api.transport.pluggable.PipePluggable;
+import buildcraft.api.transport.pluggable.PluggableDefinition;
 
 import buildcraft.lib.tile.TileBC;
 
@@ -47,26 +55,34 @@ import buildcraft.BCTransportRegistries;
 import buildcraft.transport.block.BlockPipeHolder;
 import buildcraft.transport.block.EnumPipeActiveFace;
 import buildcraft.transport.block.EnumPipeMaterial;
+import buildcraft.transport.container.ContainerDiamondPipe;
+import buildcraft.transport.container.ContainerDiamondWoodPipe;
+import buildcraft.transport.item.ItemPipeHolder;
 import buildcraft.transport.pipe.Pipe;
 import buildcraft.transport.pipe.PipeEventBus;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDiamond;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourDirectional;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodDiamond;
 
 /**
  * The single shared block entity every pipe kind uses -- implements the already-ported {@link IPipeHolder}. See
  * the 26.x copy of this class for the full account of what is deliberately dropped ({@code PluggableHolder},
  * every {@code NET_UPDATE_*} network message) and why, and of what {@link #scheduleNetworkUpdate} does now
- * (identical reasoning and implementation on this target).
+ * (identical reasoning and implementation on this target). {@link #pluggables} is real as of the
+ * wires/gates/pluggables batch -- see the 26.x copy's own javadoc for the full account, identical here bar the
+ * direct {@link CompoundTag} read/write shape this target's {@link #load}/{@link #saveAdditional} already use.
  *
  * <p>The one real per-platform divergence: capabilities. 1.20.1 still has {@code ICapabilityProvider}, so this
  * tile exposes its own {@link #getCapability} override directly (matching {@code TileChute}'s own precedent on
  * this target), rather than 26.x's separate {@code RegisterCapabilitiesEvent} listener.
  */
-public class TilePipeHolder extends TileBC implements IPipeHolder {
+public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider {
 
     @Nullable
     private Pipe pipe;
     public final PipeEventBus eventBus = new PipeEventBus();
     private final SimplePipeWireManager wireManager = new SimplePipeWireManager(this);
+    private final EnumMap<Direction, PipePluggable> pluggables = new EnumMap<>(Direction.class);
 
     @Nullable
     private UUID ownerId;
@@ -106,6 +122,30 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         }
         ownerId = nbt.hasUUID("ownerId") ? nbt.getUUID("ownerId") : null;
         ownerName = nbt.getString("ownerName");
+
+        // A full-map replace, matching pipe's own "reload replaces wholesale" precedent above -- see this
+        // class's own javadoc.
+        pluggables.clear();
+        if (nbt.contains("pluggables")) {
+            CompoundTag pluggablesTag = nbt.getCompound("pluggables");
+            HolderLookup.Provider registries = level == null ? null : level.registryAccess();
+            for (Direction side : Direction.values()) {
+                if (!pluggablesTag.contains(side.getName())) {
+                    continue;
+                }
+                CompoundTag sideTag = pluggablesTag.getCompound(side.getName());
+                String idStr = sideTag.getString("id");
+                if (idStr.isEmpty()) {
+                    continue;
+                }
+                ResourceLocation id = ResourceLocation.tryParse(idStr);
+                PluggableDefinition definition = id == null ? null : PipeApi.pluggableRegistry.getDefinition(id);
+                if (definition == null) {
+                    continue;
+                }
+                pluggables.put(side, definition.readFromNbt(this, side, sideTag.getCompound("data"), registries));
+            }
+        }
     }
 
     @Override
@@ -118,6 +158,17 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         if (ownerId != null) {
             nbt.putUUID("ownerId", ownerId);
             nbt.putString("ownerName", ownerName);
+        }
+        if (!pluggables.isEmpty()) {
+            HolderLookup.Provider registries = level == null ? null : level.registryAccess();
+            CompoundTag pluggablesTag = new CompoundTag();
+            for (Map.Entry<Direction, PipePluggable> entry : pluggables.entrySet()) {
+                CompoundTag sideTag = new CompoundTag();
+                sideTag.putString("id", entry.getValue().definition.identifier.toString());
+                sideTag.put("data", entry.getValue().writeToNbt(registries));
+                pluggablesTag.put(entry.getKey().getName(), sideTag);
+            }
+            nbt.put("pluggables", pluggablesTag);
         }
     }
 
@@ -142,10 +193,22 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
         if (pipe != null) {
             pipe.onTick();
         }
+        for (PipePluggable plug : pluggables.values()) {
+            plug.onTick();
+        }
         if (pipe != null) {
             pipe.postPluggableTick();
         }
         setChanged();
+    }
+
+    /** Notifies every attached pluggable that this tile is genuinely going away -- called from
+     * {@code BlockPipeHolder#onRemove} (the block-level hook on this target; see PORTING.md's "Block-entity
+     * genuine-removal hook" divergence entry for why this target's hook lives on the block, not the tile). */
+    public void notifyPluggablesRemoved() {
+        for (PipePluggable plug : pluggables.values()) {
+            plug.onRemove();
+        }
     }
 
     public void onNeighbourChanged() {
@@ -211,7 +274,23 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
     @Override
     @Nullable
     public PipePluggable getPluggable(Direction side) {
-        return null;
+        return pluggables.get(side);
+    }
+
+    /** Every pluggable currently attached, keyed by side -- see the 26.x copy of this method's own javadoc. */
+    public Map<Direction, PipePluggable> getPluggables() {
+        return pluggables;
+    }
+
+    /** Attaches {@code pluggable} to {@code side}, replacing whatever was there -- see the 26.x copy of this
+     * method's own javadoc. */
+    public void setPluggable(Direction side, @Nullable PipePluggable pluggable) {
+        if (pluggable == null) {
+            pluggables.remove(side);
+        } else {
+            pluggables.put(side, pluggable);
+        }
+        markDirtyAndSync();
     }
 
     @Override
@@ -236,6 +315,17 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
     @Override
     @Nullable
     public <T> T getCapabilityFromPipe(Direction side, Capability<T> capability) {
+        PipePluggable plug = pluggables.get(side);
+        if (plug != null) {
+            T val = plug.getInternalCapability(capability);
+            if (val != null) {
+                return val;
+            }
+            if (plug.isBlocking()) {
+                // A blocking pluggable fully occupies this face -- no pipe connection is left underneath it.
+                return null;
+            }
+        }
         if (pipe == null || !pipe.isConnected(side)) {
             return null;
         }
@@ -327,6 +417,37 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
     public void onPlayerClose(Player player) {
     }
 
+    // MenuProvider -- new this batch, the diamond pipes' filter GUI. See the 26.x copy of this class's own
+    // javadoc for the createMenu dispatch. No writeClientSideData override is needed on this target:
+    // BlockPipeHolder's own use() calls NetworkHooks.openScreen(serverPlayer, holder, pos), whose 3-arg overload
+    // already writes the BlockPos as extra data by itself (matching BlockDistiller's own precedent).
+
+    @Override
+    public Component getDisplayName() {
+        if (pipe != null) {
+            ItemPipeHolder item = BCTransportRegistries.getItemForPipe(pipe.getDefinition());
+            if (item != null) {
+                return Component.translatable(item.getDescriptionId());
+            }
+        }
+        return Component.translatable("block.buildcraft.pipe_holder");
+    }
+
+    @Override
+    @Nullable
+    public AbstractContainerMenu createMenu(int windowId, Inventory playerInv, Player player) {
+        if (pipe == null) {
+            return null;
+        }
+        if (pipe.getBehaviour() instanceof PipeBehaviourWoodDiamond woodDiamond) {
+            return new ContainerDiamondWoodPipe(windowId, playerInv, woodDiamond);
+        }
+        if (pipe.getBehaviour() instanceof PipeBehaviourDiamond diamond) {
+            return new ContainerDiamondPipe(windowId, playerInv, diamond);
+        }
+        return null;
+    }
+
     // IRedstoneStatementContainer
 
     @Override
@@ -367,6 +488,15 @@ public class TilePipeHolder extends TileBC implements IPipeHolder {
             PipePluggable plug = getPluggable(side);
             if (plug != null) {
                 return LazyOptional.of(() -> plug).cast();
+            }
+        }
+        if (side != null) {
+            PipePluggable plug = pluggables.get(side);
+            if (plug != null) {
+                T val = plug.getCapability(cap);
+                if (val != null) {
+                    return LazyOptional.of(() -> val).cast();
+                }
             }
         }
         if (pipe != null) {

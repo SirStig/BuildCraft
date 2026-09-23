@@ -1,0 +1,52 @@
+/*
+ * Copyright (c) 2026 Joshua Kac -- NeoForge port (BuildCraft 10)
+ *
+ * This file is part of the BuildCraft 10 port and is distributed under the terms of the MIT License.
+ * Please check the contents of the license, which should be located as "LICENSE.PORT" in the BuildCraft
+ * source code distribution.
+ */
+package buildcraft.transport.item;
+
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+
+import buildcraft.api.transport.IItemPluggable;
+import buildcraft.api.transport.pipe.IPipeHolder;
+import buildcraft.api.transport.pluggable.PipePluggable;
+
+/**
+ * New, port-only: 1.12.2 registered {@code PluggableBlocker}/{@code PluggablePowerAdaptor}'s own placeable items
+ * as plain anonymous {@code ItemBlockPluggable} instances inline in {@code BCTransportItems}, since neither
+ * pluggable carries any state an item needs to distinguish (unlike {@code ItemPluggableGate}'s NBT-tagged
+ * {@code GateVariant}). This is that same shape, made a named, reusable class -- one instance per simple
+ * pluggable, each given the {@link java.util.function.BiFunction} that builds its actual
+ * {@link PipePluggable}.
+ */
+public class ItemPluggableSimple extends Item implements IItemPluggable {
+
+    @FunctionalInterface
+    public interface Factory {
+        PipePluggable create(IPipeHolder holder, Direction side);
+    }
+
+    private final Factory factory;
+
+    public ItemPluggableSimple(Properties properties, Factory factory) {
+        super(properties);
+        this.factory = factory;
+    }
+
+    @Override
+    @Nullable
+    public PipePluggable onPlace(
+        @NotNull ItemStack stack, IPipeHolder holder, Direction side, Player player, InteractionHand hand
+    ) {
+        return factory.create(holder, side);
+    }
+}

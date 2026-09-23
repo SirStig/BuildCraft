@@ -19,19 +19,19 @@ import buildcraft.api.transport.EnumWirePart;
 import buildcraft.api.transport.IWireManager;
 import buildcraft.api.transport.pipe.IPipeHolder;
 
+import buildcraft.transport.wire.WireNetwork;
+
 /**
- * A genuine, if deliberately small, {@link IWireManager} -- new to the port, not a port of 1.12.2's own
- * {@code buildcraft.transport.wire.WireManager} (which additionally builds and rebuilds cross-pipe "wire
- * system" graphs so a redstone signal on one wire propagates to every electrically-connected wire across a whole
- * pipe network -- entirely out of this batch's scope, since nothing here places a wire at all: no wire item, no
- * gate, no {@link buildcraft.api.transport.IWireEmitter} exists yet anywhere in this port).
+ * A genuine {@link IWireManager}. Per-pipe state (which {@link EnumWirePart}s are present and what colour each
+ * is) plus NBT persistence was already real; {@link #isPowered}/{@link #isAnyPowered} now are too, delegating to
+ * {@link WireNetwork}'s on-demand breadth-first walk -- a port of 1.12.2's own
+ * {@code buildcraft.transport.wire.WireManager}/{@code WireSystem} onto this foundation, deliberately without
+ * the persisted, incrementally-maintained cross-pipe graph 1.12.2 kept in {@code WorldSavedDataWireSystems} --
+ * see {@link WireNetwork}'s own javadoc for why that particular piece was not ported, and what replaces it.
  *
- * <p>What is here is real, not faked: which {@link EnumWirePart}s are present on this pipe and what colour each
- * is ({@link #addPart}/{@link #removePart}/{@link #getColorOfPart}/{@link #hasPartOfColor}), plus NBT
- * persistence for that state. {@link #isPowered}/{@link #isAnyPowered} are honestly {@code false} always --
- * correct, not a stub, given there is no {@link buildcraft.api.transport.IWireEmitter} anywhere in this batch
- * that could ever legitimately power one. {@link #updateBetweens} is a no-op for the same reason: there is no
- * cross-pipe wire graph to update.
+ * <p>{@link #updateBetweens} stays a no-op: it is a purely cosmetic "which wire-to-wire segments render between
+ * two octants" concern (1.12.2's {@code EnumWireBetween}), orthogonal to the real connectivity/signal logic
+ * {@link WireNetwork} now provides, and out of this batch's scope (no pipe wire renderer exists yet).
  */
 public final class SimplePipeWireManager implements IWireManager {
     private final IPipeHolder holder;
@@ -79,12 +79,19 @@ public final class SimplePipeWireManager implements IWireManager {
 
     @Override
     public boolean isPowered(EnumWirePart part) {
-        // No IWireEmitter exists anywhere in this batch, so nothing could ever legitimately power a wire part.
-        return false;
+        if (!parts.containsKey(part)) {
+            return false;
+        }
+        return WireNetwork.isPowered(holder, part);
     }
 
     @Override
     public boolean isAnyPowered(DyeColor color) {
+        for (Map.Entry<EnumWirePart, DyeColor> entry : parts.entrySet()) {
+            if (entry.getValue() == color && WireNetwork.isPowered(holder, entry.getKey())) {
+                return true;
+            }
+        }
         return false;
     }
 

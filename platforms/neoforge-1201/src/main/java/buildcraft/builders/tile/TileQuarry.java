@@ -32,6 +32,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.AABB;
 
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.util.LazyOptional;
@@ -672,6 +673,20 @@ public class TileQuarry extends TileBC implements IDebuggable {
             frameBox.reset();
             miningBox.reset();
         }
+    }
+
+    /** Widens the render bounding box to the whole claimed frame, so {@code RenderQuarry}'s laser outline (which
+     * can reach well beyond the tile's own 1x1x1 box) is not culled just because the tile's own chunk section fell
+     * out of the frustum -- see {@code TileHeatExchange}'s identical precedent for this target's own
+     * {@code getRenderBoundingBox()} hook. */
+    @Override
+    public AABB getRenderBoundingBox() {
+        if (!frameBox.isInitialized()) {
+            return super.getRenderBoundingBox();
+        }
+        BlockPos min = frameBox.min();
+        BlockPos max = frameBox.max();
+        return new AABB(min.getX(), min.getY(), min.getZ(), max.getX() + 1, max.getY() + 1, max.getZ() + 1);
     }
 
     // IDebuggable

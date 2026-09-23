@@ -9,6 +9,7 @@ package buildcraft;
 
 import org.jetbrains.annotations.Nullable;
 
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.material.MapColor;
@@ -20,6 +21,8 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 
+import buildcraft.api.core.BuildCraftAPI;
+import buildcraft.api.core.EnumHandlerPriority;
 import buildcraft.api.mj.MjAPI;
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.transport.pipe.IItemPipe;
@@ -27,24 +30,45 @@ import buildcraft.api.transport.pipe.PipeApi;
 import buildcraft.api.transport.pipe.PipeDefinition;
 import buildcraft.api.transport.pipe.PipeFlowType;
 
+import buildcraft.lib.misc.FakePlayerProvider;
 import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.transport.block.BlockPipeHolder;
+import buildcraft.transport.container.ContainerDiamondPipe;
+import buildcraft.transport.container.ContainerDiamondWoodPipe;
 import buildcraft.transport.item.ItemPipeHolder;
+import buildcraft.transport.pipe.PipeExtensionManager;
 import buildcraft.transport.pipe.PipeRegistry;
+import buildcraft.transport.pipe.StripesRegistry;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourClay;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourCobble;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDaizuli;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDiamondFluid;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourDiamondItem;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourEmzuli;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourGold;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourIron;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourLapis;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourLimiter;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourObsidian;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourQuartz;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourStripes;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourVoid;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodDiamond;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodPower;
 import buildcraft.transport.pipe.flow.PipeFlowFluids;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.pipe.flow.PipeFlowPower;
+import buildcraft.transport.stripes.StripesHandlerEntityInteract;
+import buildcraft.transport.stripes.StripesHandlerHoe;
+import buildcraft.transport.stripes.StripesHandlerMinecartDestroy;
+import buildcraft.transport.stripes.StripesHandlerPipes;
+import buildcraft.transport.stripes.StripesHandlerPlaceBlock;
+import buildcraft.transport.stripes.StripesHandlerPlant;
+import buildcraft.transport.stripes.StripesHandlerUse;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -90,9 +114,17 @@ public final class BCTransportRegistries {
 
     static {
         PipeApi.pipeRegistry = PipeRegistry.INSTANCE;
+        // Wires the pluggable registry -- needed by TilePipeHolder#loadAdditional (looking up a PluggableDefinition
+        // by id) as of the wires/gates/pluggables batch; nothing before that batch ever read PipeApi.pluggableRegistry.
+        PipeApi.pluggableRegistry = buildcraft.lib.registry.PluggableRegistry.INSTANCE;
         PipeApi.flowItems = new PipeFlowType(PipeFlowItems::new, PipeFlowItems::new);
         PipeApi.flowFluids = new PipeFlowType(PipeFlowFluids::new, PipeFlowFluids::new);
         PipeApi.flowPower = new PipeFlowType(PipeFlowPower::new, PipeFlowPower::new);
+        // The stripes pipe's own dispatcher/extension-manager -- see StripesRegistry/PipeExtensionManager's own
+        // javadoc. Set here alongside the flow types above for the identical "read immediately by a definition
+        // built further down this class" reason.
+        PipeApi.stripeRegistry = StripesRegistry.INSTANCE;
+        PipeApi.extensionManager = PipeExtensionManager.INSTANCE;
     }
 
     /** The cobblestone pipe's own {@link PipeDefinition} -- see this class's own javadoc for the
@@ -196,6 +228,83 @@ public final class BCTransportRegistries {
         .disableColouring()
         .define();
 
+    /** The obsidian pipe's own {@link PipeDefinition} -- an MJ-powered magnet, not explosive at all (see
+     * {@link PipeBehaviourObsidian}'s own javadoc). 1.12.2: {@code builder.idTex("obsidian_item").flowItem()
+     * .define()}; its {@code obsidian_fluid} sibling is commented out in the real 1.12.2 source itself
+     * (confirmed by reading {@code BCTransportPipes#preInit} directly), so this material stays item-only here
+     * too, matching upstream rather than a scope cut of this port's own. */
+    public static final PipeDefinition PIPE_OBSIDIAN = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("obsidian")
+        .logic(PipeBehaviourObsidian::new, PipeBehaviourObsidian::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The lapis pipe's own {@link PipeDefinition} -- paints items with a colour for a diamond pipe further down
+     * the line to sort on (see {@link PipeBehaviourLapis}'s own javadoc). 1.12.2 only ever registers this as
+     * {@code lapisItem} -- item-only, no fluid sibling. */
+    public static final PipeDefinition PIPE_LAPIS = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("lapis")
+        .logic(PipeBehaviourLapis::new, PipeBehaviourLapis::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The daizuli pipe's own {@link PipeDefinition} -- a directional colour filter, BuildCraft 8-specific (see
+     * {@link PipeBehaviourDaizuli}'s own javadoc). 1.12.2 only ever registers this as {@code daizuliItem}. */
+    public static final PipeDefinition PIPE_DAIZULI = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("daizuli")
+        .logic(PipeBehaviourDaizuli::new, PipeBehaviourDaizuli::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The emzuli pipe's own {@link PipeDefinition} -- a four-preset extraction wooden pipe, BuildCraft
+     * 8-specific (see {@link PipeBehaviourEmzuli}'s own javadoc). 1.12.2 only ever registers this as
+     * {@code emzuliItem}. */
+    public static final PipeDefinition PIPE_EMZULI = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("emzuli")
+        .logic(PipeBehaviourEmzuli::new, PipeBehaviourEmzuli::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The stripes pipe's own {@link PipeDefinition} -- a real, distinct pipe material (not merely an
+     * "extension" attached to another pipe -- see {@link PipeBehaviourStripes}'s own javadoc), the extraction
+     * pipe that mines/interacts with the world ahead of its open face. 1.12.2 only ever registers this as
+     * {@code stripesItem}. */
+    public static final PipeDefinition PIPE_STRIPES = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("stripes")
+        .logic(PipeBehaviourStripes::new, PipeBehaviourStripes::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The diamond pipe's own {@link PipeDefinition} -- the item-sorting/filtering material (see
+     * {@link buildcraft.transport.pipe.behaviour.PipeBehaviourDiamond}). 1.12.2's real builder call gives this
+     * material eight distinct per-face texture suffixes (one per {@code EnumFacing} plus an item-stack variant);
+     * as with every other material in this file, {@code PipeDefinition.textures}/the suffix array has zero
+     * readers anywhere in this port, so a single {@code idTexPrefix("diamond")} is enough. {@code canBeColoured}
+     * is {@code false} for the same reason as every other material in this batch. */
+    public static final PipeDefinition PIPE_DIAMOND = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("diamond")
+        .logic(PipeBehaviourDiamondItem::new, PipeBehaviourDiamondItem::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
+    /** The wood/diamond combo pipe's own {@link PipeDefinition} -- a filtered wooden pipe (see
+     * {@link buildcraft.transport.pipe.behaviour.PipeBehaviourWoodDiamond}). 1.12.2's own id is
+     * {@code "diamond_wood_item"}; this port's id is the bare material name {@code "diamond_wood"}, matching
+     * every other item pipe's own {@code idTexPrefix(material)} shape in this file (the {@code "pipe_item_"}
+     * prefix lives on the placeable item below instead, not the definition). */
+    public static final PipeDefinition PIPE_DIAMOND_WOOD = new PipeDefinition.PipeDefinitionBuilder()
+        .idTexPrefix("diamond_wood")
+        .logic(PipeBehaviourWoodDiamond::new, PipeBehaviourWoodDiamond::new)
+        .flowItem()
+        .disableColouring()
+        .define();
+
     // The fluid pipes: 1.12.2's BCTransportPipes#preInit defines each one right after its item sibling, with the
     // same logic(...) and flowFluid() in place of flowItem() -- `woodFluid = builder.idTexPrefix("wood_fluid")
     // .flowFluid().define()`, `cobbleFluid = builder.idTex("cobblestone_fluid")...`, and so on. Their ids keep
@@ -220,6 +329,10 @@ public final class BCTransportRegistries {
         fluidPipe("clay_fluid", PipeBehaviourClay::new, PipeBehaviourClay::new);
     public static final PipeDefinition PIPE_VOID_FLUID =
         fluidPipe("void_fluid", PipeBehaviourVoid::new, PipeBehaviourVoid::new);
+    public static final PipeDefinition PIPE_DIAMOND_FLUID =
+        fluidPipe("diamond_fluid", PipeBehaviourDiamondFluid::new, PipeBehaviourDiamondFluid::new);
+    public static final PipeDefinition PIPE_DIAMOND_WOOD_FLUID =
+        fluidPipe("diamond_wood_fluid", PipeBehaviourWoodDiamond::new, PipeBehaviourWoodDiamond::new);
 
     /** 1.12.2's {@code BCTransportConfig#baseFlowRate} default (mB per tick); the config file itself is not
      * ported, so this is the value every rate below derives from. */
@@ -239,6 +352,8 @@ public final class BCTransportRegistries {
         fluidTransfer(PIPE_QUARTZ_FLUID, BASE_FLOW_RATE * 4, 10);
         fluidTransfer(PIPE_GOLD_FLUID, BASE_FLOW_RATE * 8, 2);
         fluidTransfer(PIPE_VOID_FLUID, BASE_FLOW_RATE * 8, 10);
+        fluidTransfer(PIPE_DIAMOND_FLUID, BASE_FLOW_RATE * 8, 10);
+        fluidTransfer(PIPE_DIAMOND_WOOD_FLUID, BASE_FLOW_RATE * 8, 10);
     }
 
     private static PipeDefinition fluidPipe(
@@ -257,14 +372,14 @@ public final class BCTransportRegistries {
     }
 
     // The power (kinesis) pipes. 1.12.2's real BCTransportPipes#preInit defines nine of these
-    // (cobblestone/wood/stone/sandstone/quartz/gold/iron/diamond/diamond_wood), the last three through
-    // PipeBehaviourLimiter (a wrench-cycling, redstone-controlled power throttle with its own seven-frame texture
-    // set) -- not ported this batch; see this class's own javadoc scope note. The six below reuse this batch's
+    // (cobblestone/wood/stone/sandstone/quartz/gold/iron/diamond/diamond_wood). The six below reuse this batch's
     // existing item-pipe behaviours exactly as 1.12.2 itself does (its own PIPE_STONE/PIPE_COBBLESTONE/... share
     // one `builder.logic(...)` call across their item/fluid/power siblings), since none of Cobble/Stone/
-    // Sandstone/Quartz/Gold's behaviour actually depends on which flow they carry. Only PIPE_WOOD_POWER needs its
-    // own behaviour class ({@link PipeBehaviourWoodPower}), for the same reason 1.12.2's own woodPower registration
-    // switches {@code logic(...)} away from plain {@code PipeBehaviourWood} first.
+    // Sandstone/Quartz/Gold's behaviour actually depends on which flow they carry. PIPE_WOOD_POWER needs its own
+    // behaviour class (PipeBehaviourWoodPower), for the same reason 1.12.2's own woodPower registration switches
+    // logic(...) away from plain PipeBehaviourWood first. Iron/diamond/diamond_wood power (below) needed a whole
+    // new behaviour (PipeBehaviourLimiter) and were cut from that earlier batch for exactly that reason -- ported
+    // this batch, see PipeBehaviourLimiter's own javadoc.
     //
     // Ids follow this port's own "pipe_fluid_<material>" convention for the fluid pipes above, so these are
     // "pipe_power_<material>" rather than 1.12.2's own "<material>_power" -- matching BCTransportRegistries'
@@ -283,12 +398,33 @@ public final class BCTransportRegistries {
     public static final PipeDefinition PIPE_GOLD_POWER =
         powerPipe("pipe_power_gold", PipeBehaviourGold::new, PipeBehaviourGold::new);
 
+    /** The iron/diamond power pipes' own {@link PipeDefinition}s -- {@link PipeBehaviourLimiter}, 1.12.2's real
+     * behaviour swap for exactly these two materials (confirmed by re-reading {@code BCTransportPipes#preInit}:
+     * {@code ironPower}/{@code diamondPower} both switch {@code logic(...)} to {@code PipeBehaviourLimiter} right
+     * before defining them, sharing one builder call the same way this file's own six materials above do). */
+    public static final PipeDefinition PIPE_IRON_POWER =
+        powerPipe("pipe_power_iron", PipeBehaviourLimiter::new, PipeBehaviourLimiter::new);
+    public static final PipeDefinition PIPE_DIAMOND_POWER =
+        powerPipe("pipe_power_diamond", PipeBehaviourLimiter::new, PipeBehaviourLimiter::new);
+
+    /** The diamond_wood power pipe's own {@link PipeDefinition}. <b>Not {@link PipeBehaviourLimiter} --</b>
+     * verified against 1.12.2's real {@code BCTransportPipes#preInit} rather than assumed from this batch's own
+     * task description (which named it alongside iron/diamond as a {@code PipeBehaviourLimiter} material): the
+     * real source switches {@code logic(...)} to {@code PipeBehaviourWoodDiamond} for {@code diaWoodItem}/
+     * {@code diaWoodFluid}, then to plain {@code PipeBehaviourWoodPower} -- the exact same class {@link
+     * #PIPE_WOOD_POWER} above already uses -- for {@code diaWoodPower}, never touching {@code PipeBehaviourLimiter}
+     * at all for this one material. This is faithful to the original, not a shortcut: a diamond/wood kinesis pipe
+     * is a wooden receiver pipe that merely renders with the fancier diamond/wood arm model, not a limiter. */
+    public static final PipeDefinition PIPE_DIAMOND_WOOD_POWER =
+        powerPipe("pipe_power_diamond_wood", PipeBehaviourWoodPower::new, PipeBehaviourWoodPower::new);
+
     /** 1.12.2's {@code BCTransportConfig.basePowerRate} default (4) and its own
      * {@code reloadConfig}/{@code powerTransfer(...)} calls, verbatim: cobblestone x1/16, stone x2/32,
-     * wood x4/128 (receiver), sandstone x4/32, quartz x8/32, gold x32/32 -- {@code BCTransportConfig} itself is not
-     * ported (see {@code PIPE_COBBLESTONE_FLUID}'s own fluid-transfer note above for the identical reasoning), so
-     * these are the plain constant results of that formula. Must run after the definitions above and before any
-     * pipe is placed -- {@code PipeFlowPower} reads its transfer info once, in {@code reconfigure()}. */
+     * wood x4/128 (receiver), sandstone x4/32, quartz x8/32, iron x8/32, gold x32/32, diamond x64/32,
+     * diamond_wood x64/32 (receiver) -- {@code BCTransportConfig} itself is not ported (see
+     * {@code PIPE_COBBLESTONE_FLUID}'s own fluid-transfer note above for the identical reasoning), so these are
+     * the plain constant results of that formula. Must run after the definitions above and before any pipe is
+     * placed -- {@code PipeFlowPower} reads its transfer info once, in {@code reconfigure()}. */
     private static final int BASE_POWER_RATE = 4;
 
     static {
@@ -297,7 +433,10 @@ public final class BCTransportRegistries {
         powerTransfer(PIPE_WOOD_POWER, BASE_POWER_RATE * 4, 128, true);
         powerTransfer(PIPE_SANDSTONE_POWER, BASE_POWER_RATE * 4, 32, false);
         powerTransfer(PIPE_QUARTZ_POWER, BASE_POWER_RATE * 8, 32, false);
+        powerTransfer(PIPE_IRON_POWER, BASE_POWER_RATE * 8, 32, false);
         powerTransfer(PIPE_GOLD_POWER, BASE_POWER_RATE * 32, 32, false);
+        powerTransfer(PIPE_DIAMOND_POWER, BASE_POWER_RATE * 64, 32, false);
+        powerTransfer(PIPE_DIAMOND_WOOD_POWER, BASE_POWER_RATE * 64, 32, true);
     }
 
     /** {@code PipeDefinition.textures} (set by {@code idTex}'s {@code tex()} half) has zero readers anywhere in
@@ -401,6 +540,48 @@ public final class BCTransportRegistries {
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_VOID)
     );
 
+    /** The obsidian pipe's own placeable item, tagged with {@link #PIPE_OBSIDIAN}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_OBSIDIAN = REGISTRY.addItem(
+        "pipe_item_obsidian",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_OBSIDIAN)
+    );
+
+    /** The lapis pipe's own placeable item, tagged with {@link #PIPE_LAPIS}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_LAPIS = REGISTRY.addItem(
+        "pipe_item_lapis",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_LAPIS)
+    );
+
+    /** The daizuli pipe's own placeable item, tagged with {@link #PIPE_DAIZULI}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_DAIZULI = REGISTRY.addItem(
+        "pipe_item_daizuli",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DAIZULI)
+    );
+
+    /** The emzuli pipe's own placeable item, tagged with {@link #PIPE_EMZULI}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_EMZULI = REGISTRY.addItem(
+        "pipe_item_emzuli",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_EMZULI)
+    );
+
+    /** The stripes pipe's own placeable item, tagged with {@link #PIPE_STRIPES}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_STRIPES = REGISTRY.addItem(
+        "pipe_item_stripes",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_STRIPES)
+    );
+
+    /** The diamond pipe's own placeable item, tagged with {@link #PIPE_DIAMOND}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_DIAMOND = REGISTRY.addItem(
+        "pipe_item_diamond",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND)
+    );
+
+    /** The wood/diamond combo pipe's own placeable item, tagged with {@link #PIPE_DIAMOND_WOOD}. */
+    public static final DeferredItem<ItemPipeHolder> PIPE_ITEM_DIAMOND_WOOD = REGISTRY.addItem(
+        "pipe_item_diamond_wood",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND_WOOD)
+    );
+
     // The fluid pipes' placeable items -- "pipe_fluid_<material>", alongside the "pipe_item_<material>" ones.
 
     public static final DeferredItem<ItemPipeHolder> PIPE_FLUID_COBBLESTONE = REGISTRY.addItem(
@@ -448,6 +629,16 @@ public final class BCTransportRegistries {
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_VOID_FLUID)
     );
 
+    public static final DeferredItem<ItemPipeHolder> PIPE_FLUID_DIAMOND = REGISTRY.addItem(
+        "pipe_fluid_diamond",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND_FLUID)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_FLUID_DIAMOND_WOOD = REGISTRY.addItem(
+        "pipe_fluid_diamond_wood",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND_WOOD_FLUID)
+    );
+
     // The power (kinesis) pipes' placeable items -- "pipe_power_<material>", six of the nine 1.12.2 materials;
     // see PIPE_COBBLESTONE_POWER's own javadoc for which three are not ported this batch and why.
 
@@ -481,9 +672,136 @@ public final class BCTransportRegistries {
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_GOLD_POWER)
     );
 
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_IRON = REGISTRY.addItem(
+        "pipe_power_iron",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_IRON_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_DIAMOND = REGISTRY.addItem(
+        "pipe_power_diamond",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_DIAMOND_WOOD = REGISTRY.addItem(
+        "pipe_power_diamond_wood",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_DIAMOND_WOOD_POWER)
+    );
+
+    /** The diamond pipes' own filter-configuration menus -- see {@code TilePipeHolder#createMenu}'s own javadoc
+     * for the dispatch, and {@code BCTransportClientRegistries} (new, this batch) for the paired screen
+     * registration. */
+    public static final DeferredHolder<MenuType<?>, MenuType<ContainerDiamondPipe>> PIPE_DIAMOND_MENU =
+        REGISTRY.addMenu("pipe_diamond", ContainerDiamondPipe::new);
+
+    public static final DeferredHolder<MenuType<?>, MenuType<ContainerDiamondWoodPipe>> PIPE_DIAMOND_WOOD_MENU =
+        REGISTRY.addMenu("pipe_diamond_wood", ContainerDiamondWoodPipe::new);
+
+    // #########
+    //
+    // Pluggables (wires/gates/pluggables batch): the pipe-face accessory family -- blocker/power-adaptor plugs,
+    // and gates. See TilePipeHolder#pluggables' own javadoc for the NBT round-trip these definitions feed.
+    //
+    // #########
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_BLOCKER =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath(BuildCraft.MOD_ID, "blocker"),
+            (definition, holder, side, nbt, registries) -> new buildcraft.transport.plug.PluggableBlocker(definition, holder, side),
+            (definition, holder, side, buffer) -> new buildcraft.transport.plug.PluggableBlocker(definition, holder, side)
+        );
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_POWER_ADAPTOR =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath(BuildCraft.MOD_ID, "power_adaptor"),
+            (definition, holder, side, nbt, registries) ->
+                new buildcraft.transport.plug.PluggablePowerAdaptor(definition, holder, side, nbt),
+            (definition, holder, side, buffer) -> new buildcraft.transport.plug.PluggablePowerAdaptor(definition, holder, side)
+        );
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_GATE =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            net.minecraft.resources.Identifier.fromNamespaceAndPath(BuildCraft.MOD_ID, "gate"),
+            (definition, holder, side, nbt, registries) ->
+                new buildcraft.transport.plug.PluggableGate(definition, holder, side, nbt, registries),
+            (definition, holder, side, buffer) -> {
+                throw new UnsupportedOperationException("PluggableGate has no network-only constructor in this batch");
+            }
+        );
+
+    static {
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_BLOCKER);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_POWER_ADAPTOR);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_GATE);
+    }
+
+    public static final DeferredItem<buildcraft.transport.item.ItemPluggableSimple> PLUG_BLOCKER = REGISTRY.addItem(
+        "plug_blocker",
+        properties -> new buildcraft.transport.item.ItemPluggableSimple(
+            properties, (holder, side) -> new buildcraft.transport.plug.PluggableBlocker(PLUGGABLE_DEF_BLOCKER, holder, side)
+        )
+    );
+
+    public static final DeferredItem<buildcraft.transport.item.ItemPluggableSimple> PLUG_POWER_ADAPTOR = REGISTRY.addItem(
+        "plug_power_adaptor",
+        properties -> new buildcraft.transport.item.ItemPluggableSimple(
+            properties,
+            (holder, side) -> new buildcraft.transport.plug.PluggablePowerAdaptor(PLUGGABLE_DEF_POWER_ADAPTOR, holder, side)
+        )
+    );
+
+    /** The one physical gate item -- every material/logic/modifier combination is one NBT-tagged stack of this
+     * same item, matching 1.12.2's own {@code ItemPluggableGate} shape. See that class's own javadoc for this
+     * batch's creative-tab scope cut. */
+    public static final DeferredItem<buildcraft.transport.item.ItemPluggableGate> ITEM_PLUGGABLE_GATE = REGISTRY.addItem(
+        "gate", buildcraft.transport.item.ItemPluggableGate::new
+    );
+
+    /** The gate configuration GUI's menu type -- see {@code PluggableGate}/{@code ContainerGate}'s own javadoc
+     * for why this reads its position+side from the menu-open extra data rather than a block position alone
+     * (unlike every other {@code addMenu} in this file, a gate is not itself a block entity). */
+    public static final DeferredHolder<MenuType<?>, MenuType<buildcraft.transport.container.ContainerGate>> GATE_MENU =
+        REGISTRY.addMenu("gate", buildcraft.transport.container.ContainerGate::new);
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCTransportRegistries::registerCapabilities);
+
+        // Wires BuildCraftAPI.fakePlayerProvider -- confirmed unassigned anywhere else in this whole port before
+        // this batch (see PipeBehaviourStripes's own javadoc); PipeBehaviourStripes#onDrop is the first real
+        // caller that needs a live Player to hand a stripes handler.
+        BuildCraftAPI.fakePlayerProvider = FakePlayerProvider.INSTANCE;
+
+        // 1.12.2's own BCTransportRegistries#init handler registration, in the same order and at the same
+        // priorities -- StripesHandlerShears/StripesHandlerDispenser/StripesHandlerPipeWires are scope cuts (see
+        // this module's PORTING.md entry): Shears' underlying IShearable no longer targets blocks on this target
+        // (entity-only now), Dispenser's BlockSource became a record tied to a real DispenserBlockEntity rather
+        // than a freely-implementable interface, and PipeWires was already dead/commented-out in 1.12.2 itself.
+        PipeApi.stripeRegistry.addHandler(StripesHandlerPlant.INSTANCE);
+        PipeApi.stripeRegistry.addHandler(new StripesHandlerPipes());
+        PipeApi.stripeRegistry.addHandler(StripesHandlerEntityInteract.INSTANCE, EnumHandlerPriority.LOW);
+        PipeApi.stripeRegistry.addHandler(StripesHandlerHoe.INSTANCE);
+        PipeApi.stripeRegistry.addHandler(StripesHandlerPlaceBlock.INSTANCE, EnumHandlerPriority.LOW);
+        PipeApi.stripeRegistry.addHandler(StripesHandlerUse.INSTANCE, EnumHandlerPriority.LOW);
+        PipeApi.stripeRegistry.addHandler(StripesHandlerMinecartDestroy.INSTANCE);
+
+        PipeApi.extensionManager.registerRetractionPipe(PIPE_VOID);
+
+        // Gate statements (wires/gates/pluggables batch) -- the one real end-to-end trigger/action pair this
+        // batch ports; see TriggerPipeSignal/ActionPipeSignal's own javadoc for what is deliberately not here.
+        buildcraft.api.statements.StatementManager.registerTriggerProvider(
+            buildcraft.transport.statements.TriggerProviderPipes.INSTANCE
+        );
+        buildcraft.api.statements.StatementManager.registerActionProvider(
+            buildcraft.transport.statements.ActionProviderPipes.INSTANCE
+        );
+        for (buildcraft.transport.statements.TriggerPipeSignal trigger
+            : buildcraft.transport.statements.TriggerPipeSignal.all()) {
+            buildcraft.api.statements.StatementManager.registerStatement(trigger);
+        }
+        for (buildcraft.transport.statements.ActionPipeSignal action
+            : buildcraft.transport.statements.ActionPipeSignal.all()) {
+            buildcraft.api.statements.StatementManager.registerStatement(action);
+        }
     }
 
     /** Looks up the placeable {@link ItemPipeHolder} for whatever {@link PipeDefinition} is actually stamped

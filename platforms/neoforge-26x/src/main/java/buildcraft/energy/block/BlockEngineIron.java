@@ -7,6 +7,10 @@
  */
 package buildcraft.energy.block;
 
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
+
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.BlockPos;
@@ -36,6 +40,7 @@ import buildcraft.api.blocks.ICustomRotationHandler;
 import buildcraft.api.transport.pipe.IItemPipe;
 
 import buildcraft.lib.block.BlockBCTile;
+import buildcraft.lib.block.EngineShapes;
 import buildcraft.lib.misc.EntityUtil;
 
 import buildcraft.energy.tile.TileEngineIron;
@@ -71,6 +76,18 @@ public class BlockEngineIron extends BlockBCTile implements ICustomRotationHandl
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(BlockStateProperties.FACING);
     }
+
+    /** The real per-facing shape, replacing the default full-cube collision/outline this block had no override
+     * for at all until now -- see {{@link EngineShapes}}'s own javadoc for why and how it's derived. */
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {{
+        return EngineShapes.get(state.getValue(BlockStateProperties.FACING));
+    }}
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {{
+        return getShape(state, level, pos, context);
+    }}
 
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state) {

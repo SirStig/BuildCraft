@@ -45,7 +45,17 @@ public enum EnumPipeMaterial implements StringRepresentable {
     IRON("iron"),
     CLAY("clay"),
     VOID("void"),
-    // The fluid-carrying variants of the nine materials above: same behaviours, a different PipeDefinition
+    // The diamond pipes (sorting/filtering) -- see BCTransportRegistries#PIPE_DIAMOND/PIPE_DIAMOND_WOOD.
+    DIAMOND("diamond"),
+    DIAMOND_WOOD("diamond_wood"),
+    // The exotic materials -- see BCTransportRegistries#PIPE_OBSIDIAN/PIPE_LAPIS/PIPE_DAIZULI/PIPE_EMZULI/
+    // PIPE_STRIPES. Item-only, matching 1.12.2's own registration for every one of these five.
+    OBSIDIAN("obsidian"),
+    LAPIS("lapis"),
+    DAIZULI("daizuli"),
+    EMZULI("emzuli"),
+    STRIPES("stripes"),
+    // The fluid-carrying variants of the eleven materials above: same behaviours, a different PipeDefinition
     // (flowFluid() instead of flowItem()) and their own textures -- see BCTransportRegistries.
     COBBLESTONE_FLUID("cobblestone_fluid"),
     WOOD_FLUID("wood_fluid"),
@@ -56,18 +66,22 @@ public enum EnumPipeMaterial implements StringRepresentable {
     IRON_FLUID("iron_fluid"),
     CLAY_FLUID("clay_fluid"),
     VOID_FLUID("void_fluid"),
-    // The power (kinesis) variants of six of the nine materials above -- see BCTransportRegistries'
-    // PIPE_COBBLESTONE_POWER javadoc for why iron/diamond/diamond_wood are not ported this batch. Their
-    // PipeDefinition ids are "pipe_power_<material>" (this port's own naming, not 1.12.2's "<material>_power"),
-    // so unlike the item/fluid values above, these are the definition's identifier path in full, not a bare
-    // material name -- there is no ambiguity to resolve, since every other value in this enum happens to already
-    // be short enough not to collide with this longer shape either way.
+    DIAMOND_FLUID("diamond_fluid"),
+    DIAMOND_WOOD_FLUID("diamond_wood_fluid"),
+    // The power (kinesis) variants -- see BCTransportRegistries' own PIPE_COBBLESTONE_POWER/PIPE_IRON_POWER
+    // javadoc. PipeDefinition ids are "pipe_power_<material>" (this port's own naming, not 1.12.2's
+    // "<material>_power"), so unlike the item/fluid values above, these are the definition's identifier path in
+    // full, not a bare material name -- there is no ambiguity to resolve, since every other value in this enum
+    // happens to already be short enough not to collide with this longer shape either way.
     COBBLESTONE_POWER("pipe_power_cobblestone"),
     WOOD_POWER("pipe_power_wood"),
     STONE_POWER("pipe_power_stone"),
     SANDSTONE_POWER("pipe_power_sandstone"),
     QUARTZ_POWER("pipe_power_quartz"),
-    GOLD_POWER("pipe_power_gold");
+    GOLD_POWER("pipe_power_gold"),
+    IRON_POWER("pipe_power_iron"),
+    DIAMOND_POWER("pipe_power_diamond"),
+    DIAMOND_WOOD_POWER("pipe_power_diamond_wood");
 
     public static final EnumPipeMaterial[] VALUES = values();
 

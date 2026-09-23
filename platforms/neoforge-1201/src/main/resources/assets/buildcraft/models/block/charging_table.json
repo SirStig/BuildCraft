@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "buildcraft:block/charging_table/top",
+    "bottom": "buildcraft:block/charging_table/bottom",
+    "side": "buildcraft:block/charging_table/side"
+  }
+}

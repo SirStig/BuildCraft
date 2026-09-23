@@ -7,12 +7,18 @@
  */
 package buildcraft.transport.block;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.NonNullList;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -27,10 +33,14 @@ import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+import net.minecraft.world.phys.BlockHitResult;
 
 import buildcraft.api.blocks.ICustomRotationHandler;
+import buildcraft.api.core.EnumPipePart;
+import buildcraft.api.transport.IItemPluggable;
 import buildcraft.api.transport.pipe.IPipe;
 import buildcraft.api.transport.pipe.PipeDefinition;
+import buildcraft.api.transport.pluggable.PipePluggable;
 
 import buildcraft.lib.block.BlockBCTile;
 
@@ -109,6 +119,22 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
         return new TilePipeHolder(pos, state);
     }
 
+    /** The real per-connection shape -- see {@link PipeShapes}'s own javadoc for why this was missing and how
+     * it is derived. Falls back to the full block only when there is genuinely no tile yet (mid-placement). */
+    @Override
+    public net.minecraft.world.phys.shapes.VoxelShape getShape(BlockState state, net.minecraft.world.level.BlockGetter level,
+        BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) {
+        return level.getBlockEntity(pos) instanceof TilePipeHolder holder
+            ? PipeShapes.get(holder)
+            : net.minecraft.world.phys.shapes.Shapes.block();
+    }
+
+    @Override
+    public net.minecraft.world.phys.shapes.VoxelShape getCollisionShape(BlockState state, net.minecraft.world.level.BlockGetter level,
+        BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) {
+        return getShape(state, level, pos, context);
+    }
+
     @Override
     public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state, BlockEntityType<T> type) {
         if (level.isClientSide()) {
@@ -160,6 +186,7 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
      * in normal survival play. */
     @Override
     protected List<ItemStack> getDrops(BlockState state, LootParams.Builder params) {
+        List<ItemStack> drops = new ArrayList<>();
         BlockEntity blockEntity = params.getOptionalParameter(LootContextParams.BLOCK_ENTITY);
         if (blockEntity instanceof TilePipeHolder holder) {
             IPipe pipe = holder.getPipe();
@@ -167,9 +194,18 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
                 PipeDefinition definition = pipe.getDefinition();
                 ItemPipeHolder item = BCTransportRegistries.getItemForPipe(definition);
                 if (item != null) {
-                    return List.of(new ItemStack(item));
+                    drops.add(new ItemStack(item));
                 }
+            } else {
+                drops.addAll(super.getDrops(state, params));
             }
+            // Every attached pluggable drops itself too -- see TilePipeHolder#getPluggables' own javadoc.
+            NonNullList<ItemStack> pluggableDrops = NonNullList.create();
+            for (PipePluggable plug : holder.getPluggables().values()) {
+                plug.addDrops(pluggableDrops, 0);
+            }
+            drops.addAll(pluggableDrops);
+            return drops;
         }
         return super.getDrops(state, params);
     }
@@ -208,5 +244,117 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
             return InteractionResult.SUCCESS;
         }
         return directional.advanceFacing() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
+    }
+
+    // Pluggable interaction
+
+    /**
+     * Activates whatever {@link PipePluggable} already sits on the clicked face (a gate's GUI, a copier) -- tried
+     * before {@link #useItemOn} regardless of what the player is holding, matching {@code PluggableGate}'s own
+     * 1.12.2 precedent of always intercepting a click on its own face. Falls through to
+     * {@link #activatePipeBehaviour} (a right-click with no pluggable in the way -- new for the diamond pipes'
+     * own filter GUI, see {@link buildcraft.transport.pipe.behaviour.PipeBehaviourDiamond}'s own javadoc) and then
+     * {@link #useItemOn} (by returning {@link InteractionResult#PASS}) whenever there is nothing to activate, so
+     * an empty face can still be interacted with -- e.g. to place a new pluggable there.
+     */
+    @Override
+    protected InteractionResult useWithoutItem(
+        BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hitResult
+    ) {
+        InteractionResult activated = activateExistingPluggable(level, pos, player, hitResult);
+        if (activated != InteractionResult.PASS) {
+            return activated;
+        }
+        return activatePipeBehaviour(level, pos, player, hitResult);
+    }
+
+    /**
+     * {@link IItemPluggable} dispatch: attaches whatever {@link PipePluggable} the held item builds to the
+     * clicked face, first giving an already-attached pluggable the chance to intercept the click instead (see
+     * {@link #useWithoutItem}'s own javadoc -- this override exists because {@code useWithoutItem} runs with no
+     * {@link ItemStack} at all, so activation has to be re-tried here too for the case where it is
+     * {@code useItemOn}, not {@code useWithoutItem}, that the game actually dispatches to first), then
+     * {@link #activatePipeBehaviour} before falling through to the placement dispatch below -- a diamond pipe's
+     * own GUI opens for a right-click holding any item too (1.12.2's own {@code PipeBehaviourDiamond} has no
+     * held-item guard either), which as a side effect means a plug cannot currently be placed onto a diamond
+     * pipe's face by right-click (matching 1.12.2's own behaviour: its {@code onPipeActivate} unconditionally
+     * returns {@code true} there too, consuming the whole interaction before any placement logic runs).
+     */
+    @Override
+    protected InteractionResult useItemOn(
+        ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand,
+        BlockHitResult hitResult
+    ) {
+        InteractionResult activated = activateExistingPluggable(level, pos, player, hitResult);
+        if (activated != InteractionResult.PASS) {
+            return activated;
+        }
+        InteractionResult behaviourActivated = activatePipeBehaviour(level, pos, player, hitResult);
+        if (behaviourActivated != InteractionResult.PASS) {
+            return behaviourActivated;
+        }
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        Direction side = hitResult.getDirection();
+        if (!(stack.getItem() instanceof IItemPluggable itemPluggable)) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        PipePluggable placed = itemPluggable.onPlace(stack, holder, side, player, hand);
+        if (placed == null) {
+            return InteractionResult.PASS;
+        }
+        holder.setPluggable(side, placed);
+        placed.onPlacedBy(player);
+        if (!player.getAbilities().instabuild) {
+            stack.shrink(1);
+        }
+        level.playSound(null, pos, SoundEvents.ITEM_FRAME_PLACE, SoundSource.BLOCKS, 1.0F, 1.0F);
+        return InteractionResult.SUCCESS;
+    }
+
+    private static InteractionResult activateExistingPluggable(
+        Level level, BlockPos pos, Player player, BlockHitResult hitResult
+    ) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        PipePluggable plug = holder.getPluggable(hitResult.getDirection());
+        if (plug == null) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        return plug.onPluggableActivate(player, hitResult) ? InteractionResult.SUCCESS : InteractionResult.PASS;
+    }
+
+    /**
+     * New: dispatches to {@code PipeBehaviour#onPipeActivate}, and opens {@code TilePipeHolder}'s own
+     * {@code MenuProvider} menu (server-side only) when it answers {@code true} -- the diamond pipes' filter GUI.
+     * Every other material's behaviour still answers {@code false} by default ({@link PipeBehaviour}'s own base
+     * implementation), so this is a pure addition: {@code PASS} for everything that isn't a diamond pipe, exactly
+     * as before this batch. {@code EnumPipePart.CENTER} always, matching {@code attemptRotation}'s own
+     * {@code sideWrenched}-is-ignored precedent above -- see {@code PipeBehaviourDirectional}'s own javadoc for
+     * why this full-cube block cannot tell which arm was actually clicked.
+     */
+    private static InteractionResult activatePipeBehaviour(
+        Level level, BlockPos pos, Player player, BlockHitResult hitResult
+    ) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        IPipe pipe = holder.getPipe();
+        if (pipe == null || !pipe.getBehaviour().onPipeActivate(player, hitResult, EnumPipePart.CENTER)) {
+            return InteractionResult.PASS;
+        }
+        if (level.isClientSide()) {
+            return InteractionResult.SUCCESS;
+        }
+        player.openMenu(holder);
+        return InteractionResult.SUCCESS;
     }
 }

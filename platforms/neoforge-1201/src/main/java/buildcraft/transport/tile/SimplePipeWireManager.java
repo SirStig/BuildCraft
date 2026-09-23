@@ -19,10 +19,12 @@ import buildcraft.api.transport.EnumWirePart;
 import buildcraft.api.transport.IWireManager;
 import buildcraft.api.transport.pipe.IPipeHolder;
 
+import buildcraft.transport.wire.WireNetwork;
+
 /**
- * A genuine, if deliberately small, {@link IWireManager} -- see the 26.x copy of this class for the full account
- * of why this is new to the port rather than a port of 1.12.2's own {@code WireManager}, and why
- * {@link #isPowered}/{@link #isAnyPowered}/{@link #updateBetweens} are honestly no-ops rather than stubs.
+ * A genuine {@link IWireManager} -- see the 26.x copy of this class for the full account of
+ * {@link #isPowered}/{@link #isAnyPowered} now delegating to {@link WireNetwork}'s on-demand BFS rather than
+ * being honest no-ops, and of why {@link #updateBetweens} stays a no-op (purely cosmetic, out of scope).
  */
 public final class SimplePipeWireManager implements IWireManager {
     private final IPipeHolder holder;
@@ -70,11 +72,19 @@ public final class SimplePipeWireManager implements IWireManager {
 
     @Override
     public boolean isPowered(EnumWirePart part) {
-        return false;
+        if (!parts.containsKey(part)) {
+            return false;
+        }
+        return WireNetwork.isPowered(holder, part);
     }
 
     @Override
     public boolean isAnyPowered(DyeColor color) {
+        for (Map.Entry<EnumWirePart, DyeColor> entry : parts.entrySet()) {
+            if (entry.getValue() == color && WireNetwork.isPowered(holder, entry.getKey())) {
+                return true;
+            }
+        }
         return false;
     }
 
