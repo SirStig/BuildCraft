@@ -20,14 +20,19 @@ import buildcraft.lib.client.render.laser.LaserData_BC8.LaserType;
  * <p>1.12.2 read each sprite off a {@code BCCoreSprites} {@code SpriteHolder} (the unported
  * {@code SpriteHolderRegistry} system); the sprites are plain block-atlas ids now, listed in {@link #SPRITES} and
  * stitched into the block atlas by {@code assets/minecraft/atlases/blocks.json} -- see PORTING.md for why that file,
- * not a registration event, is the right mechanism on both targets. The PNGs themselves are byte-for-byte copies of
+ * not a registration event, is the right mechanism on both targets. Most of the PNGs are byte-for-byte copies of
  * {@code buildcraft_resources/assets/buildcraftcore/textures/lasers/}, moved from the old {@code buildcraftcore}
- * namespace to the port's single {@code buildcraft} one.
+ * namespace to the port's single {@code buildcraft} one; {@link #SPRITE_TUBE_MINING_WELL}/{@link #SPRITE_TUBE_PUMP}
+ * instead come from {@code buildcraft_resources/assets/buildcraftfactory/textures/blocks/{mining_well,pump}/tube.png}
+ * (each machine's own retracting-tube sprite, not a {@code buildcraftcore} laser), renamed into this same
+ * {@code lasers/} folder alongside the rest so every laser sprite is stitched by the one atlas source list.
  *
  * <p>Nothing here references a client-only class (a {@link LaserType} is only {@link Identifier}s and numbers), so
- * common code may name these constants; only turning them into geometry is client-side. Only the marker types have
- * a consumer so far; the stripes/power types are declared now, with their sprites stitched, for the builder,
- * quarry, mining-well and silicon-laser renderers still to come. */
+ * common code may name these constants; only turning them into geometry is client-side. The marker types, the
+ * mining well/pump tube types ({@link #TUBE_MINING_WELL}/{@link #TUBE_PUMP}, consumed by
+ * {@code buildcraft.factory.client.render.RenderMiningWell}/{@code RenderPump}) all have consumers now; the
+ * stripes/power types are still declared with their sprites stitched, for the builder, quarry and silicon-laser
+ * renderers still to come. */
 public final class BuildCraftLaserManager {
 
     public static final Identifier SPRITE_MARKER_VOLUME_CONNECTED = sprite("marker_volume_connected");
@@ -43,13 +48,21 @@ public final class BuildCraftLaserManager {
     public static final Identifier SPRITE_POWER_MED = sprite("power_med");
     public static final Identifier SPRITE_POWER_HIGH = sprite("power_high");
     public static final Identifier SPRITE_POWER_FULL = sprite("power_full");
+    /** 1.12.2's {@code buildcraftfactory:blocks/mining_well/tube}/{@code blocks/pump/tube} -- the mining well and
+     * pump each drew their own retracting intake-tube laser off a distinct {@code SpriteHolder} rather than
+     * sharing one of the generic marker/power sprites above (confirmed against {@code RenderMiningWell}/
+     * {@code RenderPump}, {@code common/buildcraft/factory/client/render/}), so each keeps its own sprite and
+     * {@link LaserType} here rather than reusing {@link #MARKER_VOLUME_POSSIBLE} or a {@code POWER_*} type. */
+    public static final Identifier SPRITE_TUBE_MINING_WELL = sprite("tube_mining_well");
+    public static final Identifier SPRITE_TUBE_PUMP = sprite("tube_pump");
 
     /** Every laser sprite id, for the post-stitch presence check. */
     public static final List<Identifier> SPRITES = List.of(
         SPRITE_MARKER_VOLUME_CONNECTED, SPRITE_MARKER_VOLUME_POSSIBLE, SPRITE_MARKER_VOLUME_SIGNAL,
         SPRITE_MARKER_PATH_CONNECTED, SPRITE_MARKER_PATH_POSSIBLE, SPRITE_MARKER_DEFAULT_POSSIBLE,
         SPRITE_STRIPES_READ, SPRITE_STRIPES_WRITE, SPRITE_STRIPES_WRITE_DIRECTION,
-        SPRITE_POWER_LOW, SPRITE_POWER_MED, SPRITE_POWER_HIGH, SPRITE_POWER_FULL
+        SPRITE_POWER_LOW, SPRITE_POWER_MED, SPRITE_POWER_HIGH, SPRITE_POWER_FULL,
+        SPRITE_TUBE_MINING_WELL, SPRITE_TUBE_PUMP
     );
 
     public static final LaserType MARKER_VOLUME_CONNECTED;
@@ -70,6 +83,9 @@ public final class BuildCraftLaserManager {
     public static final LaserType POWER_HIGH;// green
     public static final LaserType POWER_FULL;// blue
     public static final LaserType[] POWERS;
+
+    public static final LaserType TUBE_MINING_WELL;
+    public static final LaserType TUBE_PUMP;
 
     static {
         {
@@ -126,6 +142,20 @@ public final class BuildCraftLaserManager {
         POWER_HIGH = new LaserType(MARKER_VOLUME_POSSIBLE, SPRITE_POWER_HIGH);
         POWER_FULL = new LaserType(MARKER_VOLUME_POSSIBLE, SPRITE_POWER_FULL);
         POWERS = new LaserType[] {POWER_LOW, POWER_MED, POWER_HIGH, POWER_FULL};
+
+        TUBE_MINING_WELL = tubeLaserType(SPRITE_TUBE_MINING_WELL);
+        TUBE_PUMP = tubeLaserType(SPRITE_TUBE_PUMP);
+    }
+
+    /** 1.12.2's {@code RenderMiningWell}/{@code RenderPump} both built their tube laser identically: a 16x8 middle
+     * row (the sprite's top half) cycled along the beam's length, capped at both ends by an 8x8 square (the
+     * sprite's bottom-left quadrant) -- reproduced verbatim here rather than duplicated per caller. Passing
+     * {@code null} for the {@code end} row (as both originals did) means every leftover length after the middle
+     * segments is absorbed into the {@code start} row alone; see {@code CompiledLaser.Builder#bakeType}. */
+    private static LaserType tubeLaserType(Identifier sprite) {
+        LaserRow cap = new LaserRow(sprite, 0, 8, 8, 16);
+        LaserRow middle = new LaserRow(sprite, 0, 0, 16, 8);
+        return new LaserType(cap, middle, new LaserRow[] { middle }, null, cap);
     }
 
     private BuildCraftLaserManager() {}

@@ -38,12 +38,17 @@ import buildcraft.BCFactoryRegistries;
  * <p>{@code TileBC_Neptune}/{@code ITickable}/{@code update()} become {@link TileBC}/{@link #serverTick()}, driven
  * by the owning block's {@code getTicker}, exactly like {@code TileChute}/{@code TileEngineWood}. 1.12.2's
  * {@code update()} opened with a {@code world.isRemote} branch that smoothed a render-only {@code currentLength}
- * toward {@code wantedLength} for a fast renderer; that branch, {@code currentLength}, {@code lastLength},
- * {@code getLength}, {@code getPercentFilledForRender}, {@code hasFastRenderer} and the two render-distance
- * overrides are all dropped outright -- there is no renderer in this port yet to consume any of them, the same
- * "no renderer to serve it" reasoning {@code TileEngineBase} already used for its own dropped progress animation.
- * {@link #wantedLength} survives as a plain server-side field: {@link #updateLength()} still needs it to notice
- * when the dig target actually moved, it just no longer gets pushed to a client.
+ * toward {@code wantedLength} every client tick, purely so a fast renderer could animate the retracting tube
+ * smoothly between syncs; that branch, {@code currentLength} and {@code lastLength} stay dropped now that
+ * {@code buildcraft.factory.client.render.RenderMiningWell}/{@code RenderPump} exist -- {@link #getWantedLength()}
+ * is read directly every frame instead (the beam snaps to its new length on each sync rather than easing toward
+ * it), matching {@code TileEngineBase}'s own "sync on a state change, not every tick" convention rather than
+ * reproducing a per-tick client interpolation field for a first pass. {@code hasFastRenderer} and the two
+ * render-distance overrides remain dropped: nothing on this target gates a {@code BlockEntityRenderer} on either
+ * any more (see {@code RenderMiningWell}'s own javadoc). {@link #wantedLength} survives as a plain server-side
+ * field, now also pushed to tracking clients by {@link #markDirtyAndSync()} whenever it actually changes (see
+ * {@link #updateLength()}), which is also what makes {@link #getPercentFilledForRender()}'s reintroduced
+ * {@link #battery} reading meaningfully current on a client -- both are read together by the renderers above.
  *
  * <p>{@code onLoad}'s {@code offset = world.rand.nextInt(10)} (a per-tile stagger so not every miner's LED-status
  * network tick landed on the same world tick) has nothing left to stagger once the id-tagged {@code NET_LED_STATUS}
@@ -128,7 +133,14 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
 
     /** Redraws the tube shaft below this tile to match {@link #getTargetPos()}. Mirrors 1.12.2's own approach --
      * always clear the whole column first, then redraw down to the new target -- rather than a more surgical
-     * diff; this only runs when the dig column's target position actually changes, so it is not a hot path. */
+     * diff; this only runs when the dig column's target position actually changes, so it is not a hot path.
+     *
+     * <p>{@link #markDirtyAndSync()} here is new (1.12.2's own equivalent -- {@code updateLength}'s
+     * {@code sendNetworkUpdate(NET_WANTED_Y)} -- was ported away with the rest of the id-tagged payload system;
+     * see the class javadoc). It is the one thing a client actually needs pushed to it to draw the tube-laser
+     * renderers above: {@link TileBC#markDirtyAndSync()} syncs this tile's <em>entire</em> saved state, which
+     * already includes {@link #currentPos}, {@link #wantedLength}, {@link #progress} and {@link #battery} (see
+     * {@link #saveAdditional}) -- they just never reached a client before, because nothing ever called it. */
     protected void updateLength() {
         BlockPos target = getTargetPos();
         int newY = target != null ? target.getY() : worldPosition.getY();
@@ -141,7 +153,16 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
                 level.setBlock(shaftPos, tube.defaultBlockState(), Block.UPDATE_ALL);
             }
             wantedLength = newLength;
+            markDirtyAndSync();
         }
+    }
+
+    /** How many blocks tall the tube shaft below this tile currently is -- {@code buildcraft.factory.client.render
+     * .RenderMiningWell}/{@code RenderPump}'s own read of {@link #wantedLength}, kept package-private no longer
+     * now that a renderer (a different package) needs it. Was 1.12.2's client-interpolated {@code getLength}; see
+     * the class javadoc for why this port reads the raw, synced value directly instead. */
+    public int getWantedLength() {
+        return wantedLength;
     }
 
     /** Clears a contiguous run of tube blocks starting immediately below this tile, stopping at the first block
@@ -196,5 +217,14 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
 
     protected long getBatteryCapacity() {
         return 500 * MjAPI.MJ;
+    }
+
+    /** 1.12.2's own method, name and all -- the "power" status-LED gauge's read of {@link #battery}, reintroduced
+     * for the same renderers {@link #getWantedLength()} was. No {@code @SideOnly} guard: nothing else in this
+     * port's {@code TileBC} hierarchy bothers gating a plain getter to one side any more (see
+     * {@code RenderTileTank}, which reads {@code TileTank#tank} the same unguarded way). */
+    public float getPercentFilledForRender() {
+        float val = battery.getStored() / (float) battery.getCapacity();
+        return val < 0 ? 0 : val > 1 ? 1 : val;
     }
 }

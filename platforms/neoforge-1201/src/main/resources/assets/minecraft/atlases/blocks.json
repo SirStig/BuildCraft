@@ -51,6 +51,14 @@
     {
       "type": "minecraft:single",
       "resource": "buildcraft:lasers/power_full"
+    },
+    {
+      "type": "minecraft:single",
+      "resource": "buildcraft:lasers/tube_mining_well"
+    },
+    {
+      "type": "minecraft:single",
+      "resource": "buildcraft:lasers/tube_pump"
     }
   ]
 }

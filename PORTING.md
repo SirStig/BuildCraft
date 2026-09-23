@@ -4328,6 +4328,115 @@ Deliberately not ported, with reasons:
   - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` in a
     private `rsync` snapshot of the shared tree, and the full test suite (25/25).
 
+- **The mining well and pump get their missing renderer layer: two status LEDs and a retracting intake-tube
+  laser, closing the "no renderer to consume it" deferral both `TileMiner` classes' own javadoc has documented
+  since that base class first landed.** 1.12.2's `RenderMiningWell`/`RenderPump`/`RenderTube` (139/155/50 lines,
+  `common/buildcraft/factory/client/render/`) ported onto the same `BlockEntityRenderer` machinery
+  `RenderMarkerVolume`/`RenderTileTank`/`RenderHeatExchange` already established, plus two small server-side fixes
+  that were prerequisites, not renderer code themselves.
+  - **The tube laser reuses the existing laser pipeline, not a new one.** `BuildCraftLaserManager` gains
+    `TUBE_MINING_WELL`/`TUBE_PUMP` (a shared private `tubeLaserType(sprite)` helper on both platforms, since both
+    originals built an identical cap/middle layout, just off different sprites) rather than repurposing
+    `POWER_LOW`/`MED`/`HIGH`/`FULL` -- those are a generic green/yellow/red/blue gradient family with no
+    consumer yet, semantically wrong for a plain grey retracting tube. The two new sprites are 1.12.2's own,
+    copied byte-for-byte (confirmed via `md5sum`) from `buildcraft_resources/assets/buildcraftfactory/textures/
+    blocks/{mining_well,pump}/tube.png` into `assets/buildcraft/textures/lasers/tube_{mining_well,pump}.png`,
+    with two new `minecraft:single` entries in `assets/minecraft/atlases/blocks.json` on both platforms (the same
+    mechanism the rest of `BuildCraftLaserManager`'s sprites already use). 1.12.2's `led_green.png`/`led_red.png`
+    (also sitting in that same texture folder) are confirmed dead assets by grepping the whole 1.12.2 tree --
+    never referenced by any Java source -- so they are not pulled in, matching the established "no renderer-only
+    dead asset" precedent.
+  - **The LEDs are a hand-built tinted cube, not a laser.** 1.12.2's `RenderPartCube` (a mutable, per-instance
+    object holding a `MutableVertex` re-positioned every frame, tinted with a runtime-generated pure-white
+    texture, `ModelLoader.White.INSTANCE`) has no packaged asset behind its white base at all, so there is
+    nothing to copy byte-for-byte for it. The new `buildcraft.lib.client.render.tile.RenderPartCube` (both
+    platforms, real SpaceToad + port copyright, since it is a redesign of that same original class, not new
+    port-only content) is instead a stateless static method building six tinted faces from a centre point and
+    half-extent, tinted with `minecraft:block/white_concrete` (confirmed present in the real 1.20.1 client jar,
+    217 bytes, `assets/minecraft/textures/block/white_concrete.png`) -- a real, already-atlas-stitched vanilla
+    texture chosen so a coloured indicator light needs no new asset or atlas-source entry at all.
+  - **A real, deliberate asymmetry, confirmed by reading both originals rather than assumed:** the mining well's
+    power LED glows (a forced full-block-light floor) whenever `percentFilledForRender() > 0.01`, exactly like
+    its status LED glowing whenever still digging -- but the pump's power LED *never* glows; only its status LED
+    does. Traced to 1.12.2's own code: `RenderMiningWell` calls `maxLighti(...)` (a floor) on both LEDs, while
+    `RenderPump` calls the floor-less `lighti(block, sky)` for power and only floors the status LED via an inline
+    `Math.max(statusLight, block)`. Reproduced with a `packLight(level, pos, glow)` helper taking an explicit
+    `glow` flag per call site, `false` for the pump's power LED, matching the real source instead of an assumed
+    (incorrect) symmetry with the mining well.
+  - **Two small, real prerequisite changes to `TileMiner`, not renderer code:**
+    - `updateLength()` now calls `markDirtyAndSync()` when the dig/pump target actually changes. Nothing did
+      before: 1.12.2's own equivalent (`sendNetworkUpdate(NET_WANTED_Y)`) was dropped with the rest of the
+      id-tagged payload system when `TileMiner` was first ported, on the reasoning that there was no renderer to
+      receive it -- meaning `currentPos`/`wantedLength`/`progress`/`battery` (already written by
+      `saveAdditional`/`load`) had never actually reached a tracking client at all, only the one-time chunk-load
+      sync. This single call is what makes the renderer's data real rather than permanently stale.
+    - `getWantedLength()` and `getPercentFilledForRender()` are reintroduced (1.12.2's own method, name and all,
+      for the second one) as public getters for exactly the two client-visible fields the renderers need: how
+      deep the tube shaft currently reaches, and the battery-fill fraction for the power LED's colour ramp.
+      1.12.2's client-interpolated `currentLength`/`lastLength`/`getLength(partialTicks)` stay dropped rather
+      than reintroduced -- the beam now snaps to its new length on each sync instead of easing toward it,
+      matching `TileEngineBase`'s own "sync on a state change, not every tick" convention rather than adding a
+      second per-tick client-interpolation mechanism for a first pass. Flagged as a real, honest scope cut: the
+      visual result (does the beam look right snapping instead of easing) is unconfirmed pending the
+      coordinator's client check, same as every other renderer this session.
+  - **Global rendering diverges by platform in a way confirmed via `javap`, not assumed symmetric with
+    `RenderMarkerVolume`/`RenderHeatExchange`.** Both machines' beams reach far below the block's own 1x1x1
+    default render box, so both need the 1.12.2 `isGlobalRenderer = true` behaviour reproduced -- but *where*
+    that lives differs by target:
+    - **26.x:** `getRenderBoundingBox(T)` is a per-renderer hook (`IBlockEntityRendererExtension<T>`, confirmed
+      via `javap` on `BlockEntityRenderer<T, S>`), so `RenderMiningWell`/`RenderPump` each override it, widened
+      to the shaft's current depth (`tile.getWantedLength()`), plus the existing parameterless
+      `shouldRenderOffScreen()`.
+    - **1.20.1:** confirmed via `javap` on `net.minecraftforge.common.extensions.IForgeBlockEntity`, this
+      target's `getRenderBoundingBox()` is a zero-argument method on the block entity itself, not the renderer --
+      so it lives on `TileMiner` (one override, shared by both concrete subclasses) rather than being duplicated
+      per renderer, alongside `shouldRenderOffScreen(T)` (which *does* take the tile here) on each renderer.
+      Matches `TileHeatExchange#getRenderBoundingBox`'s identical existing precedent for widening a machine's
+      default box on this same target.
+  - **Verified with a real dedicated-server boot and RCON on both targets** (mining well on 26.x, pump on
+    1.20.1 -- covering both machines and both platforms' `TileMiner` plumbing, not a 2x2 matrix, given this
+    batch's scope), from a private snapshot on ports 25620/25621 and 25622/25623, confirming the exact fields the
+    renderers read are real and change live, not just that the tile compiles:
+    - *Mining well (26.x):* placed over a cleared shaft with a full battery; `data get block` showed
+      `{wantedLength: 10, currentPos: [0,54,0], progress: 20000000, battery: 0}`, then after another top-up
+      `{wantedLength: 11, currentPos: [0,53,0], progress: 0, battery: 440000000}` -- `currentPos`/`wantedLength`
+      advancing one block at a time exactly as `updateLength()`/`mine()` intend, left running unattended for two
+      more minutes and observed continuing on its own to `{wantedLength: 15, currentPos: [0,49,0]}`.
+    - *Pump (1.20.1):* placed over a stone-walled water pool with a 50 MJ battery; the tank went from empty to
+      `{FluidName: "minecraft:water", Amount: 5000}` (`battery: 0`, five drains at 10 MJ each), then after two
+      more top-ups to `9000` mB (`battery: 10000000`) -- `wantedLength: 5` and `currentPos` held fixed the whole
+      time, correctly reflecting the real "infinite water source" classification (2+ same-fluid neighbours over
+      solid ground) rather than exhausting the block, and still visibly changing (the tank amount) either way.
+    - Both server logs are exception-free end to end (confirmed by grepping for `xception` across each full
+      boot-to-shutdown log).
+    - The private snapshot needed `buildcraft.builders`/`BCBuildersRegistries` and the new
+      `PipeFlowPower`/`PipeBehaviourWoodPower` sources reverted to their last-committed state before it would
+      compile at all -- unrelated, mid-flight work from other agents sharing the tree, confirmed by `git status`
+      to be entirely outside this batch's own file set; the *shared* tree itself was never touched (no `git
+      stash`, no edits, no deletions -- only a private `rsync` copy was modified). The 1.20.1 snapshot's own log
+      shows one cosmetic, non-fatal `RecipeManager` parse error for `buildcraft:quarry` as a direct result of
+      that revert (a resource JSON referencing an item the reverted Java no longer registers) -- an artifact of
+      this isolated test copy, not a real issue in the shared tree.
+  - **Every new/changed model, blockstate and texture reference resolves**, checked with a small Python script
+    reading `atlases/blocks.json` on both platforms and confirming every `minecraft:single` source's PNG exists
+    on disk (all of them, not just the two new ones) -- the established "no visible client" verification pattern
+    for this session. `minecraft:block/white_concrete` needs no such check: it is a vanilla texture already in
+    every install, confirmed present directly in the real 1.20.1 client jar rather than assumed.
+  - **Not verified / scope cuts.**
+    - Deferred to the coordinator's visual check: the actual on-screen look of both LEDs and the tube laser, and
+      whether the LED tint against `white_concrete`'s faint texture noise reads cleanly at the small (1/16
+      block) size used here.
+    - No client-side length interpolation (see above) -- the beam snaps rather than eases between syncs.
+    - The power LED's colour (and, for the pump, its per-side light) only refreshes when the dig/pump target
+      changes, not every tick -- a `TileEngineBase`-style "sync on a state change" choice, not a continuous
+      power-gauge animation. The status LED and the beam's own length are unaffected, since both are already
+      tied to the same target-change event.
+  - **Files, both platforms.** New: `factory/client/render/{RenderMiningWell,RenderPump}`,
+    `lib/client/render/tile/RenderPartCube`, two `textures/lasers/tube_*.png`. Modified: `core/client/
+    BuildCraftLaserManager`, `factory/client/BCFactoryClientRegistries`, `factory/tile/TileMiner`,
+    `assets/minecraft/atlases/blocks.json`. No `lang/en_us.json` changes -- a purely visual feature with no new
+    item, block or tooltip text.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -4346,7 +4455,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables, power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |
+| `buildcraft.factory` | 46 | **done.** Chute, mining well + tube (now with its status-LED/tube-laser renderer), pump (likewise), tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |
 | `buildcraft.energy` | 41 | Stirling and Combustion (Iron) engines (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). RF engine, oil world-gen still to come. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 

@@ -12,6 +12,8 @@ import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
 import buildcraft.factory.client.render.RenderDistiller;
 import buildcraft.factory.client.render.RenderHeatExchange;
+import buildcraft.factory.client.render.RenderMiningWell;
+import buildcraft.factory.client.render.RenderPump;
 import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
 import buildcraft.factory.gui.GuiDistiller;
@@ -48,5 +50,7 @@ public final class BCFactoryClientRegistries {
         event.registerBlockEntityRenderer(BCFactoryRegistries.TANK_TYPE.get(), RenderTileTank::new);
         event.registerBlockEntityRenderer(BCFactoryRegistries.DISTILLER_TYPE.get(), RenderDistiller::new);
         event.registerBlockEntityRenderer(BCFactoryRegistries.HEAT_EXCHANGE_TYPE.get(), RenderHeatExchange::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.MINING_WELL_TYPE.get(), RenderMiningWell::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.PUMP_TYPE.get(), RenderPump::new);
     }
 }

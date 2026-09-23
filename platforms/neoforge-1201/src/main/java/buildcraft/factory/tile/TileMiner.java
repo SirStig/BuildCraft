@@ -19,6 +19,7 @@ import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.util.LazyOptional;
@@ -42,9 +43,11 @@ import buildcraft.BCFactoryRegistries;
 /**
  * Base class for a machine that digs a vertical shaft, one block at a time, powered by MJ. Mirrors the 26.x class
  * of the same name -- see that one's javadoc for the full account of what changed from 1.12.2 (the dropped
- * render-only fields, the dropped {@code offset}/{@code IdAllocator}, the dropped {@code migrateOldNBT}, and why
+ * render-only fields, the dropped {@code offset}/{@code IdAllocator}, the dropped {@code migrateOldNBT}, why
  * {@code TilesAPI.HAS_WORK} is wired to {@code !isComplete()} rather than reproducing 1.12.2's effectively-dead
- * {@code isComplete} field read). This file differs only in the usual 1.20.1 places: NBT is still
+ * {@code isComplete} field read, and why {@link #getWantedLength()}/{@link #getPercentFilledForRender()} are
+ * reintroduced now that {@code buildcraft.factory.client.render.RenderMiningWell}/{@code RenderPump} exist to
+ * read them). This file differs only in the usual 1.20.1 places: NBT is still
  * {@code CompoundTag} ({@code load}/{@code saveAdditional} rather than {@code loadAdditional}/
  * {@code saveAdditional} over {@code ValueInput}/{@code ValueOutput}), and capabilities are exposed by the block
  * entity itself through {@code getCapability} rather than registered against the block entity type -- so, unlike
@@ -93,6 +96,10 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
         clearTubeShaft();
     }
 
+    /** See the 26.x copy of this method's javadoc for why {@link #markDirtyAndSync()} is new here: it is what
+     * actually pushes {@link #currentPos}/{@link #wantedLength}/{@link #progress}/{@link #battery} (all already
+     * part of this tile's saved state, see {@link #saveAdditional}) to a tracking client, which the mining well
+     * and pump renderers now need. */
     protected void updateLength() {
         BlockPos target = getTargetPos();
         int newY = target != null ? target.getY() : worldPosition.getY();
@@ -105,7 +112,28 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
                 level.setBlock(shaftPos, tube.defaultBlockState(), Block.UPDATE_ALL);
             }
             wantedLength = newLength;
+            markDirtyAndSync();
         }
+    }
+
+    /** See the 26.x copy of this method's javadoc. */
+    public int getWantedLength() {
+        return wantedLength;
+    }
+
+    /** Widens this tile's render bounding box down to the tube shaft's current depth, matching
+     * {@code TileHeatExchange#getRenderBoundingBox}'s identical precedent for the same reason: the shaft laser
+     * {@code RenderMiningWell}/{@code RenderPump} draw reaches well outside the block's own default 1x1x1 box, and
+     * must not be culled just because this tile's own chunk section fell out of the frustum. Confirmed via
+     * {@code javap} against {@code net.minecraftforge.common.extensions.IForgeBlockEntity}: unlike 26.x (where the
+     * render bounding box is a per-{@code BlockEntityRenderer} hook -- see that platform's copy of
+     * {@code RenderMiningWell}), this target's {@code getRenderBoundingBox()} is a zero-argument method on the
+     * block entity itself, so it lives here rather than on the renderer. */
+    @Override
+    public AABB getRenderBoundingBox() {
+        int depth = Math.max(getWantedLength(), 0);
+        return new AABB(worldPosition.getX(), worldPosition.getY() - depth, worldPosition.getZ(),
+            worldPosition.getX() + 1, worldPosition.getY() + 1, worldPosition.getZ() + 1);
     }
 
     private void clearTubeShaft() {
@@ -181,5 +209,11 @@ public abstract class TileMiner extends TileBC implements IDebuggable {
 
     protected long getBatteryCapacity() {
         return 500 * MjAPI.MJ;
+    }
+
+    /** See the 26.x copy of this method's javadoc. */
+    public float getPercentFilledForRender() {
+        float val = battery.getStored() / (float) battery.getCapacity();
+        return val < 0 ? 0 : val > 1 ? 1 : val;
     }
 }
