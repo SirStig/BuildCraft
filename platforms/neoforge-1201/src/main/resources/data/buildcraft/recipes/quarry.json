@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_quarry",
+  "pattern": [
+    "iri",
+    "gig",
+    "dpd"
+  ],
+  "key": {
+    "i": {
+      "item": "buildcraft:gear_iron"
+    },
+    "g": {
+      "item": "buildcraft:gear_gold"
+    },
+    "d": {
+      "item": "buildcraft:gear_diamond"
+    },
+    "r": {
+      "item": "minecraft:redstone"
+    },
+    "p": {
+      "item": "minecraft:diamond_pickaxe"
+    }
+  },
+  "result": {
+    "item": "buildcraft:quarry",
+    "count": 1
+  }
+}

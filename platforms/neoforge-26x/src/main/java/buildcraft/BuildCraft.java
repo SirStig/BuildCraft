@@ -47,6 +47,7 @@ public final class BuildCraft {
         BCFactoryRegistries.register(modBus);
         BCEnergyRegistries.register(modBus);
         BCTransportRegistries.register(modBus);
+        BCBuildersRegistries.register(modBus);
         modBus.addListener(BCNetwork::register);
 
         // Screen registration is inherently client-only. Gating the *listener registration itself* (rather than

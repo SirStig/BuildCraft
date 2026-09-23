@@ -4560,6 +4560,140 @@ Deliberately not ported, with reasons:
     `models/item/pipe_power_<material>.json` (1.20.1), `lang/en_us.json` (six `pipe_power_<material>` names,
     "Kinesis Pipe" matching 1.12.2's own naming). No changes to any other module's files.
 
+- **`buildcraft.builders`: the Quarry (`TileQuarry`/`BlockQuarry`) and its frame block (`BlockFrame`), on both
+  platforms.** This is the first thing landed in `buildcraft.builders` on either platform, so it also stands up
+  the module itself: `BCBuildersRegistries` (new, mirrors `BCFactoryRegistries`'s structure exactly), hooked into
+  `BuildCraft.java`'s `register(modBus)` chain on both targets, plus `buildcraft.lib.misc.data.BoxIterator`
+  (ported from `common/buildcraft/lib/misc/data/BoxIterator.java`, previously absent from both platforms --
+  `Box`/`AxisOrder`/`EnumAxisOrder`, which it depends on, were already there and needed no changes).
+  - **Area claiming (`TileQuarry#onPlacedBy`) ported line-for-line** against this port's already-committed marker
+    system: an `ITileAreaProvider` (typically a `TileMarkerVolume`) touching the quarry directly, or -- failing
+    that -- any `VolumeConnection` box whose expanded edge touches it (the same two-branch search 1.12.2 used,
+    reproduced verbatim; `IAreaProvider`/`VolumeCache`/`VolumeConnection`/`TileMarkerVolume` all kept their
+    1.12.2 shape on this port already, confirmed by reading each class before writing this). Verified live: a
+    3-marker L-shaped connection (two `tryConnect` calls, extending the box on a new axis each time) produced
+    exactly the bounding box the geometry predicts, matched against `frame`/`box` read back from real block NBT.
+  - **No `drillPos`/`Task` state machine.** 1.12.2's `TaskBreakBlock`/`TaskAddFrame`/`TaskMoveDrill` triplet
+    existed to drive `RenderQuarry`'s animated drill head (a smoothly-interpolated, client-synced position). That
+    renderer is not ported this pass (see the scope cut below), so there is nothing left to feed a drill position
+    to. `TileQuarry` instead tracks one pending `Action` (`BREAK_OBSTRUCTION`/`PLACE_FRAME`/`MINE`) and
+    accumulates MJ toward it exactly the way `buildcraft.factory.tile.TileMiningWell` already does for its own
+    single-block dig loop -- the frame-membership bookkeeping (`check`, `frameBreakBlockPoses`/
+    `framePlaceFramePoses`, the incremental round-robin `toCheck` poll), the ordered frame-placement walk
+    (`getFramePositions`), and the boustrophedon dig order (a random per-position `EnumAxisOrder`/
+    `AxisOrder.Inversion` seed feeding a `BoxIterator`, exactly 1.12.2's `createBoxIterator`) all port unchanged.
+    1.12.2's separate "move the drill" MJ cost (`TaskMoveDrill`, `distance * 20 MJ`, rate-limited by
+    `BCBuildersConfig.quarryMaxFrameMoveSpeed`) is dropped with it -- that config defaults to `0` (no limit) in
+    1.12.2's own unconfigured settings, so the throttle this drops was already a no-op; no config system is
+    ported yet (see `BlockUtil`'s own javadoc for the identical call already made for `miningMultiplier`), so
+    this keeps the unconfigured *outcome* (only the per-block break cost matters), not the dead throttle or the
+    render-only travel cost it paced.
+  - **No `IWorldEventListener`.** `Level` exposes no such hook on this target at all (confirmed via `javap`
+    against the merged jar -- no `addListener`/`EventListener` survives, the same gap
+    `buildcraft.factory.tile.TileMiningWell`'s own javadoc already documents). The round-robin `toCheck` poll this
+    class already runs every tick re-examines every frame position independently of any listener, so a frame
+    block manually broken gets rebuilt within a few seconds regardless -- just not instantly. The one thing this
+    genuinely loses is `boxIterator.moveTo` snapping the dig cursor back to a spot that reopened after being
+    visited.
+  - **API divergence, confirmed via `javap` on each platform's own merged/patched jar, not assumed:**
+    `Level#getMinY()` exists on 26.3's `Level` (used for the mining box's world-bottom clamp) but not on
+    1.20.1's `LevelHeightAccessor` -- 1.20.1 needs `getMinBuildHeight()` instead (compiling 1.20.1 with the 26.x
+    call caught this immediately: "cannot find symbol"). MJ capabilities follow each platform's already-
+    established split: 26.x registers `MjCapabilities.RECEIVER`/`READABLE` against `TileQuarry`'s block entity
+    type in `BCBuildersRegistries#registerCapabilities` (`RegisterCapabilitiesEvent`, matching
+    `TileDistiller`/`TileMiner`'s own wiring); 1.20.1 exposes the same two through `TileQuarry#getCapability`
+    with `LazyOptional` fields, invalidated in `invalidateCaps` (matching `TileMiner`(1.20.1)'s own pattern).
+    NBT: 26.x reads/writes through `ValueInput`/`ValueOutput` (`getLongOr`/`getBooleanOr`/`getStringOr`, `output.
+    store(name, CompoundTag.CODEC, tag)` for the nested `Box`/`BoxIterator` compounds, mirroring
+    `TileDistiller`'s own `powerAvg` precedent); 1.20.1 uses classic `CompoundTag`/`NbtUtils` (`load`/
+    `saveAdditional`, `nbt.getCompound(...)`, `NbtUtils.writeBlockPos`/`readBlockPos`).
+    `Direction.AxisDirection#getStep()` (not 1.12.2's `getOffset()`) and
+    `Direction.fromAxisAndDirection(Axis, AxisDirection)` are identical on both platforms (confirmed by
+    decompiling each platform's own `Direction.java` out of its merged/patched sources jar) -- `BoxIterator`
+    needed no platform-specific arithmetic changes at all, only the `EnumFacing`->`Direction`/
+    `NBTTagCompound`->`CompoundTag` renames every other ported class in this session already made, plus (1.20.1
+    only) `CompoundTag#getBoolean`/`getCompound` instead of 26.x's newer `getBooleanOr`/`getCompoundOrEmpty`
+    accessors (confirmed by reading `Box.java`'s own `initialize(CompoundTag)` on each platform, which already
+    diverges the same way).
+  - **Verified live with real dedicated-server boots and RCON on both platforms**, from private game directories
+    on the assigned ports (26.x: 25630/25631; 1.20.1: 25632/25633), each launched by re-running the real
+    Gradle-captured JVM command line (26.x's own server args were generated with `prepareServerRun`, then reused
+    by swapping `clientRunVmArgs.txt`/`clientRunProgramArgs.txt` for `serverRunVmArgs.txt`/
+    `serverRunProgramArgs.txt` in the already-captured `client26.cmdline.txt` -- the mirror-image of how
+    `launch_1201.py` already derives a 1.20.1 *client* from the *server* args). Since `/setblock` does not call
+    `setPlacedBy` (confirmed the hard way: a quarry placed via `/setblock` had empty `frame`/`box` NBT forever)
+    and connecting two markers by aiming needs a real client, both were exercised through a temporary
+    self-registering `bcqconnect`/`bcqplace` debug command (`RegisterCommandsEvent`, calling exactly
+    `VolumeSubCache#tryConnect` and `TileQuarry#onPlacedBy` -- the same methods a real right-click/placement
+    would call), deleted before hand-back and confirmed absent via `git status` and a `find ... -iname 'Tmp*'`
+    sweep of `build/classes` after recompiling:
+    - *Area claim, both platforms:* three `marker_volume` blocks at (1000,65,995)/(1004,65,995)/(1004,65,999)
+      connected into one L-shaped `VolumeConnection`, a quarry placed at (999,65,995) facing so its claimed-area
+      side touches the first marker. `data get block` on the quarry read back `frame: {min: [1000,65,995], max:
+      [1004,69,999]}, box: {min: [1001,-64,996], max: [1003,68,998]}` on both platforms -- exactly the geometry
+      predicted (the connection's bounding box, height-corrected to the 4-block `quarryFrameMinHeight` minimum,
+      then the mining box inset by one block on every side and clamped to the world floor).
+    - *Frame construction, both platforms:* `execute if block 1000 67 995 buildcraft:frame` passed once the
+      quarry reached `PLACE_FRAME` -- a real frame block placed mid-air at the frame's edge, not just NBT state.
+    - *Real digging, both platforms:* `currentAction` progressed `BREAK_OBSTRUCTION` (clearing natural terrain
+      caught inside the claimed volume) -> `PLACE_FRAME` -> `MINE`, with `boxIterator`'s own persisted `current`/
+      `order`/`invert` fields visibly advancing through the claimed column. Specific positions confirmed solid
+      immediately beforehand and air afterwards via `execute if block ... minecraft:stone` / `... minecraft:air`
+      pairs (e.g. `(1002,63,996)`, `(1002,63,998)`, `(1003,62,998)` on 26.x; `(1001,64,996)` on 1.20.1) --
+      real blocks removed, not simulated.
+    - *Item output, both platforms:* a chest placed directly next to the quarry (matching `InventoryUtil.
+      addToBestAcceptor(level, worldPosition, ...)`'s target -- the quarry's *own* position, exactly 1.12.2's
+      `pos`) accumulated real `minecraft:cobblestone` over time with no interaction beyond waiting: 10 -> 33 -> 40
+      on 26.x, 10 -> 26 -> 27 on 1.20.1 across repeated reads.
+    - *MJ draw, both platforms:* removing the `redstone_block` powering the `engine_creative` froze
+      `actionProgress` dead (two consecutive reads, several seconds apart, both `55000000`/`37000000` on
+      26.x/1.20.1 respectively -- no change at all); replacing the redstone block resumed progress immediately
+      (`55000000`->`76000000` on 26.x, `37000000`->`40000000` and the action itself advancing to a new position on
+      1.20.1) -- direct proof the digging genuinely gates on real MJ, not just elapsed ticks.
+    - *Save/restart, both platforms:* `stop` mid-dig, then a fresh boot from the same world directory.
+      `frame`/`box`/`boxIterator` (including the exact iterator `current` position, axis `order` and `invert`
+      flag), `currentAction`, `actionPos`, `actionProgress` and the chest's accumulated item count all round-
+      tripped exactly; digging resumed and made further real progress within seconds of the reboot on both
+      platforms (`firstChecked` alone resets to `0b` and re-derives to `1b` within one tick, by original design --
+      `onLoad`/`updatePoses` always rebuild it from the persisted `frame`/`box`, matching 1.12.2's own
+      `onLoad() { updatePoses(); }`). No NBT round-trip bug found here (unlike the Heat Exchanger precedent this
+      session already fixed one of).
+    - Both server logs are exception-free end to end across every boot (`grep -i exception|error`: none, checked
+      after each scenario above, not just once at the end).
+  - **Scope cuts, explicit:**
+    - **No `RenderQuarry`.** The animated frame/extending-arm/lowering-head renderer is a genuinely separate,
+      large piece of client-only geometry; this pass prioritises a working, MJ-metered, save-safe digging machine
+      over a matching visual. The quarry renders as a plain textured cube (static parse/asset-existence checked,
+      not a live client boot -- see below); the frame border it places while working is likewise a plain cube
+      (see `BlockFrame`'s own javadoc for the connected-strut geometry this drops, the same "no renderer to serve
+      it" call `buildcraft.factory.block.BlockChute` already made for its own cosmetic connection indicator).
+      Both are real, solid blocks in the world regardless -- only the animation is missing.
+    - **No `IChunkLoadingTile`/chunk-loading.** `buildcraft.lib.chunkload.IChunkLoadingTile` already exists on
+      this port, but its backing `ChunkLoaderManager` does not -- that interface's own javadoc already says this
+      "follows once a machine (the quarry, the pump) actually needs it". Standing up a NeoForge
+      `TicketController` is real, separate infrastructure work, out of scope for this pass; verified instead with
+      a manual `/forceload`, the way every other multi-chunk machine in this port's test rig already is.
+    - **No advancement unlock** (1.12.2's `buildcraftbuilders:diggy_diggy_hole`/`shaping_the_world`) -- no
+      advancement pack exists for this port's single `buildcraft` mod id yet.
+    - **No liquid-destroying/lava-handling edge cases, no bedrock/unbreakable-obstruction special-casing, no
+      overlapping-claim detection** beyond what falls out of the ported logic for free (`canMine`/
+      `canMoveThrough` already skip fluids above 1000 viscosity and unbreakable blocks exactly as 1.12.2 did; an
+      unbreakable obstruction inside the frame box stalls that one obstruction forever, matching 1.12.2's own
+      behaviour, not a regression).
+    - **Frame-clearing breaks discard their drops** (matching 1.12.2's own `drillPos == null` branch) --
+      terrain caught inside the claimed volume during obstruction-clearing is destroyed, not collected; only
+      genuine `MINE`-phase blocks reach `InventoryUtil.addToBestAcceptor`.
+  - **Every new model/blockstate/texture reference resolves and every JSON parses**, checked with a small Python
+    script (all new `quarry`/`frame` JSON under both platforms' `assets`/`data` trees) rather than a live client
+    boot -- no visible client was launched this pass, per this session's standing rule.
+  - **Files, both platforms.** New: `BCBuildersRegistries`, `builders/block/BlockQuarry`, `builders/block/
+    BlockFrame`, `builders/tile/TileQuarry`, `lib/misc/data/BoxIterator`; `blockstates/quarry.json`,
+    `blockstates/frame.json`, `models/block/quarry.json`, `models/block/frame.json`, `models/item/quarry.json`,
+    five `textures/block/quarry_*.png` + `textures/block/frame.png`, the quarry loot table and shaped recipe
+    (`gear_iron`/`gear_gold`/`gear_diamond`/`redstone`/`diamond_pickaxe`, matching 1.12.2's own pattern).
+    Modified: `BuildCraft.java` (`BCBuildersRegistries.register(modBus)`), `lang/en_us.json` (`block.buildcraft.
+    frame`/`block.buildcraft.quarry`). No changes to any other module's files.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -4576,7 +4710,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Power flow (`PipeFlowPower`) and six of nine power-pipe materials done (cobblestone, wooden, stone, sandstone, quartz, gold): engine -> pipe -> machine transfer and T-junction splitting verified live on both platforms. Iron/diamond/diamond-wood power pipes (need `PipeBehaviourLimiter`, a wrench-cycling redstone throttle -- not ported), dedicated kinesis pipe textures (currently reuse each material's item-pipe art), diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables still to come. |
-| `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
+| `buildcraft.builders` | 118 | Quarry (done: frame construction, MJ-metered digging, item output, save/restart -- no `RenderQuarry` animation, no chunkloading). Builder, architect, filler, schematics still to come. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube (now with its status-LED/tube-laser renderer), pump (likewise), tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |
 | `buildcraft.energy` | 41 | Stirling and Combustion (Iron) engines (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). RF engine, oil world-gen still to come. |
