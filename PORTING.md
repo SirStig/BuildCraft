@@ -5296,6 +5296,26 @@ Deliberately not ported, with reasons:
     icon -- transparent background around real opaque art, the ordinary shape for an item sprite, unlike the
     tank's texture). Both copied byte-for-byte and wired up as real flat item icons on both platforms.
 
+- **A full audit of every `Block` subclass in the port for the same missing-shape pattern**, not just the ones a
+  live client session happened to show. Checked every block's real 1.12.2 model geometry (`buildcraft_resources`)
+  against whether the port's own class overrides `getShape` anywhere in its inheritance chain (a mistake made
+  once already this pass -- `BlockMarkerBase` already has a correct, real per-facing shape and empty collision,
+  shared by `BlockMarkerPath`/`BlockMarkerVolume`, that an earlier grep of only the subclass files missed).
+  Confirmed genuinely fine as plain cubes, matching their real 1.12.2 models exactly (`block/cube`/`cube_all`/
+  `orientable`, or -- for Distiller -- three tank-box elements that together happen to fill the whole cube
+  anyway): Quarry, Filler, Builder, Architect Table, Zone Planner, Power Consumer Tester, Mining Well, Pump,
+  Flood Gate, both Auto Workbenches, Distiller, and the water/oil springs (`minecraft:bedrock`'s own model).
+  Two more genuine mismatches found and fixed, both already having real multi-element models from earlier
+  batches with no matching collision shape at all:
+  - **Chute**: a real hopper-style funnel (a full-width top box tapering through six rings to a small opening),
+    confirmed against both this port's own model and the original. New `ChuteShapes` (a two-box approximation --
+    the full top slab plus one box spanning the funnel's overall footprint, not a per-ring cutout) rotated the
+    same six ways `blockstates/chute.json` rotates the model, confirmed by reading that file rather than assumed.
+  - **Heat Exchanger**: already had real per-part multi-element models (`heat_exchange_start`/`_middle`/`_end`,
+    from an earlier batch) with no shape to match. New `HeatExchangeShapes` takes each part's own model geometry
+    as its bounding envelope and rotates it the same four ways `blockstates/heat_exchange.json` does (confirmed
+    by reading that file), keyed on the block's own real `part`/`facing` state.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

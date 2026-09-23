@@ -17,9 +17,12 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import buildcraft.api.properties.BuildCraftProperties;
 
@@ -72,6 +75,18 @@ public class BlockChute extends BlockBCTile implements IBlockWithFacing {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(BuildCraftProperties.BLOCK_FACING_6);
+    }
+
+    /** The real per-facing shape -- see {@link ChuteShapes}'s own javadoc for why this was missing and how it
+     * is derived from the block's own already-real hopper-funnel model geometry. */
+    @Override
+    protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return ChuteShapes.get(state.getValue(BuildCraftProperties.BLOCK_FACING_6));
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return getShape(state, level, pos, context);
     }
 
     /** Simplified from 1.12.2's player-eye-height-based placement logic (in the unported

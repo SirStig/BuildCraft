@@ -26,6 +26,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import buildcraft.api.properties.BuildCraftProperties;
 
@@ -74,6 +76,17 @@ public class BlockHeatExchange extends BlockBCTile implements IBlockWithFacing {
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(BuildCraftProperties.BLOCK_FACING, PROP_PART, PROP_CONNECTED_LEFT, PROP_CONNECTED_RIGHT);
+    }
+
+    /** See the 26.x copy of this class's own javadoc, and {@link HeatExchangeShapes}. */
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return HeatExchangeShapes.get(state.getValue(PROP_PART), state.getValue(BuildCraftProperties.BLOCK_FACING));
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return getShape(state, level, pos, context);
     }
 
     private static boolean doesNeighbourConnect(BlockGetter level, BlockPos pos, Direction thisFacing, Direction dir) {
