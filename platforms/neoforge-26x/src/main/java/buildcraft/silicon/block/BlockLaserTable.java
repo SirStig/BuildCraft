@@ -15,9 +15,13 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.CollisionContext;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import buildcraft.api.enums.EnumLaserTableType;
 import buildcraft.api.mj.ILaserTargetBlock;
@@ -73,6 +77,23 @@ public class BlockLaserTable extends BlockBCTile implements ILaserTargetBlock {
             case PROGRAMMING_TABLE -> throw new IllegalStateException(
                 "The programming table is dead 1.12.2 code, never ported -- see this class's own javadoc.");
         };
+    }
+
+    /** All four real tables (assembly/advanced-crafting/integration/charging) share the same real overall
+     * envelope in 1.12.2's own models -- a 4-legged or ziggurat body that never exceeds 9/16 block tall, not
+     * the full cube this block had no shape override for at all until now. Not a per-element cutout (the legs'
+     * gaps are still solid), but the height -- the actual, gameplay-visible difference between "the table" and
+     * "empty air above it" -- is now real. */
+    private static final VoxelShape SHAPE = Shapes.box(0, 0, 0, 1, 9 / 16.0, 1);
+
+    @Override
+    public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE;
+    }
+
+    @Override
+    public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return SHAPE;
     }
 
     @Override

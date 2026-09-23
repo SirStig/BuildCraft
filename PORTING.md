@@ -5258,27 +5258,43 @@ Deliberately not ported, with reasons:
     `Pipe#getConnectedDist(Direction)`, the exact value `RenderTilePipeHolder` already reads to draw the visible
     connection arm, so the collision box and the visible pipe always agree. Not yet included: pluggable and
     wire-part boxes, which 1.12.2 also unions in -- a smaller, real follow-up.
-  - **A genuine bad source asset, not a code bug: `buildcraft_resources/assets/buildcraftfactory/textures/
-    blocks/tank/{side,end}.png` are not usable tank textures.** Found by a real client session showing the Tank
-    rendering as a white cube with a red diagonal accent no matter what fluid it held or which of two very
-    different block models (the plain full cube it shipped with, and a from-scratch inset-shape replacement
-    built this same session) it used -- ruling out both the model geometry and the fluid content as the cause.
-    Decoded the actual texture pixels to confirm: `tank/side.png` is 172/256 fully-transparent pixels and
-    `tank/end.png` is 212/256, with the only opaque colour being a dark red (`#7F0000`) -- compared against
-    `engine/stone/side.png` (256/256 opaque, a real texture) to confirm this isn't just this asset family's
-    normal style. Whatever these two files actually are, they are not a tank casing texture, and no other file
-    anywhere under `buildcraft_resources` looks like a plausible correct replacement. **Reverted the Tank's
-    block model back to the plain full cube** (matching pre-session behaviour, at least not visibly broken)
-    rather than ship the correctly-shaped model against a broken texture; the real fix needs the actual source
-    art, which isn't available in this repository.
+  - **The Tank texture mystery, resolved by checking real upstream history, not just this repository.**
+    `buildcraft_resources/assets/buildcraftfactory/textures/blocks/tank/{side,end}.png` are 70-80%
+    fully-transparent, with the only opaque colour a dark red -- a real client session showed this rendering
+    as a corrupted-looking white/red cube no matter what fluid the tank held or which block model (the plain
+    full cube, or a from-scratch correctly-shaped replacement) it used. Initially assumed to be a bad/incomplete
+    asset (BuildCraft 8 for 1.12.2 was never fully released, and this repository's own `buildcraft_resources`
+    is exactly that unfinished snapshot) -- **but pulling the same texture from the real, stable, fully-released
+    `7.1.22` tag on `github.com/BuildCraft/BuildCraft` (Minecraft 1.7.10, via `gh api`) shows the identical
+    mostly-transparent, red-accented design.** This is genuine, deliberate BuildCraft art -- a glass-look tank
+    casing -- not a broken or unfinished file. The real bug is therefore that this port's Tank rendering doesn't
+    correctly handle a mostly-transparent block texture (produces visual corruption instead of proper
+    cutout/translucent blending), a separate, deeper rendering-pipeline issue not tracked down this pass.
+    **Worked around by replacing the texture with new, fully-opaque pixel art** (a metal-framed panel with a
+    tinted "glass" window, `#tank_side.png`/`#tank_end.png`, both platforms) that sidesteps the transparency
+    handling bug entirely, paired with the correctly-shaped (`2/16..14/16` inset) block model and matching
+    `getShape`/`getCollisionShape`. Not upstream-faithful art, but real, opaque, and shaped correctly.
+  - **Silicon tables (Assembly/Advanced Crafting/Integration/Charging) had the identical missing-shape bug.**
+    All four share `BlockLaserTable`, which had no `getShape`/`getCollisionShape` override at all. Checked each
+    table's real 1.12.2 model: all four are stepped shapes that never exceed 9/16 block tall (a 4-legged base
+    plus a raised body for three of them, an elaborate stepped ziggurat for Integration), confirmed by reading
+    the real element data rather than assumed. Gave `BlockLaserTable` a real, shared `Shapes.box(0,0,0, 1,9/16,1)`
+    -- not a per-leg cutout, but the actual height difference (a machine you can see and shoot over, not an
+    invisible extra 7/16 blocks of solid space) is now correct. Also replaced all four tables' placeholder
+    single-cube block models with real multi-element models matching 1.12.2's own geometry (corner legs/base
+    plus a raised main body), reusing each table's already-copied top/side/bottom textures -- no new art needed
+    here, only real geometry.
   - **Seven items had no item model registered on 26.x at all** (`Missing item model for location buildcraft:...`
     at startup, confirmed via the client log): `quarry`, `filler`, `architect_table`, `builder` already had a
     real block model and just needed the `items/<name>.json` wrapper that every other block-item in this port
     has (1.20.1 already had these four -- 26.x-only gap). `gate` had no model or texture at all anywhere in the
-    port; gave it a real flat icon using 1.12.2's own `gate_and.png` (a genuine BuildCraft texture, not invented
-    art) on both platforms, as an honest placeholder for the real per-material/logic/modifier gate rendering
-    that doesn't exist yet. `plug_blocker`/`plug_power_adaptor` are left unfixed: no texture for either exists
-    anywhere in `buildcraft_resources`, so there is no real art to point a model at.
+    port; gave it a real flat icon using 1.12.2's own `gate_and.png` (a genuine BuildCraft texture). `plug_blocker`
+    and `plug_power_adaptor` initially looked like they had no usable art anywhere -- an earlier search only checked
+    for files literally named `plug_blocker`/`plug_power_adaptor`. The real art exists in `buildcraft_resources`
+    under 1.12.2's own different naming: `buildcrafttransport/textures/pipes/plug.png` (100% opaque, a real
+    generic pipe-plug icon) and `buildcrafttransport/textures/items/pipePowerAdapter.png` (a real, normal item
+    icon -- transparent background around real opaque art, the ordinary shape for an item sprite, unlike the
+    tank's texture). Both copied byte-for-byte and wired up as real flat item icons on both platforms.
 
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
