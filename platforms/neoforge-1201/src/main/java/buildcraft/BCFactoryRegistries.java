@@ -23,17 +23,22 @@ import buildcraft.lib.registry.BCRegistry;
 import buildcraft.factory.block.BlockAutoWorkbenchFluids;
 import buildcraft.factory.block.BlockAutoWorkbenchItems;
 import buildcraft.factory.block.BlockChute;
+import buildcraft.factory.block.BlockDistiller;
 import buildcraft.factory.block.BlockFloodGate;
+import buildcraft.factory.block.BlockHeatExchange;
 import buildcraft.factory.block.BlockMiningWell;
 import buildcraft.factory.block.BlockPump;
 import buildcraft.factory.block.BlockTank;
 import buildcraft.factory.block.BlockTube;
 import buildcraft.factory.container.ContainerAutoCraftFluids;
 import buildcraft.factory.container.ContainerAutoCraftItems;
+import buildcraft.factory.container.ContainerDistiller;
 import buildcraft.factory.tile.TileAutoWorkbenchFluids;
 import buildcraft.factory.tile.TileAutoWorkbenchItems;
 import buildcraft.factory.tile.TileChute;
+import buildcraft.factory.tile.TileDistiller;
 import buildcraft.factory.tile.TileFloodGate;
+import buildcraft.factory.tile.TileHeatExchange;
 import buildcraft.factory.tile.TileMiningWell;
 import buildcraft.factory.tile.TilePump;
 import buildcraft.factory.tile.TileTank;
@@ -170,6 +175,36 @@ public final class BCFactoryRegistries {
     /** See {@link #AUTO_WORKBENCH_ITEMS_MENU}'s own javadoc. */
     public static final RegistryObject<MenuType<ContainerAutoCraftFluids>> AUTO_WORKBENCH_FLUIDS_MENU =
         REGISTRY.addMenu("auto_workbench_fluid", ContainerAutoCraftFluids::new);
+
+    /** 1.12.2's {@code buildcraftfactory:distiller} -- see the 26.x copy of this file. Its fluid/MJ/has-work
+     * capabilities come from {@code TileDistiller#getCapability}. */
+    public static final RegistryObject<BlockDistiller> DISTILLER = REGISTRY.addBlockAndItem("distiller", () -> new BlockDistiller(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .noOcclusion()
+            .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileDistiller>> DISTILLER_TYPE =
+        REGISTRY.addBlockEntity("distiller", TileDistiller::new, DISTILLER);
+
+    /** See {@link #AUTO_WORKBENCH_ITEMS_MENU}'s own javadoc. */
+    public static final RegistryObject<MenuType<ContainerDistiller>> DISTILLER_MENU =
+        REGISTRY.addMenu("distiller", ContainerDistiller::new);
+
+    /** 1.12.2's {@code buildcraftfactory:heat_exchange} -- same properties as {@link #DISTILLER}. */
+    public static final RegistryObject<BlockHeatExchange> HEAT_EXCHANGE = REGISTRY.addBlockAndItem("heat_exchange",
+        () -> new BlockHeatExchange(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .noOcclusion()
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileHeatExchange>> HEAT_EXCHANGE_TYPE =
+        REGISTRY.addBlockEntity("heat_exchange", TileHeatExchange::new, HEAT_EXCHANGE);
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);

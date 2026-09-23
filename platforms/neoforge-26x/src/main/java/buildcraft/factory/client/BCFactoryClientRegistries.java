@@ -10,8 +10,11 @@ package buildcraft.factory.client;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 
+import buildcraft.factory.client.render.RenderDistiller;
+import buildcraft.factory.client.render.RenderHeatExchange;
 import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
+import buildcraft.factory.gui.GuiDistiller;
 import buildcraft.factory.tile.RenderTileTank;
 
 import buildcraft.BCFactoryRegistries;
@@ -38,9 +41,12 @@ public final class BCFactoryClientRegistries {
     public static void registerScreens(RegisterMenuScreensEvent event) {
         event.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new);
         event.register(BCFactoryRegistries.AUTO_WORKBENCH_FLUIDS_MENU.get(), GuiAutoCraftFluids::new);
+        event.register(BCFactoryRegistries.DISTILLER_MENU.get(), GuiDistiller::new);
     }
 
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(BCFactoryRegistries.TANK_TYPE.get(), RenderTileTank::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.DISTILLER_TYPE.get(), RenderDistiller::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.HEAT_EXCHANGE_TYPE.get(), RenderHeatExchange::new);
     }
 }

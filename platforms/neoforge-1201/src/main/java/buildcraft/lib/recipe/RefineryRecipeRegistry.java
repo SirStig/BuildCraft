@@ -24,8 +24,8 @@ import net.minecraftforge.fluids.FluidStack;
 import buildcraft.api.recipes.IRefineryRecipeManager;
 
 // 1.20.1 note: this target's forked FluidStack still has the instance method `isFluidEqual`. 26.x's
-// NeoForge FluidStack dropped it in favour of the static `FluidStack.matches(a, b)` (see the 26.x copy of
-// this file). Not documented in PORTING.md's method-rename table; found via javap against the real jars.
+// NeoForge FluidStack dropped it; the amount-ignoring equivalent there is the static
+// `FluidStack.isSameFluidSameComponents(a, b)` (see the 26.x copy of this file for why not `matches`).
 
 public enum RefineryRecipeRegistry implements IRefineryRecipeManager {
     INSTANCE;

@@ -4181,6 +4181,153 @@ Deliberately not ported, with reasons:
     drained let heat climb past 200 with no coolant, confirming the stall path; refilling coolant let heat fall
     again; and both platforms kept an identical tank/heat/burn-time state across a save and restart.
 
+- **Refinery: Distiller, Heat Exchanger and the refinery recipe table (`buildcraft.factory`, both platforms).**
+  BuildCraft 8's replacement for the old Refinery. Ported from `TileDistiller_BC8`, `TileHeatExchange`,
+  `BlockDistiller`, `BlockHeatExchange`, `ContainerDistiller`, `GuiDistiller`, `RenderDistiller`,
+  `RenderHeatExchange`, and the refinery half of `BCEnergyRecipes`.
+  - **Recipes (`BCEnergyRecipes#initRefinery`).** This is 1.12.2's `BCModules.FACTORY.isLoaded()` block with the
+    table unchanged: ten `addDistillation` rows (amounts divided by their HCF along with the MJ cost),
+    `addHeatExchange` for all ten families (cool<->hot at 10 mB), water heatable 0->1 (consumed) and lava
+    coolable 4->2 (consumed). The fuel/coolant half is untouched apart from the one call. 1.12.2 installed
+    `RefineryRecipeRegistry.INSTANCE` from `BCLibRegistries`, which is not ported, so `initRefinery` installs it
+    itself.
+  - **Real 26.x bug fixed in `lib/recipe/RefineryRecipeRegistry` (the one change outside `factory`/`energy`).**
+    It matched recipe inputs with `FluidStack.matches(a, b)`. The 26.3 NeoForge sources jar shows that method
+    compares the **amount** too (`first.getAmount() != second.getAmount() ? false : isSameFluidSameComponents`).
+    So a tank of 4000 mB oil could never match the 8 mB recipe input, and `addRecipe`'s replace-existing check
+    was also amount-sensitive. The real equivalent of 1.20.1's `isFluidEqual` is
+    `FluidStack.isSameFluidSameComponents`, and both call sites now use it. The 1.20.1 copy only had its comment
+    corrected.
+  - **Distiller (`TileDistiller`, `BlockDistiller`).**
+    - Kept exactly as 1.12.2: the 4000 mB in/gas/liquid tanks, the 1024 MJ battery, the
+      `MAX_MJ_PER_TICK`-scaled draw, `distillPower` carry-over and refund-on-stop.
+    - Per-side capabilities copy 1.12.2's `CapUtil` wiring: input on the four horizontals, gas on `UP`, liquid on
+      `DOWN`, and nothing for a side-less query.
+    - 26.x registers these in `BCFactoryRegistries` (`Capabilities.Fluid.BLOCK`, MJ receiver/readable,
+      `HAS_WORK`). 1.20.1 hands them out from `getCapability` with `LazyOptional`s.
+    - 1.12.2's `tankIn.setCanDrain(false)` has no counterpart on the port's `Tank`. The horizontal faces get a
+      fill-only wrapper instead: a `DelegatingResourceHandler` whose `extract` returns 0 on 26.x, and an
+      `IFluidHandler` whose `drain` returns `EMPTY` on 1.20.1.
+    - Tank changes set a flag, and each tick sends at most one sync, instead of 1.12.2's per-tank
+      `FluidSmoother` messages. The 100-sample power history is saved but kept out of the sync tag.
+  - **Heat Exchanger (`TileHeatExchange`, `BlockHeatExchange`).** 1.12.2's structure rules are kept exactly:
+    - A line of 3-5 blocks with the same facing, walked up to 5 each way from any member. `facing.getClockWise()`
+      points to the start and `getCounterClockWise()` to the end.
+    - With fewer than 3, sections are removed. With more than 5, nothing changes (1.12.2's own TODO). Existing
+      start/end sections are reused.
+    - `middleCount` selects `FLUID_MULT` {5, 10, 20} mB/tick, after a 120-tick PREPARING warm-up.
+    - The heated fluid enters at the start's `DOWN` and leaves at the end's `UP`, auto-pushed. The coolant enters
+      at the end's outer side and leaves at the start's outer side, auto-pushed.
+    - The wrench keeps 1.12.2's `rotate()` (90 degrees alone, 180 degrees for the whole line, with start and end
+      swapping). This compiles but was not exercised in-game.
+  - **Heat Exchanger deliberate differences from 1.12.2:**
+    - `getActualState` is gone, so `part`/`connected_left`/`connected_right` are real block state. The tile writes
+      `part` with `UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE`, and `updateShape` keeps the connection flags.
+      `connected_y`, which was always false, is dropped.
+    - **1.12.2 bug fixed:** `ExchangeSectionStart#writeToNbt` never called `super`, so a start section's two tanks
+      were lost on every save. They are saved now, as are `middleCount`/`progress`/`progressState`.
+    - On 26.x a section change calls `level.invalidateCapabilities`; on 1.20.1 it re-issues the `LazyOptional`s.
+  - **GUI (`GuiDistiller`, `ContainerDistiller`).**
+    - The original `distiller.png` is used byte-for-byte, with 1.12.2's exact rectangles.
+    - Three real fluid bars: input 16x38 at (44, 23), gas and liquid 34x17 at (98, 10)/(98, 54), each with its
+      glass overlay.
+    - The fill technique is `GuiAutoCraftFluids`', but the 16x16 sprite is **tiled** under the scissor as 1.12.2's
+      `GuiUtil.drawFluid` did, not stretched. On 26.x the sprite and tint come from `FluidStateModelSet` with a
+      nullable `tintSource`; on 1.20.1 from `IClientFluidTypeExtensions`.
+    - Hand-traced: 2000/4000 mB in the input bar gives `round(38*0.5) = 19` rows, scissor `[top+42, top+61)`.
+      16/4000 mB in a gas bar gives 0 rows, and 3968 mB gives 17 rows.
+    - Also ported: the off-state icons (valid input, gas/liquid blocked), the active background, the
+      flowing-colour animation (same arithmetic, pixel-rounded), and tank tooltips.
+    - The animation colour is the midpoint of the fluid's `tex_light`/`tex_dark` pair, standing in for
+      1.12.2's sprite-average colour.
+    - Not ported: shift-click and click-to-fill a bucket into the tank. The port's `Tank` has no
+      `transferStackToTank`.
+  - **Rendering.**
+    - `RenderDistiller` draws 1.12.2's three `TankSize` boxes rotated by facing. `RenderHeatExchange` draws the
+      four tank boxes plus the two streams along the pipe.
+    - The shared `factory/client/render/FluidBoxRenderer` uses `RenderTileTank`'s quad and render-type recipe:
+      26.x state-extraction + `submit`, 1.20.1 classic `render`. Gases (negative density) fill from the top, as
+      `FluidRenderer` did.
+    - The flow is simplified: straight boxes that grow by progress, with no texture scroll or anchor flip.
+    - The distiller's expression-driven piston animation (`models/tiles/distiller.json`) has no variable-model
+      system here. The pistons sit at rest in the static block model with the "off" texture, which is what
+      1.12.2's item model showed.
+    - Models are generated from 1.12.2's JSON: the distiller from its item model; the heat exchanger from
+      `heat_exchange_static.json`, split into six multipart pieces keyed on `facing`/`part`/`connected_*`.
+    - BC's `both_sides` becomes a zero-thickness reverse face per face.
+    - Face `rotation` n becomes n x 90. The direction is not confirmable without a client, so it is flagged for
+      the visual check.
+    - Textures are copied byte-for-byte. 1.20.1 models carry `render_type: minecraft:cutout`; 26.x derives the
+      layer from sprite alpha (all 0/255).
+    - Every model/blockstate/item/loot/recipe JSON parses, and every referenced model and texture exists (script
+      check, 16 files per platform).
+    - Recipes: the distiller is 1.12.2's; the heat exchanger uses `minecraft:glass` for the colourless-glass ore
+      tag.
+  - **In-game verification, both platforms.**
+    - Setup: private servers ran from a HEAD `git archive` snapshot plus these files, with ports 25621/25622 and
+      25623/25624, flat worlds, and a temporary self-registering `/bcref` command. It moved fluid through
+      `level.getCapability`/`getCapability` on a given side, and has been deleted since (`git status` and
+      `build/classes` are clean of it).
+    - Results were identical on both unless noted.
+    - *Distiller fed by a real pump over an oil pool, powered by a creative engine on its east side:*
+      - 26.x after 20 s: `tankIn 4000 oil` (pump refilling), `tankGasOut 224 fuel_gaseous`,
+        `tankLiquidOut 42 oil_heavy`. That is 14 crafts of 8 -> 16 + 3 at 32 MJ.
+      - 1.20.1: 320/60 (20 crafts).
+      - Caps: `null=none; down=Tank[oil_heavy]; up=Tank[fuel_gaseous]; north/south/west/east=[oil 4000]`.
+        `drain west 100` gave `extracted 0`.
+      - `move up` put `304 fuel_gaseous` (19 x 16) into the adjacent `buildcraft:tank` above, and `move down`
+        put `57 oil_heavy` (19 x 3) into the tank below. External fills of the outputs, and of water/`oil_heavy`
+        (no heat-0 recipe) into the input, were all refused.
+    - *Heat 1 and heat 2:*
+      - `oil_heat_1`: 4000 -> 3912, gas `fuel_mixed_light_heat_1` 110, liquid `oil_dense_heat_1` 22. That is
+        22 x (4 -> 5 + 1).
+      - `oil_heat_2`: 3888, `oil_distilled_heat_2` 112, `oil_residue_heat_2` 14. That is 14 x (8 -> 8 + 1).
+    - *Blocked output:* when gas reached 4000 the distiller stopped at input 800 / liquid 800, `active: 0b`,
+      `distillPower: 0L` (refunded).
+    - *Heat exchanger structure* (`part` read with `execute if block`):
+      - 2 blocks: both middle. Adding a third gave `end/middle/start`, with
+        `connected_left=true,connected_right=true` on the middle.
+      - A differently-facing 4th block stayed middle and did not join.
+      - 6 in a row: all middle. Remove one: `end/middle/middle/middle/start`, `middleCount` 3.
+      - Caps: start `down` + `east` (the outer side when facing north); end `up` + `west`; middle none.
+    - *Oil heated by searing oil (3-long, facing north):*
+      - `oil_heat_2` was refused at the start and `oil` at the end.
+      - Once RUNNING, input 1925 -> 1520 over 81 ticks = **5 mB/t**, with 480 `oil_heat_1` auto-pushed into
+        *each* adjacent tank: the heated product up from the end, and the cooled coolant out of the start's east
+        side.
+      - 1.20.1 read 305 mB over 61 ticks.
+    - *Water heated by lava (4-long, facing east):* 10 mB/t (1.20.1: 610 mB over 61 ticks). Both were consumed
+      and nothing reached either output tank. After running dry it went to state STOPPING, progress counting
+      down from 108.
+    - *Save/restart:*
+      - 26.x: `tick freeze` mid-run, then read, `stop`, restart and freeze again. The start section
+        `{input: 1800 oil, progressState: 2, progress: 120, middleCount: 1}`, the end `{input: 800 oil_heat_2}`,
+        both output tanks at 2200, and a distiller's `distillPower: 7666465L`/`battery: 78333535L`/tanks were all
+        identical, with `part` still start/end. After `tick unfreeze` it ran on at once with no second warm-up
+        (1800 -> 1600).
+      - 1.20.1: the same comparison immediately after restart was identical (start input 1695, distiller
+        `distillPower: 9666794L`).
+    - *Loot:* `setblock ... air destroy` dropped `buildcraft:distiller`/`heat_exchange` on both.
+    - Every server log (4 boots on 26.x, 3 on 1.20.1) has zero exceptions. The only `ERROR` is vanilla's
+      flat-preset `No key layers`.
+  - **Not verified / scope cuts.**
+    - Deferred to the coordinator's visual check: the on-screen GUI and the renderers (compile-only here), and
+      the heat-exchanger face-texture rotations.
+    - Wrench rotation is not exercised.
+    - Fluid is lost when a section is removed or the block is broken. 1.12.2 dropped fragile fluid shards, and
+      the item is not ported.
+    - A heat-exchanger line split across an unloaded chunk border is treated as short, exactly as in 1.12.2.
+  - **Files, both platforms.**
+    - New: `factory/tile/{TileDistiller,TileHeatExchange}`, `factory/block/{BlockDistiller,BlockHeatExchange}`,
+      `factory/container/ContainerDistiller`, `factory/gui/GuiDistiller`,
+      `factory/client/render/{FluidBoxRenderer,RenderDistiller,RenderHeatExchange}`.
+    - New assets: blockstates `distiller`/`heat_exchange`, 8 block models, item models, 8 textures + `gui/distiller.png`,
+      loot tables, recipes.
+    - Modified: `BCFactoryRegistries`, `BCFactoryClientRegistries`, `energy/BCEnergyRecipes` (refinery half only),
+      `lib/recipe/RefineryRecipeRegistry` (26.x fix, 1.20.1 comment), `lang/en_us.json`.
+  - Verified with a forced `--no-build-cache clean :neoforge-26x:compileJava :neoforge-1201:compileJava` in a
+    private `rsync` snapshot of the shared tree, and the full test suite (25/25).
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -4199,8 +4346,8 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables, power flow still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
-| `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves). |
-| `buildcraft.energy` | 41 | Stirling engine (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). Combustion/iron and RF engines, distiller, heat exchanger, refinery recipes, oil world-gen still to come. |
+| `buildcraft.factory` | 46 | **done.** Chute, mining well + tube, pump, tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |
+| `buildcraft.energy` | 41 | Stirling and Combustion (Iron) engines (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). RF engine, oil world-gen still to come. |
 | `buildcraft.robotics` | 24 | Robots, zone planner. |
 
 Within `buildcraft.lib` the hard parts, roughly in dependency order, are: the registration

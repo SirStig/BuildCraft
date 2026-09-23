@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_distiller",
+  "pattern": [
+    "rtr",
+    "tgt"
+  ],
+  "key": {
+    "r": {
+      "item": "minecraft:redstone_torch"
+    },
+    "t": {
+      "item": "buildcraft:tank"
+    },
+    "g": {
+      "item": "buildcraft:gear_diamond"
+    }
+  },
+  "result": {
+    "item": "buildcraft:distiller",
+    "count": 1
+  }
+}

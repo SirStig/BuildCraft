@@ -23,9 +23,10 @@ import net.neoforged.neoforge.fluids.FluidStack;
 
 import buildcraft.api.recipes.IRefineryRecipeManager;
 
-// 26.x note: NeoForge's FluidStack dropped the instance method `isFluidEqual` in favour of the static
-// `FluidStack.matches(a, b)` -- 1.20.1's forked FluidStack still has the instance method (see the 1.20.1 copy
-// of this file). Not documented in PORTING.md's method-rename table; found via javap against the real jars.
+// 26.x note: NeoForge's FluidStack dropped the instance method `isFluidEqual` (fluid + tag, amount ignored). Its
+// direct replacement is the static `FluidStack.isSameFluidSameComponents(a, b)` -- not `FluidStack.matches`,
+// which (read in the real 26.3 NeoForge sources jar) also compares the amount, so a Distiller tank holding 4000 mB
+// of oil would never have matched the 8 mB recipe input. 1.20.1's forked FluidStack still has `isFluidEqual`.
 
 public enum RefineryRecipeRegistry implements IRefineryRecipeManager {
     INSTANCE;
@@ -84,7 +85,7 @@ public enum RefineryRecipeRegistry implements IRefineryRecipeManager {
                 return null;
             }
             for (R recipe : allRecipes) {
-                if (FluidStack.matches(recipe.in(), fluid)) {
+                if (FluidStack.isSameFluidSameComponents(recipe.in(), fluid)) {
                     return recipe;
                 }
             }
@@ -111,7 +112,7 @@ public enum RefineryRecipeRegistry implements IRefineryRecipeManager {
             ListIterator<R> iter = allRecipes.listIterator();
             while (iter.hasNext()) {
                 R existing = iter.next();
-                if (FluidStack.matches(existing.in(), recipe.in())) {
+                if (FluidStack.isSameFluidSameComponents(existing.in(), recipe.in())) {
                     iter.set(recipe);
                     return recipe;
                 }

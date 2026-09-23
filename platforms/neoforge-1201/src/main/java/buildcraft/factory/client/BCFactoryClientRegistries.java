@@ -12,8 +12,11 @@ import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
+import buildcraft.factory.client.render.RenderDistiller;
+import buildcraft.factory.client.render.RenderHeatExchange;
 import buildcraft.factory.gui.GuiAutoCraftFluids;
 import buildcraft.factory.gui.GuiAutoCraftItems;
+import buildcraft.factory.gui.GuiDistiller;
 import buildcraft.factory.tile.RenderTileTank;
 
 import buildcraft.BCFactoryRegistries;
@@ -38,10 +41,13 @@ public final class BCFactoryClientRegistries {
         event.enqueueWork(() -> {
             MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_ITEMS_MENU.get(), GuiAutoCraftItems::new);
             MenuScreens.register(BCFactoryRegistries.AUTO_WORKBENCH_FLUIDS_MENU.get(), GuiAutoCraftFluids::new);
+            MenuScreens.register(BCFactoryRegistries.DISTILLER_MENU.get(), GuiDistiller::new);
         });
     }
 
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(BCFactoryRegistries.TANK_TYPE.get(), RenderTileTank::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.DISTILLER_TYPE.get(), RenderDistiller::new);
+        event.registerBlockEntityRenderer(BCFactoryRegistries.HEAT_EXCHANGE_TYPE.get(), RenderHeatExchange::new);
     }
 }

@@ -1,0 +1,242 @@
+{
+  "multipart": [
+    {
+      "when": {
+        "facing": "west"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_inner"
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "part": "middle"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_middle"
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "part": "middle",
+        "connected_left": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_left"
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "part": "middle",
+        "connected_right": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_right"
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "part": "start"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_start"
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "part": "end"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_end"
+      }
+    },
+    {
+      "when": {
+        "facing": "north"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_inner",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "part": "middle"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_middle",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "part": "middle",
+        "connected_left": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_left",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "part": "middle",
+        "connected_right": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_right",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "part": "start"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_start",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "part": "end"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_end",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "east"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_inner",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "part": "middle"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_middle",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "part": "middle",
+        "connected_left": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_left",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "part": "middle",
+        "connected_right": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_right",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "part": "start"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_start",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "part": "end"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_end",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "south"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_inner",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "part": "middle"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_middle",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "part": "middle",
+        "connected_left": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_left",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "part": "middle",
+        "connected_right": "false"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_cap_right",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "part": "start"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_start",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "part": "end"
+      },
+      "apply": {
+        "model": "buildcraft:block/heat_exchange_end",
+        "y": 270
+      }
+    }
+  ]
+}

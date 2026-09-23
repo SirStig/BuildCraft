@@ -1,0 +1,59 @@
+{
+  "parent": "block/block",
+  "textures": {
+    "particle": "buildcraft:block/heat_exchange/sprite_b",
+    "sprite_a": "buildcraft:block/heat_exchange/sprite_a",
+    "sprite_b": "buildcraft:block/heat_exchange/sprite_b",
+    "sprite_c": "buildcraft:block/heat_exchange/sprite_c",
+    "sprite_d": "buildcraft:block/heat_exchange/sprite_d",
+    "sprite_e": "buildcraft:block/heat_exchange/sprite_e"
+  },
+  "elements": [
+    {
+      "from": [
+        2,
+        2,
+        0
+      ],
+      "to": [
+        14,
+        14,
+        16
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            0,
+            0,
+            12,
+            12
+          ],
+          "texture": "#sprite_b"
+        }
+      }
+    },
+    {
+      "from": [
+        2,
+        2,
+        0
+      ],
+      "to": [
+        14,
+        14,
+        0
+      ],
+      "faces": {
+        "south": {
+          "uv": [
+            0,
+            0,
+            12,
+            12
+          ],
+          "texture": "#sprite_b"
+        }
+      }
+    }
+  ]
+}
