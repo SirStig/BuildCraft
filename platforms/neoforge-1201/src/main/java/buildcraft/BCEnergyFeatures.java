@@ -14,14 +14,15 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.energy.gen.OilLakeGenerator;
 import buildcraft.energy.gen.OilSpringGenerator;
 
 /**
  * World-generation {@link Feature} types belonging to {@code buildcraft.energy} -- mirrors {@link BCCoreFeatures}
  * exactly. The {@code ConfiguredFeature}/{@code PlacedFeature} pair that actually configures and places
- * {@link OilSpringGenerator} are pure datapack JSON, under
+ * {@link OilSpringGenerator}/{@link OilLakeGenerator} are pure datapack JSON, under
  * {@code data/buildcraft/worldgen/configured_feature/spring_oil.json} and
- * {@code .../placed_feature/spring_oil.json}.
+ * {@code .../placed_feature/spring_oil.json} (and the {@code oil_lake} equivalents).
  */
 public final class BCEnergyFeatures {
 
@@ -31,6 +32,8 @@ public final class BCEnergyFeatures {
         DeferredRegister.create(Registries.FEATURE, BuildCraft.MOD_ID);
 
     public static final RegistryObject<OilSpringGenerator> SPRING_OIL = FEATURES.register("spring_oil", OilSpringGenerator::new);
+
+    public static final RegistryObject<OilLakeGenerator> OIL_LAKE = FEATURES.register("oil_lake", OilLakeGenerator::new);
 
     public static void register(IEventBus modBus) {
         FEATURES.register(modBus);

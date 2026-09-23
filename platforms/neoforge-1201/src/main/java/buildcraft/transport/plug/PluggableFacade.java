@@ -13,6 +13,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.phys.AABB;
@@ -20,6 +21,7 @@ import net.minecraft.world.phys.AABB;
 import buildcraft.api.facades.FacadeType;
 import buildcraft.api.facades.IFacade;
 import buildcraft.api.facades.IFacadePhasedState;
+import buildcraft.api.transport.IWireManager;
 import buildcraft.api.transport.pipe.IPipeHolder;
 import buildcraft.api.transport.pluggable.PipePluggable;
 import buildcraft.api.transport.pluggable.PluggableDefinition;
@@ -29,7 +31,9 @@ import buildcraft.lib.misc.MathUtil;
 import buildcraft.BCTransportRegistries;
 
 /** Port of 1.12.2's {@code buildcraft.silicon.plug.PluggableFacade} -- see the 26.x copy of this class for the
- * full account (the {@code activeState} scope note, and how {@code RenderTilePipeHolder} draws the disguise). */
+ * full account (the {@code activeState} scope note, and how {@code RenderTilePipeHolder} draws the disguise).
+ * {@link #onTick()}'s phased-switching is this port's own new wiring, not a 1.12.2 restoration -- same reasoning
+ * as the 26.x copy. */
 public class PluggableFacade extends PipePluggable implements IFacade {
 
     private static final AABB[] BOXES = new AABB[6];
@@ -80,6 +84,38 @@ public class PluggableFacade extends PipePluggable implements IFacade {
     }
 
     // PipePluggable
+
+    @Override
+    public void onTick() {
+        if (states.type != FacadeType.PHASED) {
+            return;
+        }
+        int newState = computeActiveState();
+        if (newState != activeState) {
+            activeState = newState;
+            scheduleNetworkUpdate();
+        }
+    }
+
+    /** See this class's own javadoc for the reasoning: the first phased state whose colour has a currently
+     * powered wire wins, falling back to the colourless state (or index 0, if there isn't one). */
+    private int computeActiveState() {
+        IWireManager wireManager = holder.getWireManager();
+        int fallback = -1;
+        for (int i = 0; i < states.phasedStates.length; i++) {
+            DyeColor colour = states.phasedStates[i].activeColour;
+            if (colour == null) {
+                if (fallback < 0) {
+                    fallback = i;
+                }
+                continue;
+            }
+            if (wireManager.isAnyPowered(colour)) {
+                return i;
+            }
+        }
+        return fallback < 0 ? 0 : fallback;
+    }
 
     @Override
     public AABB getBoundingBox() {

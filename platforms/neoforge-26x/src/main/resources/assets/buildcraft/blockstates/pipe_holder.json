@@ -1495,7 +1495,7 @@
         "material": "pipe_power_cobblestone"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_cobblestone"
+        "model": "buildcraft:block/pipe_holder_core_cobblestone_power"
       }
     },
     {
@@ -1504,7 +1504,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone"
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power"
       }
     },
     {
@@ -1513,7 +1513,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power",
         "y": 90
       }
     },
@@ -1523,7 +1523,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power",
         "y": 180
       }
     },
@@ -1533,7 +1533,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power",
         "y": 270
       }
     },
@@ -1543,7 +1543,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power",
         "x": 270
       }
     },
@@ -1553,7 +1553,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_cobblestone",
+        "model": "buildcraft:block/pipe_holder_arm_cobblestone_power",
         "x": 90
       }
     },
@@ -1562,7 +1562,7 @@
         "material": "pipe_power_stone"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_stone"
+        "model": "buildcraft:block/pipe_holder_core_stone_power"
       }
     },
     {
@@ -1571,7 +1571,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone"
+        "model": "buildcraft:block/pipe_holder_arm_stone_power"
       }
     },
     {
@@ -1580,7 +1580,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "model": "buildcraft:block/pipe_holder_arm_stone_power",
         "y": 90
       }
     },
@@ -1590,7 +1590,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "model": "buildcraft:block/pipe_holder_arm_stone_power",
         "y": 180
       }
     },
@@ -1600,7 +1600,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "model": "buildcraft:block/pipe_holder_arm_stone_power",
         "y": 270
       }
     },
@@ -1610,7 +1610,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "model": "buildcraft:block/pipe_holder_arm_stone_power",
         "x": 270
       }
     },
@@ -1620,7 +1620,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_stone",
+        "model": "buildcraft:block/pipe_holder_arm_stone_power",
         "x": 90
       }
     },
@@ -1629,7 +1629,7 @@
         "material": "pipe_power_sandstone"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_sandstone"
+        "model": "buildcraft:block/pipe_holder_core_sandstone_power"
       }
     },
     {
@@ -1638,7 +1638,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone"
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power"
       }
     },
     {
@@ -1647,7 +1647,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power",
         "y": 90
       }
     },
@@ -1657,7 +1657,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power",
         "y": 180
       }
     },
@@ -1667,7 +1667,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power",
         "y": 270
       }
     },
@@ -1677,7 +1677,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power",
         "x": 270
       }
     },
@@ -1687,7 +1687,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_sandstone",
+        "model": "buildcraft:block/pipe_holder_arm_sandstone_power",
         "x": 90
       }
     },
@@ -1696,7 +1696,7 @@
         "material": "pipe_power_quartz"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_quartz"
+        "model": "buildcraft:block/pipe_holder_core_quartz_power"
       }
     },
     {
@@ -1705,7 +1705,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz"
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power"
       }
     },
     {
@@ -1714,7 +1714,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power",
         "y": 90
       }
     },
@@ -1724,7 +1724,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power",
         "y": 180
       }
     },
@@ -1734,7 +1734,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power",
         "y": 270
       }
     },
@@ -1744,7 +1744,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power",
         "x": 270
       }
     },
@@ -1754,7 +1754,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_quartz",
+        "model": "buildcraft:block/pipe_holder_arm_quartz_power",
         "x": 90
       }
     },
@@ -1763,7 +1763,7 @@
         "material": "pipe_power_gold"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_gold"
+        "model": "buildcraft:block/pipe_holder_core_gold_power"
       }
     },
     {
@@ -1772,7 +1772,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold"
+        "model": "buildcraft:block/pipe_holder_arm_gold_power"
       }
     },
     {
@@ -1781,7 +1781,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "model": "buildcraft:block/pipe_holder_arm_gold_power",
         "y": 90
       }
     },
@@ -1791,7 +1791,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "model": "buildcraft:block/pipe_holder_arm_gold_power",
         "y": 180
       }
     },
@@ -1801,7 +1801,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "model": "buildcraft:block/pipe_holder_arm_gold_power",
         "y": 270
       }
     },
@@ -1811,7 +1811,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "model": "buildcraft:block/pipe_holder_arm_gold_power",
         "x": 270
       }
     },
@@ -1821,7 +1821,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_gold",
+        "model": "buildcraft:block/pipe_holder_arm_gold_power",
         "x": 90
       }
     },
@@ -1830,7 +1830,7 @@
         "material": "pipe_power_wood"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_wood"
+        "model": "buildcraft:block/pipe_holder_core_wood_power"
       }
     },
     {
@@ -1839,7 +1839,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood"
+        "model": "buildcraft:block/pipe_holder_arm_wood_power"
       }
     },
     {
@@ -1848,7 +1848,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "model": "buildcraft:block/pipe_holder_arm_wood_power",
         "y": 90
       }
     },
@@ -1858,7 +1858,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "model": "buildcraft:block/pipe_holder_arm_wood_power",
         "y": 180
       }
     },
@@ -1868,7 +1868,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "model": "buildcraft:block/pipe_holder_arm_wood_power",
         "y": 270
       }
     },
@@ -1878,7 +1878,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "model": "buildcraft:block/pipe_holder_arm_wood_power",
         "x": 270
       }
     },
@@ -1888,7 +1888,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_wood",
+        "model": "buildcraft:block/pipe_holder_arm_wood_power",
         "x": 90
       }
     },
@@ -2307,7 +2307,7 @@
         "material": "pipe_power_iron"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_iron"
+        "model": "buildcraft:block/pipe_holder_core_iron_power"
       }
     },
     {
@@ -2316,7 +2316,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron"
+        "model": "buildcraft:block/pipe_holder_arm_iron_power"
       }
     },
     {
@@ -2325,7 +2325,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "model": "buildcraft:block/pipe_holder_arm_iron_power",
         "y": 90
       }
     },
@@ -2335,7 +2335,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "model": "buildcraft:block/pipe_holder_arm_iron_power",
         "y": 180
       }
     },
@@ -2345,7 +2345,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "model": "buildcraft:block/pipe_holder_arm_iron_power",
         "y": 270
       }
     },
@@ -2355,7 +2355,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "model": "buildcraft:block/pipe_holder_arm_iron_power",
         "x": 270
       }
     },
@@ -2365,7 +2365,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_iron",
+        "model": "buildcraft:block/pipe_holder_arm_iron_power",
         "x": 90
       }
     },
@@ -2374,7 +2374,7 @@
         "material": "pipe_power_diamond"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_diamond"
+        "model": "buildcraft:block/pipe_holder_core_diamond_power"
       }
     },
     {
@@ -2383,7 +2383,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond"
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power"
       }
     },
     {
@@ -2392,7 +2392,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power",
         "y": 90
       }
     },
@@ -2402,7 +2402,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power",
         "y": 180
       }
     },
@@ -2412,7 +2412,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power",
         "y": 270
       }
     },
@@ -2422,7 +2422,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power",
         "x": 270
       }
     },
@@ -2432,7 +2432,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_power",
         "x": 90
       }
     },
@@ -2441,7 +2441,7 @@
         "material": "pipe_power_diamond_wood"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_core_diamond_wood"
+        "model": "buildcraft:block/pipe_holder_core_diamond_wood_power"
       }
     },
     {
@@ -2450,7 +2450,7 @@
         "north": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood"
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power"
       }
     },
     {
@@ -2459,7 +2459,7 @@
         "east": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power",
         "y": 90
       }
     },
@@ -2469,7 +2469,7 @@
         "south": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power",
         "y": 180
       }
     },
@@ -2479,7 +2479,7 @@
         "west": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power",
         "y": 270
       }
     },
@@ -2489,7 +2489,7 @@
         "up": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power",
         "x": 270
       }
     },
@@ -2499,7 +2499,7 @@
         "down": "true"
       },
       "apply": {
-        "model": "buildcraft:block/pipe_holder_arm_diamond_wood",
+        "model": "buildcraft:block/pipe_holder_arm_diamond_wood_power",
         "x": 90
       }
     },

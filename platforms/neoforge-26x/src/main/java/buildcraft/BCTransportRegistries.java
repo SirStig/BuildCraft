@@ -143,6 +143,10 @@ public final class BCTransportRegistries {
         // built further down this class" reason.
         PipeApi.stripeRegistry = StripesRegistry.INSTANCE;
         PipeApi.extensionManager = PipeExtensionManager.INSTANCE;
+        // Real 1.12.2 registers this enum onto MinecraftForge.EVENT_BUS at this exact spot, for its own
+        // WorldTickEvent.Phase.END listener -- see PipeExtensionManager#onLevelTick's own javadoc for why an
+        // extension request has to be processed at the end of the tick rather than inline.
+        NeoForge.EVENT_BUS.register(PipeExtensionManager.INSTANCE);
     }
 
     /** The cobblestone pipe's own {@link PipeDefinition} -- see this class's own javadoc for the

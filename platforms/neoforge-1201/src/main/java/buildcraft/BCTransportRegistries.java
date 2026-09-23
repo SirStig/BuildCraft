@@ -16,6 +16,7 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
@@ -118,6 +119,10 @@ public final class BCTransportRegistries {
         // javadoc (26.x copy; identical on this target).
         PipeApi.stripeRegistry = StripesRegistry.INSTANCE;
         PipeApi.extensionManager = PipeExtensionManager.INSTANCE;
+        // Real 1.12.2 registers this enum onto MinecraftForge.EVENT_BUS at this exact spot, for its own
+        // WorldTickEvent.Phase.END listener -- see PipeExtensionManager#onLevelTick's own javadoc for why an
+        // extension request has to be processed at the end of the tick rather than inline.
+        MinecraftForge.EVENT_BUS.register(PipeExtensionManager.INSTANCE);
     }
 
     /** The cobblestone pipe's own {@link PipeDefinition} -- see the 26.x copy of this class's own javadoc for

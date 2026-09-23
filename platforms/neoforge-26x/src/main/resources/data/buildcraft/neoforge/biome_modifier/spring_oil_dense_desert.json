@@ -1,0 +1,6 @@
+{
+  "type": "neoforge:add_features",
+  "biomes": "minecraft:desert",
+  "features": "buildcraft:spring_oil_dense",
+  "step": "fluid_springs"
+}

@@ -20,9 +20,11 @@ import buildcraft.api.transport.pipe.PipeApi;
 import buildcraft.api.transport.pipe.PipeDefinition;
 
 /** A direct port of 1.12.2's own {@code StripesHandlerPipes}: offers an item pipe stack to
- * {@link PipeApi#extensionManager} to be laid ahead of the stripes pipe. Currently always declines, since
- * {@code PipeExtensionManager#requestPipeExtension} on this port is a documented stub -- see that class's own
- * javadoc for why -- so a pipe item offered here simply falls through to the pipe's ordinary item ejection. */
+ * {@link PipeApi#extensionManager} to be laid ahead of the stripes pipe. A registered retraction pipe (the void
+ * pipe) still always declines here -- see {@code PipeExtensionManager}'s own javadoc for why retraction is a
+ * documented follow-up, and for what a decline here actually falls through to (not plain item ejection --
+ * {@code StripesHandlerPlaceBlock} catches a declined pipe item instead, since every pipe item is also a
+ * {@code BlockItem}); every other item pipe now genuinely extends. */
 public class StripesHandlerPipes implements IStripesHandlerItem {
 
     @Override

@@ -8,38 +8,59 @@
 package buildcraft.builders.snapshot;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import buildcraft.lib.misc.NBTUtilBC;
 
+import buildcraft.BuildCraft;
+
 /**
  * Mirrors the 26.x class of the same name -- see that one's javadoc for exactly what this drops relative to the
  * original {@code common}/1.12.2 {@code Blueprint} (a plain {@link BlockState} palette rather than a full
- * {@code ISchematicBlock}: no tile-entity NBT, no JSON rule system, no entities, no rotation).
+ * {@code ISchematicBlock}), and what it now lands relative to this port's own earlier, more-simplified version
+ * of this class (rotation, tile-entity NBT capture/restore, and a minimal real slice of the JSON rule system --
+ * see {@link #facing}/{@link #tileData}/{@link #IGNORED}).
  *
- * <p>The only 1.20.1-specific difference from the 26.x file is NBT shape: {@link CompoundTag} getters return
+ * <p>The only 1.20.1-specific differences from the 26.x file are NBT shape ({@link CompoundTag} getters return
  * values directly here rather than {@code Optional} (1.20.1 kept the old NBT API), and
  * {@link NBTUtilBC#getItemData} hands back a live, mutable tag rather than a detached copy -- see
- * {@code buildcraft.builders.item.ItemBlueprint}'s own javadoc for how that changes {@link #writeToStack}.
+ * {@code buildcraft.builders.item.ItemBlueprint}'s own javadoc for how that changes {@link #writeToStack}) and
+ * the {@code BlockState#is(TagKey)} overload used for {@link #IGNORED} (1.20.1 has the plain one-argument
+ * overload directly; 26.x only exposes the {@code (tag, predicate)} one).
  */
 public class Blueprint {
+    /** See the 26.x class's own javadoc on this field -- ported from 1.12.2's own default blueprint rule file. */
+    public static final TagKey<Block> IGNORED =
+        TagKey.create(Registries.BLOCK, new ResourceLocation(BuildCraft.MOD_ID, "blueprint_ignore"));
+
     public BlockPos size = BlockPos.ZERO;
     public final List<BlockState> palette = new ArrayList<>();
     public int[] data = new int[0];
+    /** See the 26.x class's own javadoc on this field. */
+    public Direction facing = Direction.NORTH;
+    /** See the 26.x class's own javadoc on this field. */
+    public final Map<Integer, CompoundTag> tileData = new HashMap<>();
 
     public int index(int x, int y, int z) {
         return ((z * size.getY()) + y) * size.getX() + x;
@@ -64,15 +85,30 @@ public class Blueprint {
         return data.length == 0;
     }
 
-    /** Captures every block state in the box {@code [min, min + size)}. */
-    public static Blueprint capture(Level level, BlockPos min, BlockPos size) {
+    /** Captures every block state (and, per {@link #tileData}, block entity) in the box {@code [min, min + size)}
+     * as seen from {@code facing}. A block in {@link #IGNORED} is captured as air, matching {@code
+     * JsonRule#ignore}. */
+    public static Blueprint capture(Level level, BlockPos min, BlockPos size, Direction facing) {
         Blueprint blueprint = new Blueprint();
         blueprint.size = size;
+        blueprint.facing = facing;
         blueprint.data = new int[size.getX() * size.getY() * size.getZ()];
         for (int z = 0; z < size.getZ(); z++) {
             for (int y = 0; y < size.getY(); y++) {
                 for (int x = 0; x < size.getX(); x++) {
-                    BlockState state = level.getBlockState(min.offset(x, y, z));
+                    BlockPos worldPos = min.offset(x, y, z);
+                    BlockState state = level.getBlockState(worldPos).is(IGNORED)
+                        ? Blocks.AIR.defaultBlockState()
+                        : level.getBlockState(worldPos);
+                    if (!state.isAir()) {
+                        BlockEntity blockEntity = level.getBlockEntity(worldPos);
+                        if (blockEntity != null) {
+                            CompoundTag tileNbt = blockEntity.saveWithoutMetadata();
+                            if (!tileNbt.isEmpty()) {
+                                blueprint.tileData.put(blueprint.index(x, y, z), tileNbt);
+                            }
+                        }
+                    }
                     int paletteIndex = blueprint.palette.indexOf(state);
                     if (paletteIndex == -1) {
                         paletteIndex = blueprint.palette.size();
@@ -112,6 +148,10 @@ public class Blueprint {
         nbt.put("size", NBTUtilBC.writeBlockPos(size));
         nbt.put("palette", NBTUtilBC.writeCompoundList(palette.stream().map(NbtUtils::writeBlockState)));
         nbt.putIntArray("data", data);
+        nbt.putString("facing", facing.getSerializedName());
+        CompoundTag tileDataTag = new CompoundTag();
+        tileData.forEach((index, tag) -> tileDataTag.put(String.valueOf(index), tag));
+        nbt.put("tileData", tileDataTag);
         return nbt;
     }
 
@@ -123,6 +163,16 @@ public class Blueprint {
             .map(paletteEntry -> NbtUtils.readBlockState(blocks, paletteEntry))
             .forEach(blueprint.palette::add);
         blueprint.data = nbt.getIntArray("data");
+        Direction facing = Direction.byName(nbt.contains("facing") ? nbt.getString("facing") : "north");
+        blueprint.facing = facing == null ? Direction.NORTH : facing;
+        CompoundTag tileDataTag = nbt.getCompound("tileData");
+        for (String key : tileDataTag.getAllKeys()) {
+            try {
+                blueprint.tileData.put(Integer.parseInt(key), tileDataTag.getCompound(key));
+            } catch (NumberFormatException ignored) {
+                // Not one of ours -- skip rather than fail the whole blueprint load.
+            }
+        }
         return blueprint;
     }
 

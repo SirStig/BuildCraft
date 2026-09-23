@@ -17,6 +17,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 
 import net.minecraftforge.common.capabilities.Capability;
@@ -88,8 +89,20 @@ public class TileBuilder extends TileBC implements IDebuggable {
         Blueprint newBlueprint = level == null || stack.isEmpty() ? null : Blueprint.readFromStack(stack, level);
         Direction facing = getBlockState().getValue(BuildCraftProperties.BLOCK_FACING);
         BlockPos basePos = worldPosition.relative(facing.getOpposite());
-        builder.setBlueprint(newBlueprint, basePos);
+        Rotation rotation = newBlueprint == null ? Rotation.NONE : rotationFor(newBlueprint.facing, facing);
+        builder.setBlueprint(newBlueprint, basePos, rotation);
         markDirtyAndSync();
+    }
+
+    /** See the 26.x class's own javadoc on this method -- ported from the original {@code common}
+     * {@code TileBuilder#updateSnapshot}'s {@code Rotation.values()} lookup. */
+    private static Rotation rotationFor(Direction capturedFacing, Direction builderFacing) {
+        for (Rotation candidate : Rotation.values()) {
+            if (candidate.rotate(capturedFacing) == builderFacing) {
+                return candidate;
+            }
+        }
+        return Rotation.NONE;
     }
 
     /** Driven by {@code BlockBuilder}'s {@code getTicker}. */

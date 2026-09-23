@@ -18,11 +18,16 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderGetter;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueInput;
+import net.minecraft.world.level.storage.ValueInput;
 
 import buildcraft.api.mj.MjAPI;
 
@@ -48,6 +53,11 @@ import buildcraft.builders.tile.TileBuilder;
  * order with no "build the support before the thing it holds up" awareness. Required items come only from
  * {@link TileBuilder#getInvResources()} (a plain slot scan, not the original's generic
  * {@code IItemTransactor#extract} simulate-then-commit contract).
+ *
+ * <p><b>Rotation and tile-entity NBT are real</b> (see {@link Blueprint}'s own javadoc): every target
+ * {@link BlockState} and placement position is rotated on the fly via {@link #rotation} (the blueprint's own
+ * captured data stays unrotated), and a placed block's saved {@link BlockEntity} data (if any) is merged back in
+ * immediately after {@code setBlockAndUpdate} succeeds.
  */
 public class BlueprintBuilder {
     private static final int MAX_QUEUE_SIZE = 8;
@@ -61,6 +71,7 @@ public class BlueprintBuilder {
     @Nullable
     private Blueprint blueprint;
     private BlockPos basePos = BlockPos.ZERO;
+    private Rotation rotation = Rotation.NONE;
     private byte[] checkResults = new byte[0];
     private final Map<Integer, Long> breakPower = new LinkedHashMap<>();
     private final Map<Integer, Long> placePower = new LinkedHashMap<>();
@@ -76,10 +87,13 @@ public class BlueprintBuilder {
         return blueprint;
     }
 
-    public void setBlueprint(@Nullable Blueprint blueprint, BlockPos basePos) {
+    /** @param rotation How far to rotate the blueprint's own captured orientation before rebuilding it -- see
+     *     {@link Blueprint}'s own javadoc and {@code TileBuilder#loadBlueprint}'s facing-comparison lookup. */
+    public void setBlueprint(@Nullable Blueprint blueprint, BlockPos basePos, Rotation rotation) {
         cancel();
         this.blueprint = blueprint;
         this.basePos = basePos;
+        this.rotation = rotation;
         if (blueprint != null) {
             checkResults = new byte[blueprint.data.length];
             Arrays.fill(checkResults, UNKNOWN);
@@ -95,11 +109,17 @@ public class BlueprintBuilder {
     }
 
     private BlockPos worldPos(int index) {
-        return basePos.offset(blueprint.posFromIndex(index));
+        return basePos.offset(blueprint.posFromIndex(index).rotate(rotation));
+    }
+
+    /** The blueprint's captured state at this index, rotated by {@link #rotation} -- what should actually be in
+     * the world once the build is done, as opposed to {@link Blueprint#get(int)}'s unrotated captured value. */
+    private BlockState target(int index) {
+        return blueprint.get(index).rotate(rotation);
     }
 
     private void check(ServerLevel level, int index) {
-        BlockState target = blueprint.get(index);
+        BlockState target = target(index);
         BlockPos worldPos = worldPos(index);
         BlockState actual = level.getBlockState(worldPos);
         if (target.isAir()) {
@@ -146,7 +166,7 @@ public class BlueprintBuilder {
     }
 
     private boolean hasRequiredItem(int index) {
-        Item item = blueprint.get(index).getBlock().asItem();
+        Item item = target(index).getBlock().asItem();
         if (item == Items.AIR) {
             return true;
         }
@@ -161,18 +181,36 @@ public class BlueprintBuilder {
     }
 
     private boolean tryPlace(ServerLevel level, int index, BlockPos worldPos) {
-        BlockState target = blueprint.get(index);
+        BlockState target = target(index);
         Item item = target.getBlock().asItem();
         if (item != Items.AIR && !extractOneFromResources(item)) {
             return false;
         }
         if (level.setBlockAndUpdate(worldPos, target)) {
+            restoreTileData(level, index, worldPos);
             return true;
         }
         if (item != Items.AIR) {
             returnOneToResources(level, item);
         }
         return false;
+    }
+
+    /** Merges this position's captured {@link Blueprint#tileData} (if any) into the block entity that just got
+     * created by {@code setBlockAndUpdate} -- see {@link Blueprint}'s own javadoc for exactly what is and isn't
+     * restored. */
+    private void restoreTileData(ServerLevel level, int index, BlockPos worldPos) {
+        CompoundTag tileNbt = blueprint.tileData.get(index);
+        if (tileNbt == null) {
+            return;
+        }
+        BlockEntity blockEntity = level.getBlockEntity(worldPos);
+        if (blockEntity == null) {
+            return;
+        }
+        ValueInput input = TagValueInput.create(ProblemReporter.DISCARDING, level.registryAccess(), tileNbt);
+        blockEntity.loadCustomOnly(input);
+        blockEntity.setChanged();
     }
 
     /** @return {@code true} once every position in the blueprint matches the world (or there is no blueprint at
@@ -260,6 +298,7 @@ public class BlueprintBuilder {
         if (blueprint != null) {
             nbt.put("blueprint", blueprint.serializeNBT());
             nbt.put("basePos", NBTUtilBC.writeBlockPos(basePos));
+            nbt.putString("rotation", rotation.name());
         }
         return nbt;
     }
@@ -271,10 +310,19 @@ public class BlueprintBuilder {
             blueprint = Blueprint.deserializeNBT(blueprintTag, blocks);
             BlockPos loadedBasePos = NBTUtilBC.readBlockPos(nbt.get("basePos"));
             basePos = loadedBasePos == null ? BlockPos.ZERO : loadedBasePos;
+            rotation = parseRotation(nbt.getStringOr("rotation", Rotation.NONE.name()));
             checkResults = new byte[blueprint.data.length];
             Arrays.fill(checkResults, UNKNOWN);
         } else {
             blueprint = null;
+        }
+    }
+
+    private static Rotation parseRotation(String name) {
+        try {
+            return Rotation.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return Rotation.NONE;
         }
     }
 }

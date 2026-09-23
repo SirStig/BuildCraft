@@ -107,13 +107,13 @@ public class TileArchitectTable extends TileBC implements IDebuggable {
             return;
         }
         scanned = true;
-        Blueprint blueprint = Blueprint.capture(level, box.min(), box.size());
+        Direction facing = getBlockState().getValue(BuildCraftProperties.BLOCK_FACING);
+        Blueprint blueprint = Blueprint.capture(level, box.min(), box.size(), facing);
         ItemStack stack = new ItemStack(BCBuildersRegistries.BLUEPRINT.get());
         Blueprint.writeToStack(stack, blueprint);
         if (invOut.getStackInSlot(0).isEmpty()) {
             invOut.setStackInSlot(0, stack);
         } else {
-            Direction facing = getBlockState().getValue(BuildCraftProperties.BLOCK_FACING);
             InventoryUtil.addToBestAcceptor(level, worldPosition, facing.getOpposite(), stack);
         }
         markDirtyAndSync();

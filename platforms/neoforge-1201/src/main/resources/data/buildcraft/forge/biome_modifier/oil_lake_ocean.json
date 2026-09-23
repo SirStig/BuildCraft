@@ -1,0 +1,6 @@
+{
+  "type": "forge:add_features",
+  "biomes": "#minecraft:is_ocean",
+  "features": "buildcraft:oil_lake",
+  "step": "fluid_springs"
+}

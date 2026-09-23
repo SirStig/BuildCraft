@@ -16,6 +16,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
@@ -47,13 +48,16 @@ import buildcraft.BCBuildersRegistries;
  *
  * <p><b>Dropped entirely this round, beyond what {@link Blueprint}/{@link BlueprintBuilder} already cover:</b>
  * the {@code IPathProvider}/stripes-pipe path system (a builder could originally follow a laid path and rebuild
- * the same structure at every stop along it -- this port only ever builds once, directly in front of itself), the
- * {@code Template}/filler-pattern build mode entirely (only {@code Blueprint} mode exists here), and rotation
- * ({@link #onSlotChange} always builds axis-aligned in the world's own +X/+Y/+Z directions from the claimed base
- * corner, regardless of which way this block itself faces -- the facing property below only decides *where* that
- * base corner sits, not the structure's orientation). No GUI/container exists yet for this tile (matching
- * {@code TileQuarry}'s own current scope), so the resources/blueprint inventories are only reachable through a
- * hopper or a pipe against the block's outer faces, not a player-facing screen.
+ * the same structure at every stop along it -- this port only ever builds once, directly in front of itself) and
+ * the {@code Template}/filler-pattern build mode entirely (only {@code Blueprint} mode exists here). The claimed
+ * base corner itself is still always {@code worldPosition.relative(facing.getOpposite())} regardless of which
+ * way this block faces (there is no original {@code offset}/marker-relative base-corner tracking here -- see
+ * {@code TileArchitectTable}'s own javadoc on the same simplification), but the structure built from that corner
+ * <b>is now rotated</b> -- see {@link #loadBlueprint} and {@link Blueprint}'s own javadoc for the
+ * {@code Rotation} lookup this ports from the original {@code common} {@code TileBuilder#updateSnapshot}. No
+ * GUI/container exists yet for this tile (matching {@code TileQuarry}'s own current scope), so the resources/
+ * blueprint inventories are only reachable through a hopper or a pipe against the block's outer faces, not a
+ * player-facing screen.
  */
 public class TileBuilder extends TileBC implements IDebuggable {
     private static final long BATTERY_CAPACITY = 16_000 * MjAPI.MJ;
@@ -89,8 +93,22 @@ public class TileBuilder extends TileBC implements IDebuggable {
         Blueprint newBlueprint = level == null || stack.isEmpty() ? null : Blueprint.readFromStack(stack, level);
         Direction facing = getBlockState().getValue(BuildCraftProperties.BLOCK_FACING);
         BlockPos basePos = worldPosition.relative(facing.getOpposite());
-        builder.setBlueprint(newBlueprint, basePos);
+        Rotation rotation = newBlueprint == null ? Rotation.NONE : rotationFor(newBlueprint.facing, facing);
+        builder.setBlueprint(newBlueprint, basePos, rotation);
         markDirtyAndSync();
+    }
+
+    /** Exactly the original {@code common} {@code TileBuilder#updateSnapshot}'s own {@code Rotation.values()}
+     * lookup: the rotation that turns the blueprint's own captured facing into this builder's current facing, so
+     * a builder rebuilds a structure oriented the way *it* faces rather than the way the table that captured it
+     * happened to. */
+    private static Rotation rotationFor(Direction capturedFacing, Direction builderFacing) {
+        for (Rotation candidate : Rotation.values()) {
+            if (candidate.rotate(capturedFacing) == builderFacing) {
+                return candidate;
+            }
+        }
+        return Rotation.NONE;
     }
 
     /** Driven by {@code BlockBuilder}'s {@code getTicker}. */

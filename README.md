@@ -39,12 +39,10 @@ parts don't exist yet. Current version: **`10.0.0-alpha`**.
 | `silicon` | Assembly, Advanced Crafting, Integration, and Charging tables; marker/laser rendering | In progress — the laser emitter that actually powers the tables is the current focus |
 | `robotics` | Zone Planner (this module turned out to be just the claim-map tool, not a full robot system) | Mostly done — the 3D map viewport remains |
 
-This project also now does something the original team's own now-superseded reference tree
-couldn't: every rendering-correctness bug — engines/pipes/tanks/tables colliding as a full cube
-regardless of their real shape, missing item icons, a tank texture whose transparency this port's
-own pipeline mishandled — gets found via a real client session and fixed with real geometry, not
-left as a visual footnote. See the "Remaining" table near the bottom of [PORTING.md](PORTING.md) for
-the authoritative, continuously updated breakdown.
+Rendering/collision correctness (hitboxes matching real block shapes, item icons, texture
+handling) is verified via real client sessions as part of the port, not assumed from a clean
+compile. See the "Remaining" table near the bottom of [PORTING.md](PORTING.md) for the
+authoritative, continuously updated breakdown.
 
 ## Roadmap
 

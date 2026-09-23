@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "buildcraft:block/pipe_gold"
+    "model": "buildcraft:block/pipe_gold_power"
   }
 }

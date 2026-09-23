@@ -22,6 +22,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import buildcraft.api.mj.MjAPI;
@@ -34,10 +36,11 @@ import buildcraft.lib.tile.item.ItemHandlerSimple;
 import buildcraft.builders.tile.TileBuilder;
 
 /**
- * Mirrors the 26.x class of the same name exactly -- see that one's javadoc for what the check/break/place
- * algorithm drops relative to the original {@code SnapshotBuilder}/{@code BlueprintBuilder} pair. No logic differs
- * between the two targets here: {@link ItemHandlerSimple#getStackInSlot}/{@code setStackInSlot} and
- * {@link BlockUtil}'s helpers have identical signatures on both platforms.
+ * Mirrors the 26.x class of the same name -- see that one's javadoc for what the check/break/place algorithm
+ * drops relative to the original {@code SnapshotBuilder}/{@code BlueprintBuilder} pair, and for what rotation and
+ * tile-entity NBT restore now land. The only difference from the 26.x file is tile-entity NBT restore itself:
+ * {@link BlockEntity#load(CompoundTag)} takes the saved tag directly here, unlike 26.x's {@code ValueInput}
+ * wrapper.
  */
 public class BlueprintBuilder {
     private static final int MAX_QUEUE_SIZE = 8;
@@ -51,6 +54,7 @@ public class BlueprintBuilder {
     @Nullable
     private Blueprint blueprint;
     private BlockPos basePos = BlockPos.ZERO;
+    private Rotation rotation = Rotation.NONE;
     private byte[] checkResults = new byte[0];
     private final Map<Integer, Long> breakPower = new LinkedHashMap<>();
     private final Map<Integer, Long> placePower = new LinkedHashMap<>();
@@ -66,10 +70,13 @@ public class BlueprintBuilder {
         return blueprint;
     }
 
-    public void setBlueprint(@Nullable Blueprint blueprint, BlockPos basePos) {
+    /** @param rotation How far to rotate the blueprint's own captured orientation before rebuilding it -- see
+     *     {@link Blueprint}'s own javadoc and {@code TileBuilder#loadBlueprint}'s facing-comparison lookup. */
+    public void setBlueprint(@Nullable Blueprint blueprint, BlockPos basePos, Rotation rotation) {
         cancel();
         this.blueprint = blueprint;
         this.basePos = basePos;
+        this.rotation = rotation;
         if (blueprint != null) {
             checkResults = new byte[blueprint.data.length];
             Arrays.fill(checkResults, UNKNOWN);
@@ -85,11 +92,16 @@ public class BlueprintBuilder {
     }
 
     private BlockPos worldPos(int index) {
-        return basePos.offset(blueprint.posFromIndex(index));
+        return basePos.offset(blueprint.posFromIndex(index).rotate(rotation));
+    }
+
+    /** The blueprint's captured state at this index, rotated by {@link #rotation}. */
+    private BlockState target(int index) {
+        return blueprint.get(index).rotate(rotation);
     }
 
     private void check(ServerLevel level, int index) {
-        BlockState target = blueprint.get(index);
+        BlockState target = target(index);
         BlockPos worldPos = worldPos(index);
         BlockState actual = level.getBlockState(worldPos);
         if (target.isAir()) {
@@ -136,7 +148,7 @@ public class BlueprintBuilder {
     }
 
     private boolean hasRequiredItem(int index) {
-        Item item = blueprint.get(index).getBlock().asItem();
+        Item item = target(index).getBlock().asItem();
         if (item == Items.AIR) {
             return true;
         }
@@ -151,18 +163,34 @@ public class BlueprintBuilder {
     }
 
     private boolean tryPlace(ServerLevel level, int index, BlockPos worldPos) {
-        BlockState target = blueprint.get(index);
+        BlockState target = target(index);
         Item item = target.getBlock().asItem();
         if (item != Items.AIR && !extractOneFromResources(item)) {
             return false;
         }
         if (level.setBlockAndUpdate(worldPos, target)) {
+            restoreTileData(level, index, worldPos);
             return true;
         }
         if (item != Items.AIR) {
             returnOneToResources(level, item);
         }
         return false;
+    }
+
+    /** Merges this position's captured {@link Blueprint#tileData} (if any) into the block entity that just got
+     * created by {@code setBlockAndUpdate}. */
+    private void restoreTileData(ServerLevel level, int index, BlockPos worldPos) {
+        CompoundTag tileNbt = blueprint.tileData.get(index);
+        if (tileNbt == null) {
+            return;
+        }
+        BlockEntity blockEntity = level.getBlockEntity(worldPos);
+        if (blockEntity == null) {
+            return;
+        }
+        blockEntity.load(tileNbt);
+        blockEntity.setChanged();
     }
 
     /** @return {@code true} once every position in the blueprint matches the world (or there is no blueprint at
@@ -250,6 +278,7 @@ public class BlueprintBuilder {
         if (blueprint != null) {
             nbt.put("blueprint", blueprint.serializeNBT());
             nbt.put("basePos", NBTUtilBC.writeBlockPos(basePos));
+            nbt.putString("rotation", rotation.name());
         }
         return nbt;
     }
@@ -260,10 +289,19 @@ public class BlueprintBuilder {
             blueprint = Blueprint.deserializeNBT(nbt.getCompound("blueprint"), blocks);
             BlockPos loadedBasePos = NBTUtilBC.readBlockPos(nbt.get("basePos"));
             basePos = loadedBasePos == null ? BlockPos.ZERO : loadedBasePos;
+            rotation = parseRotation(nbt.contains("rotation") ? nbt.getString("rotation") : Rotation.NONE.name());
             checkResults = new byte[blueprint.data.length];
             Arrays.fill(checkResults, UNKNOWN);
         } else {
             blueprint = null;
+        }
+    }
+
+    private static Rotation parseRotation(String name) {
+        try {
+            return Rotation.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            return Rotation.NONE;
         }
     }
 }

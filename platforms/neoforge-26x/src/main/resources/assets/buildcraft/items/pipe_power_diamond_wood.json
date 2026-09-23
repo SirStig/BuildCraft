@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "buildcraft:block/pipe_diamond_wood"
+    "model": "buildcraft:block/pipe_diamond_wood_power"
   }
 }
