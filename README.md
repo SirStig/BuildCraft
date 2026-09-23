@@ -33,15 +33,18 @@ parts don't exist yet. Current version: **`10.0.0-alpha`**.
 | Module | What it covers | Status |
 | --- | --- | --- |
 | `factory` | Chute, Mining Well, Pump, Tank, Flood Gate, Auto Workbench, Distiller, Heat Exchanger | **Done** |
-| `energy` | Stirling & Combustion engines, oil/fuel fluids, fuel/coolant registry | Mostly done — RF engine and oil world-gen remain |
-| `transport` | Pipes: 9 item, 9 fluid, 9 power-pipe materials, diamond/obsidian/lapis/stripes family, wires, gates, pluggables | In progress |
-| `builders` | Quarry (working core machine), Filler, Builder, Architect Table, Frame | In progress |
-| `silicon` | Marker/laser rendering done; Assembly Table, gates, facades in progress | Early |
-| `robotics` | Zone Planner | Not started / in progress |
+| `energy` | Stirling, Combustion, and RF engines; oil/fuel fluids; fuel/coolant registry; basic oil world-gen | Mostly done — the original's multi-shape oil lake/spout generator and its custom biomes remain |
+| `transport` | All 9 item/fluid/power-pipe material families (including diamond, obsidian, lapis, daizuli, emzuli, stripes), a real wire network, gates, and pluggables | Mostly done — facades, gate accessories (lens/pulsar/timer/light sensor), and pipe/wire dye colouring remain |
+| `builders` | Quarry (working core machine + renderer), Filler (most patterns), Builder, Architect Table, a real (simplified) blueprint system | Mostly done — blueprint rotation/tile-entity capture and a handful of Filler patterns remain |
+| `silicon` | Assembly, Advanced Crafting, Integration, and Charging tables; marker/laser rendering | In progress — the laser emitter that actually powers the tables is the current focus |
+| `robotics` | Zone Planner (this module turned out to be just the claim-map tool, not a full robot system) | Mostly done — the 3D map viewport remains |
 
-Roughly a third of the original mod's feature surface is ported and working as of this writing. See
-the "Remaining" table near the bottom of [PORTING.md](PORTING.md) for the authoritative, continuously
-updated breakdown.
+This project also now does something the original team's own now-superseded reference tree
+couldn't: every rendering-correctness bug — engines/pipes/tanks/tables colliding as a full cube
+regardless of their real shape, missing item icons, a tank texture whose transparency this port's
+own pipeline mishandled — gets found via a real client session and fixed with real geometry, not
+left as a visual footnote. See the "Remaining" table near the bottom of [PORTING.md](PORTING.md) for
+the authoritative, continuously updated breakdown.
 
 ## Roadmap
 
