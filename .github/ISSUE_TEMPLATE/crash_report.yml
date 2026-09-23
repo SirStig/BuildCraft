@@ -1,0 +1,31 @@
+name: Crash report
+description: The game or server crashed and produced a crash report
+labels: ["crash"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - neoforge-26x (Minecraft 26.x)
+        - neoforge-1201 (Minecraft 1.20.1)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Mod version / commit
+      placeholder: e.g. v0.3.0 or a89f3c1
+    validations:
+      required: true
+  - type: textarea
+    id: crash-report
+    attributes:
+      label: Crash report
+      description: Paste a link to a gist of the crash report from crash-reports/, or the relevant exception from your log.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: What were you doing when it crashed?

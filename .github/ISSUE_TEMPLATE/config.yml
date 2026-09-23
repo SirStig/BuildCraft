@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Porting progress / roadmap
+    url: https://github.com/SirStig/BuildCraft/blob/main/PORTING.md
+    about: See what's ported, what's in progress, and what's left before filing a "when will X be ready" issue.

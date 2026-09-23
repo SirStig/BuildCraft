@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  push:
+    branches: ["BuildCraft-10-26.3/1.20.1"]
+  pull_request:
+    branches: ["BuildCraft-10-26.3/1.20.1"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            25
+            17
+
+      - name: Build both targets
+        run: ./gradlew build --no-daemon
+
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildcraft-jars
+          path: platforms/*/build/libs/*.jar

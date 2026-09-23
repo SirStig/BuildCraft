@@ -1,0 +1,54 @@
+name: Bug report
+description: Something on either platform doesn't work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. This project ports BuildCraft to two targets at
+        once, so which platform you're on matters a lot for triage.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - neoforge-26x (Minecraft 26.x)
+        - neoforge-1201 (Minecraft 1.20.1)
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Mod version / commit
+      description: The release version, or the commit hash if you built from source
+      placeholder: e.g. v0.3.0 or a89f3c1
+    validations:
+      required: true
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other mods installed
+      description: List anything else in the mods folder, or say "none"
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Place a ...
+        2. Power it with ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: Paste a link to a gist or pastebin of your full latest.log -- please don't paste the whole log directly into the issue.

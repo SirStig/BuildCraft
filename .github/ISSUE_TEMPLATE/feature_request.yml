@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something for the port, or for new content beyond the original mod
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of request is this?
+      options:
+        - Port an original BuildCraft feature that's still missing
+        - New content/feature not in the original mod
+        - Quality-of-life / balance change
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe what you'd like
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Why this would help, prior art in other mods, etc.
