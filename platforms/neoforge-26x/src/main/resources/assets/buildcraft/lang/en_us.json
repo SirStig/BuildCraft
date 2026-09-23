@@ -67,6 +67,12 @@
   "item.buildcraft.pipe_item_stone": "Stone Pipe",
   "item.buildcraft.pipe_item_void": "Void Pipe",
   "item.buildcraft.pipe_item_wood": "Wooden Pipe",
+  "item.buildcraft.pipe_power_cobblestone": "Cobblestone Kinesis Pipe",
+  "item.buildcraft.pipe_power_gold": "Golden Kinesis Pipe",
+  "item.buildcraft.pipe_power_quartz": "Quartz Kinesis Pipe",
+  "item.buildcraft.pipe_power_sandstone": "Sandstone Kinesis Pipe",
+  "item.buildcraft.pipe_power_stone": "Stone Kinesis Pipe",
+  "item.buildcraft.pipe_power_wood": "Wooden Kinesis Pipe",
   "item.buildcraft.wrench": "Wrench",
   "itemGroup.buildcraft.main": "BuildCraft"
 }

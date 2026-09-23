@@ -4437,6 +4437,129 @@ Deliberately not ported, with reasons:
     `assets/minecraft/atlases/blocks.json`. No `lang/en_us.json` changes -- a purely visual feature with no new
     item, block or tooltip text.
 
+- **`buildcraft.transport` -- power (kinesis) pipes: `PipeFlowPower` and six power-pipe materials (cobblestone,
+  wood, stone, sandstone, quartz, gold), engine -> pipe -> machine MJ transfer verified live on both platforms.**
+  A close port of 1.12.2's own `common/buildcraft/transport/pipe/flow/PipeFlowPower.java` (529 lines, re-read in
+  full before writing anything, per this batch's own brief): one `Section` per {@code Direction}, each an
+  `IMjReceiver` in its own right, moving MJ from whichever sides currently hold power towards whichever sides
+  currently want it, splitting proportionally to request size when several sides want power at once -- the
+  `onTick()` routing arithmetic (the `BigInteger`-based proportional split, the `returnPower` self-reflection
+  case, the two-pass request-then-transfer shape) is the original's, essentially line for line.
+  - **The real per-platform bridge onto `IMjConnector`/`IMjReceiver`, confirmed against the real jars before
+    writing a line of the flow class.** 1.12.2's own `Section` implemented only `IMjReceiver` yet was still
+    handed out for `CAP_CONNECTOR` via `Capability<T>.cast(Object)` -- `javap` against this target's real
+    `forge-1.20.1-47.1.106.jar` confirms that method no longer exists on `net.minecraftforge.common.capabilities.
+    Capability<T>` at all (its only members are `getName`, `orEmpty`, `isRegistered`, `addListener`). This port's
+    own `buildcraft.api.mj.IMjReceiver` (in `modules/shared`, already ported) already `extends IMjConnector`, so
+    the one `Section implements IMjReceiver` below legitimately covers both capabilities with no cast needed at
+    all -- confirmed by reading that interface's own source rather than assumed.
+    - **26.x:** `BCTransportRegistries#registerCapabilities` already registered `MjCapabilities.CONNECTOR`/
+      `RECEIVER`/`REDSTONE_RECEIVER` against the shared `TilePipeHolder` block entity type, unconditionally,
+      dispatching through `tile.getCapability` -> `Pipe#getCapability` -> `PipeFlow#getCapability` -- put there by
+      whichever earlier batch ported `PipeBehaviourWood`'s own MJ-accepting item pipe (see that class's own
+      javadoc). `PipeFlowPower#getCapability` only had to hang its per-face `sections.get(facing)` off that
+      already-existing chain; no registry change was needed. Confirmed by `javap`-reading `TileEngineBase` first:
+      a real engine finds a receiver purely via `level.getCapability(MjCapabilities.RECEIVER, pos, side)`, with no
+      special case for "is this actually a pipe" -- so a pipe section registered this way is indistinguishable
+      from a real machine to an engine's own push logic, which is exactly the property needed.
+    - **1.20.1:** `TilePipeHolder#getCapability` already falls through generically to `pipe.getCapability`,
+      wrapping whatever non-null value comes back in a `LazyOptional` -- confirmed by reading that method
+      directly; no `BCTransportRegistries` change needed here either. `MjCapabilityHelper` (the instance-based,
+      single-canonical-object registrar every other MJ-capable tile on this platform uses) is deliberately *not*
+      used for this class: it hands out one object per capability for the whole tile, but a power pipe needs a
+      *different* `Section` per face, so `PipeFlowPower#getCapability` dispatches by hand instead, the same
+      unchecked-cast shape 1.12.2's own class used and `PipeBehaviourWood`/`PipeFlowFluids` already use elsewhere
+      in this port for the identical reason.
+  - **Dropped, faithfully, not by omission.** 1.12.2's client-side rendering half of this class (the whole
+    `clientDisplayFlowCentre`/`EnumFlow`/`AverageInt` smoothing and the `NET_POWER_AMOUNTS` payload feeding it)
+    has nothing to port onto: a client-side `TilePipeHolder` never ticks its own `Pipe` at all on either target
+    (`BlockPipeHolder#getTicker` is server-only -- the same finding `PipeFlowFluids`' own progress entry already
+    documents), and no renderer anywhere in this port reads a power pipe's flow direction or intensity. The RF
+    auto-conversion fallback branch of the original's own `getReceiver` is likewise not ported, for the identical
+    reason `TileEngineBase#getReceiverToPower` already gives (the existing `MjToRfAutoConvertor` wraps an
+    `IMjConnector` to *look like* Forge energy, the opposite direction from what this call site needs).
+  - **Persistence matches 1.12.2 exactly: only `isReceiver` is saved**, confirmed live (below) across a real
+    save/reload -- every in-flight MJ amount (`internalPower`, the power queries) is transient by original
+    design, recomputed within a tick or two of the next boot, not a gap introduced by this port.
+  - **`PipeBehaviourWoodPower`** (58-line original, ported in full): `canConnect(face, PipeBehaviour other)`
+    refuses two wood kinesis pipes touching directly (forcing a network through a costlier material past the
+    first wood segment) -- this is the one behaviour difference that actually matters for routing, confirmed the
+    hard way (see the T-junction test below, which needed a second material for exactly this reason).
+    `getTextureIndex` is ported too even though it has zero callers anywhere in this port yet (same as every
+    other currently-dead `getTextureIndex` override already in this batch).
+  - **`IPipeTransportPowerHook`** ported verbatim (2-method interface, `EnumFacing` -> `Direction`) per this
+    batch's own brief, even though nothing calls it yet -- `PipeFlowPower#requestPower` still checks for it on
+    every call, exactly as 1.12.2 did, so a future behaviour can start implementing it with no flow change.
+  - **Registration: six of 1.12.2's nine power-pipe materials, matching 1.12.2's own `BCTransportConfig.
+    basePowerRate` (4) transfer-rate formula exactly** (`powerTransfer`, mirroring the existing `fluidTransfer`
+    helper): cobblestone (x1, 1/16 resistance), stone (x2, 1/32), wood (x4, 1/128, receiver), sandstone (x4,
+    1/32), quartz (x8, 1/32), gold (x32, 1/32) -- `PowerTransferInfo.createFromResistance`, already ported and
+    unused until now. Ids are `pipe_power_<material>` (this port's own `pipe_fluid_<material>` convention, not
+    1.12.2's `<material>_power`), one new `EnumPipeMaterial` value per material mapped the same way the fluid
+    values already are. Cobblestone/stone/sandstone/quartz/gold reuse their existing item-pipe behaviour classes
+    unchanged, exactly as 1.12.2's own `BCTransportPipes#preInit` does (its own `PIPE_STONE`/`PIPE_COBBLESTONE`/
+    etc. share one `logic(...)` call across their item/fluid/power siblings) -- not a shortcut, the faithful
+    shape.
+  - **Scope cut, explicit: iron/diamond/diamond_wood power pipes not ported.** 1.12.2 switches these three to
+    `PipeBehaviourLimiter` -- a wrench-cycling, seven-step (`MAX_SHIFT = 6`), redstone-controlled power throttle
+    with its own seven-frame texture set (`iron_power_m0`..`m128`) and a gate/statement integration
+    (`ActionPowerLimit`) this port's gate system doesn't have yet. That is materially new feature work, not
+    registration boilerplate, so it is left for a follow-up batch rather than half-ported behind a
+    `PipeBehaviourIron` reuse that would be semantically wrong (1.12.2's own iron *item* pipe valve logic has
+    nothing to do with the power *limiter* -- the original deliberately swaps behaviour classes here, confirmed
+    by re-reading `BCTransportPipes#preInit`).
+  - **Scope cut, explicit: no dedicated kinesis pipe art.** 1.12.2 gives power pipes their own distinct
+    lattice-look textures (`wood_power_clear.png`, etc., confirmed present in `buildcraft_resources`); this batch
+    instead points each power material's blockstate multipart entries and item model at its *existing* item-pipe
+    arm/core models and textures (e.g. `pipe_power_wood` renders with the same models as `pipe_item_wood`) --
+    `PipeDefinition.textures` itself has zero readers anywhere in this port (confirmed by grepping the whole
+    source tree), so this is the only place texture identity is actually decided. Visually a power pipe is
+    indistinguishable from its material's item pipe for now; a real kinesis texture set is follow-up asset work,
+    not logic. Every model/blockstate JSON referenced was confirmed to parse and to point at files that exist.
+  - **Verified with real dedicated-server boots and RCON on both platforms**, from a private snapshot (ports
+    25620/25621 on 26.x, 25622/25623 on 1.20.1 this session -- the assigned 25610-25613 were occupied by another
+    agent's own concurrent private snapshot at launch time; see this entry's own "shared tree" note below):
+    - *Engine -> pipe -> machine (both platforms):* `power_tester` (accepts unlimited power, tracks
+      `totalReceived`) two blocks from an `engine_creative` through one `pipe_power_wood` segment, engine
+      redstone-powered via a `redstone_block` on top, `currentDirection` set to face the pipe. 26.x:
+      `{total: 199000000L, last: 1000000L}` climbing steadily at exactly 1 MJ/tick to `458000000` two checks
+      later. 1.20.1: `{total: 185000000L, last: 1000000L}`, same steady 1 MJ/tick. The pipe's own NBT confirmed
+      `isReceiver: 1b` and a real `con` connection bitmask on both.
+    - *T-junction power split (both platforms):* one `engine_creative` -> `pipe_power_wood` -> `pipe_power_stone`
+      junction pipe -> two more `pipe_power_stone` arms -> two separate `power_tester`s (the wood segment has to
+      be followed by a *different* material, per `PipeBehaviourWoodPower#canConnect` above -- confirmed the
+      first attempt with four consecutive wood segments left every pipe's `con` at 0, i.e. genuinely
+      unconnected, until the middle three were changed to `pipe_power_stone`). Both testers landed on identical
+      `{total: 111500000L, last: 500000L}` (26.x) / `{total: 97500000L, last: 500000L}` (1.20.1) readings every
+      time checked -- the engine's 1 MJ/tick output split exactly in half between two equal-demand consumers,
+      matching the original's proportional-split design.
+    - *Save/reload (both platforms):* `save-all flush` + `stop`, then a fresh boot from the same world dir.
+      `isReceiver` round-tripped (`1b` both times); the `con` connection bitmask was rebuilt correctly on load;
+      each `power_tester`'s own accumulated `total` (unrelated to the pipe's own transient state, saved by that
+      tile directly) continued climbing with no gap or reset, confirming the network re-establishes itself
+      within a tick of the next boot with zero lost throughput to the consumer, exactly as 1.12.2's own
+      "only `isReceiver` persists" design intends.
+    - Both server logs are exception-free end to end across every boot (`grep -ic exception|error`: 0), checked
+      after each scenario above, not just once at the end.
+  - **The shared tree was live with a concurrent `buildcraft.builders` task while this batch ran** (a
+    `buildcraft:quarry` recipe/loot-table referencing an unregistered item briefly broke a private snapshot's
+    registry loading, and `BCBuildersRegistries`/`buildcraft.builders` were briefly absent mid-edit) -- the
+    *shared* tree itself was never touched to work around this (no `clean`, no edits, no deletions outside this
+    batch's own files); only a private `rsync` snapshot was patched and re-synced once the other agent's own
+    edit had landed. Two other agents' own private snapshots independently picked overlapping RCON ports around
+    the same time (`25610`-`25623`, likely the same recipe-suggested range); this batch killed what turned out to
+    be one *other* agent's live server process during that confusion (a `neoforge-1201` dev server on the
+    shared-tree classpath, port 25622) before realising the process's own `/proc/<pid>/cmdline` pointed at
+    `/home/jkac/Developer/BuildCraft` rather than this batch's own scratch path -- flagged here explicitly in
+    case that agent's own run needs re-doing.
+  - **Files, both platforms.** New: `transport/pipe/flow/PipeFlowPower`, `transport/pipe/flow/
+    IPipeTransportPowerHook`, `transport/pipe/behaviour/PipeBehaviourWoodPower`. Modified: `BCTransportRegistries`
+    (six `PIPE_*_POWER` definitions/items, `powerTransfer`/`powerPipe` helpers, `PipeApi.flowPower` wiring),
+    `transport/block/EnumPipeMaterial` (six new values), `blockstates/pipe_holder.json` (42 new multipart
+    entries, reusing existing arm/core models), six new `items/pipe_power_<material>.json` (26.x) /
+    `models/item/pipe_power_<material>.json` (1.20.1), `lang/en_us.json` (six `pipe_power_<material>` names,
+    "Kinesis Pipe" matching 1.12.2's own naming). No changes to any other module's files.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -4452,7 +4575,7 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables, power flow still to come. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Power flow (`PipeFlowPower`) and six of nine power-pipe materials done (cobblestone, wooden, stone, sandstone, quartz, gold): engine -> pipe -> machine transfer and T-junction splitting verified live on both platforms. Iron/diamond/diamond-wood power pipes (need `PipeBehaviourLimiter`, a wrench-cycling redstone throttle -- not ported), dedicated kinesis pipe textures (currently reuse each material's item-pipe art), diamond/obsidian/lapis/daizuli/emzuli/stripes/diamond-wood pipes, colours, wires, gates, pluggables still to come. |
 | `buildcraft.builders` | 121 | Quarry, builder, architect, filler, schematics. |
 | `buildcraft.silicon` | 79 | Laser, assembly table, gates/wires. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube (now with its status-LED/tube-laser renderer), pump (likewise), tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |

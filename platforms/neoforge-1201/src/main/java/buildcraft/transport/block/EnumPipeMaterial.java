@@ -55,7 +55,15 @@ public enum EnumPipeMaterial implements StringRepresentable {
     GOLD_FLUID("gold_fluid"),
     IRON_FLUID("iron_fluid"),
     CLAY_FLUID("clay_fluid"),
-    VOID_FLUID("void_fluid");
+    VOID_FLUID("void_fluid"),
+    // The power (kinesis) variants -- see the 26.x copy of this enum's own javadoc for the full account of the
+    // naming and which three of 1.12.2's nine materials are not ported this batch.
+    COBBLESTONE_POWER("pipe_power_cobblestone"),
+    WOOD_POWER("pipe_power_wood"),
+    STONE_POWER("pipe_power_stone"),
+    SANDSTONE_POWER("pipe_power_sandstone"),
+    QUARTZ_POWER("pipe_power_quartz"),
+    GOLD_POWER("pipe_power_gold");
 
     public static final EnumPipeMaterial[] VALUES = values();
 

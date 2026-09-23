@@ -20,6 +20,7 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 
+import buildcraft.api.mj.MjAPI;
 import buildcraft.api.mj.MjCapabilities;
 import buildcraft.api.transport.pipe.IItemPipe;
 import buildcraft.api.transport.pipe.PipeApi;
@@ -40,8 +41,10 @@ import buildcraft.transport.pipe.behaviour.PipeBehaviourSandstone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourStone;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourVoid;
 import buildcraft.transport.pipe.behaviour.PipeBehaviourWood;
+import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodPower;
 import buildcraft.transport.pipe.flow.PipeFlowFluids;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
+import buildcraft.transport.pipe.flow.PipeFlowPower;
 import buildcraft.transport.tile.TilePipeHolder;
 
 /**
@@ -89,6 +92,7 @@ public final class BCTransportRegistries {
         PipeApi.pipeRegistry = PipeRegistry.INSTANCE;
         PipeApi.flowItems = new PipeFlowType(PipeFlowItems::new, PipeFlowItems::new);
         PipeApi.flowFluids = new PipeFlowType(PipeFlowFluids::new, PipeFlowFluids::new);
+        PipeApi.flowPower = new PipeFlowType(PipeFlowPower::new, PipeFlowPower::new);
     }
 
     /** The cobblestone pipe's own {@link PipeDefinition} -- see this class's own javadoc for the
@@ -252,6 +256,72 @@ public final class BCTransportRegistries {
         PipeApi.fluidTransferData.put(def, new PipeApi.FluidTransferInfo(rate, delay));
     }
 
+    // The power (kinesis) pipes. 1.12.2's real BCTransportPipes#preInit defines nine of these
+    // (cobblestone/wood/stone/sandstone/quartz/gold/iron/diamond/diamond_wood), the last three through
+    // PipeBehaviourLimiter (a wrench-cycling, redstone-controlled power throttle with its own seven-frame texture
+    // set) -- not ported this batch; see this class's own javadoc scope note. The six below reuse this batch's
+    // existing item-pipe behaviours exactly as 1.12.2 itself does (its own PIPE_STONE/PIPE_COBBLESTONE/... share
+    // one `builder.logic(...)` call across their item/fluid/power siblings), since none of Cobble/Stone/
+    // Sandstone/Quartz/Gold's behaviour actually depends on which flow they carry. Only PIPE_WOOD_POWER needs its
+    // own behaviour class ({@link PipeBehaviourWoodPower}), for the same reason 1.12.2's own woodPower registration
+    // switches {@code logic(...)} away from plain {@code PipeBehaviourWood} first.
+    //
+    // Ids follow this port's own "pipe_fluid_<material>" convention for the fluid pipes above, so these are
+    // "pipe_power_<material>" rather than 1.12.2's own "<material>_power" -- matching BCTransportRegistries'
+    // existing PIPE_ITEM_*/PIPE_FLUID_* naming for their own DeferredItem constants below (PIPE_POWER_*).
+
+    public static final PipeDefinition PIPE_COBBLESTONE_POWER =
+        powerPipe("pipe_power_cobblestone", PipeBehaviourCobble::new, PipeBehaviourCobble::new);
+    public static final PipeDefinition PIPE_WOOD_POWER =
+        powerPipe("pipe_power_wood", PipeBehaviourWoodPower::new, PipeBehaviourWoodPower::new);
+    public static final PipeDefinition PIPE_STONE_POWER =
+        powerPipe("pipe_power_stone", PipeBehaviourStone::new, PipeBehaviourStone::new);
+    public static final PipeDefinition PIPE_SANDSTONE_POWER =
+        powerPipe("pipe_power_sandstone", PipeBehaviourSandstone::new, PipeBehaviourSandstone::new);
+    public static final PipeDefinition PIPE_QUARTZ_POWER =
+        powerPipe("pipe_power_quartz", PipeBehaviourQuartz::new, PipeBehaviourQuartz::new);
+    public static final PipeDefinition PIPE_GOLD_POWER =
+        powerPipe("pipe_power_gold", PipeBehaviourGold::new, PipeBehaviourGold::new);
+
+    /** 1.12.2's {@code BCTransportConfig.basePowerRate} default (4) and its own
+     * {@code reloadConfig}/{@code powerTransfer(...)} calls, verbatim: cobblestone x1/16, stone x2/32,
+     * wood x4/128 (receiver), sandstone x4/32, quartz x8/32, gold x32/32 -- {@code BCTransportConfig} itself is not
+     * ported (see {@code PIPE_COBBLESTONE_FLUID}'s own fluid-transfer note above for the identical reasoning), so
+     * these are the plain constant results of that formula. Must run after the definitions above and before any
+     * pipe is placed -- {@code PipeFlowPower} reads its transfer info once, in {@code reconfigure()}. */
+    private static final int BASE_POWER_RATE = 4;
+
+    static {
+        powerTransfer(PIPE_COBBLESTONE_POWER, BASE_POWER_RATE, 16, false);
+        powerTransfer(PIPE_STONE_POWER, BASE_POWER_RATE * 2, 32, false);
+        powerTransfer(PIPE_WOOD_POWER, BASE_POWER_RATE * 4, 128, true);
+        powerTransfer(PIPE_SANDSTONE_POWER, BASE_POWER_RATE * 4, 32, false);
+        powerTransfer(PIPE_QUARTZ_POWER, BASE_POWER_RATE * 8, 32, false);
+        powerTransfer(PIPE_GOLD_POWER, BASE_POWER_RATE * 32, 32, false);
+    }
+
+    /** {@code PipeDefinition.textures} (set by {@code idTex}'s {@code tex()} half) has zero readers anywhere in
+     * this port -- confirmed by grepping the whole 26.x source tree -- so which string it resolves to here is
+     * inert; block/item appearance goes entirely through the static blockstate multipart + item-json assets these
+     * definitions' {@code identifier} feeds into (see {@code EnumPipeMaterial}/this class's own javadoc scope
+     * note). {@code idTex(id)} is used anyway, purely for consistency with every other definition in this file. */
+    private static PipeDefinition powerPipe(
+        String id, PipeDefinition.IPipeCreator creator, PipeDefinition.IPipeLoader loader
+    ) {
+        return new PipeDefinition.PipeDefinitionBuilder()
+            .idTex(id)
+            .logic(creator, loader)
+            .flowPower()
+            .disableColouring()
+            .define();
+    }
+
+    private static void powerTransfer(PipeDefinition def, int transferMultiplier, int resistanceDivisor, boolean recv) {
+        long transfer = MjAPI.MJ * transferMultiplier;
+        long resistance = MjAPI.MJ / resistanceDivisor;
+        PipeApi.powerTransferData.put(def, PipeApi.PowerTransferInfo.createFromResistance(transfer, resistance, recv));
+    }
+
     /** Default properties match what {@code BlockBCTile_Neptune}'s constructor gave every 1.12.2 BuildCraft
      * block, the same reasoning already worked out for {@code BlockDecoration}/{@code BlockEngineWood}/
      * {@code BlockChute} -- see {@code BCFactoryRegistries#CHUTE}'s own javadoc. A plain full cube, matching
@@ -376,6 +446,39 @@ public final class BCTransportRegistries {
     public static final DeferredItem<ItemPipeHolder> PIPE_FLUID_VOID = REGISTRY.addItem(
         "pipe_fluid_void",
         properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_VOID_FLUID)
+    );
+
+    // The power (kinesis) pipes' placeable items -- "pipe_power_<material>", six of the nine 1.12.2 materials;
+    // see PIPE_COBBLESTONE_POWER's own javadoc for which three are not ported this batch and why.
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_COBBLESTONE = REGISTRY.addItem(
+        "pipe_power_cobblestone",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_COBBLESTONE_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_WOOD = REGISTRY.addItem(
+        "pipe_power_wood",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_WOOD_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_STONE = REGISTRY.addItem(
+        "pipe_power_stone",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_STONE_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_SANDSTONE = REGISTRY.addItem(
+        "pipe_power_sandstone",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_SANDSTONE_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_QUARTZ = REGISTRY.addItem(
+        "pipe_power_quartz",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_QUARTZ_POWER)
+    );
+
+    public static final DeferredItem<ItemPipeHolder> PIPE_POWER_GOLD = REGISTRY.addItem(
+        "pipe_power_gold",
+        properties -> new ItemPipeHolder(PIPE_HOLDER.get(), properties, PIPE_GOLD_POWER)
     );
 
     public static void register(IEventBus modBus) {
