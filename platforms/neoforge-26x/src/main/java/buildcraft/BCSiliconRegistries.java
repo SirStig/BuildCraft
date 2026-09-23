@@ -19,9 +19,11 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 
 import buildcraft.api.enums.EnumLaserTableType;
+import buildcraft.api.mj.MjCapabilities;
 
 import buildcraft.lib.registry.BCRegistry;
 
+import buildcraft.silicon.block.BlockLaser;
 import buildcraft.silicon.block.BlockLaserTable;
 import buildcraft.silicon.container.ContainerAdvancedCraftingTable;
 import buildcraft.silicon.container.ContainerAssemblyTable;
@@ -30,11 +32,12 @@ import buildcraft.silicon.tile.TileAdvancedCraftingTable;
 import buildcraft.silicon.tile.TileAssemblyTable;
 import buildcraft.silicon.tile.TileChargingTable;
 import buildcraft.silicon.tile.TileIntegrationTable;
+import buildcraft.silicon.tile.TileLaser;
 
 /**
- * Registrations belonging to the old {@code buildcraftsilicon} module's standalone laser-powered machines
- * (assembly table, advanced crafting table, integration table, charging table). Mirrors
- * {@link BCFactoryRegistries}' structure exactly.
+ * Registrations belonging to the old {@code buildcraftsilicon} module's standalone laser-powered machines (the
+ * beam emitter, plus the assembly table, advanced crafting table, integration table and charging table it feeds).
+ * Mirrors {@link BCFactoryRegistries}' structure exactly.
  *
  * <p>Wires/gates/pluggables/facades -- also nominally under 1.12.2's {@code buildcraft.silicon} package -- are a
  * different agent's scope this round and have no registrations here yet.
@@ -47,6 +50,22 @@ public final class BCSiliconRegistries {
     private BCSiliconRegistries() {}
 
     private static final BCRegistry REGISTRY = new BCRegistry(BuildCraft.MOD_ID);
+
+    /** 1.12.2's {@code buildcraftsilicon:laser} ({@code Material.IRON}) -- the laser-beam emitter that feeds every
+     * table below its MJ. See {@code TileLaser}'s own javadoc for the machine logic and {@code BlockLaser}'s for
+     * the block. */
+    public static final DeferredBlock<BlockLaser> LASER = REGISTRY.addBlockAndItem(
+        "laser",
+        BlockLaser::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .noOcclusion()
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileLaser>> LASER_TYPE =
+        REGISTRY.addBlockEntity("laser", TileLaser::new, LASER);
 
     /** 1.12.2's {@code buildcraftsilicon:assembly_table} ({@code Material.IRON}) -- same default properties as
      * every other iron-tier BuildCraft machine ({@code buildcraft.factory.block.BlockChute}'s own precedent).
@@ -123,8 +142,12 @@ public final class BCSiliconRegistries {
     }
 
     /** Every table's item inventory is reachable from every side, matching 1.12.2's {@code EnumPipePart.VALUES}
-     * wiring on each -- see each tile's own constructor. */
+     * wiring on each -- see each tile's own constructor. The laser's own {@code mjReceiver} is exposed the same
+     * way {@code TileMiner}/{@code TileChute} expose theirs -- see {@link BCFactoryRegistries}. */
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlockEntity(MjCapabilities.RECEIVER, LASER_TYPE.get(), (tile, side) -> tile.mjReceiver);
+        event.registerBlockEntity(MjCapabilities.READABLE, LASER_TYPE.get(), (tile, side) -> tile.mjReceiver);
+
         event.registerBlockEntity(Capabilities.Item.BLOCK, ASSEMBLY_TABLE_TYPE.get(),
             (tile, side) -> tile.itemManager.getHandlerForFace(side));
 

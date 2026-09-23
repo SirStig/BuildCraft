@@ -9,6 +9,7 @@ package buildcraft.transport.tile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -18,8 +19,10 @@ import com.mojang.math.Axis;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockTintSource;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.block.FluidModel;
+import net.minecraft.client.renderer.block.MovingBlockRenderState;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
@@ -37,18 +40,23 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import net.neoforged.neoforge.transfer.fluid.FluidResource;
 
 import buildcraft.api.core.EnumPipePart;
 import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pluggable.PipePluggable;
 
 import buildcraft.transport.pipe.Pipe;
 import buildcraft.transport.pipe.flow.PipeFlowFluids;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.pipe.flow.TravellingItem;
+import buildcraft.transport.plug.PluggableFacade;
 
 /**
  * Renders every real item currently travelling through a {@link TilePipeHolder}'s own {@link PipeFlowItems} --
@@ -86,6 +94,24 @@ import buildcraft.transport.pipe.flow.TravellingItem;
  * interpolation -- see {@code PipeFlowFluids}' class javadoc for why neither has client state to work from here.
  * Each face's texture coordinates are the box's own block-space position on that face (as vanilla maps block
  * models), so the sprite is not stretched onto small boxes.
+ *
+ * <p><b>Facades</b> ({@code buildcraft.transport.plug.PluggableFacade}, the facades batch): a real disguised
+ * block model, not a hand-built textured box -- {@link net.minecraft.client.renderer.OrderedSubmitNodeCollector
+ * #submitMovingBlock(PoseStack, MovingBlockRenderState, int)} (present on the {@link SubmitNodeCollector} this
+ * class's own {@code submit} already receives, since that interface extends
+ * {@code OrderedSubmitNodeCollector} -- confirmed via {@code javap}), the exact real, source-confirmed API
+ * vanilla's own {@code FallingBlockRenderer} uses to draw a falling block's real appearance -- same real per-face
+ * textures, ambient occlusion and biome tint a placed block gets, not a single sprite pasted on every face. A
+ * {@link net.minecraft.client.renderer.block.MovingBlockRenderState} is a small mutable bag of fields
+ * ({@code blockState}/{@code blockPos}/{@code biome}/{@code cardinalLighting}/{@code lightEngine}) filled the
+ * same way {@code FallingBlockRenderer#extractRenderState} fills its own (straight off the tile's
+ * {@link net.minecraft.client.multiplayer.ClientLevel}), so {@link #extractFacadeState} is a near-verbatim
+ * transplant of that real method, not a guess. The disguise is fitted into the facade's own
+ * {@link PluggableFacade#getBoundingBox()} slab by translating to the box's minimum corner and non-uniformly
+ * scaling by the box's own size -- a full-cube block model's quads already span exactly {@code 0..1} on every
+ * local axis, so this maps them onto the box exactly, the visible (unscaled-in-plane) face keeping its correct,
+ * undistorted texture while only the slab's thin depth is squashed. A hollow facade renders nothing extra (see
+ * {@code PluggableFacade}'s own javadoc for that cut).
  */
 public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder, RenderTilePipeHolder.PipeItemsRenderState> {
 
@@ -114,9 +140,13 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder,
         BlockEntityRenderer.super.extractRenderState(tile, state, partialTick, cameraPosition, breakProgress);
         state.items.clear();
         state.fluidBoxes.clear();
+        state.facades.clear();
 
         IPipe pipe = tile.getPipe();
         Level level = tile.getLevel();
+        // Facades attach to any pipe kind (or none, mid-place), so this runs unconditionally rather than being
+        // folded into the item/fluid branches below.
+        extractFacadeState(tile, level, state);
         if (pipe != null && pipe.getFlow() instanceof PipeFlowFluids fluidFlow) {
             extractFluidState(pipe, fluidFlow, state);
             return;
@@ -147,6 +177,35 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder,
                 continue;
             }
             state.items.add(new RenderedItem(itemState, pos, direction));
+        }
+    }
+
+    /** Fills {@code state.facades} with one {@link RenderedFacade} per non-hollow {@link PluggableFacade}
+     * currently attached to this pipe holder -- a near-verbatim transplant of vanilla's own real
+     * {@code FallingBlockRenderer#extractRenderState} (source-confirmed against
+     * {@code minecraft-patched-26.3.0.7-beta-sources.jar}), just filling one {@link MovingBlockRenderState} per
+     * facade instead of one per entity, and keyed on the tile's own {@link BlockPos} rather than an entity's
+     * current position (a facade has no entity position of its own to read). */
+    private static void extractFacadeState(TilePipeHolder tile, @Nullable Level level, PipeItemsRenderState state) {
+        BlockPos pos = tile.getBlockPos();
+        for (Map.Entry<Direction, PipePluggable> entry : tile.getPluggables().entrySet()) {
+            if (!(entry.getValue() instanceof PluggableFacade facade) || facade.isHollow()) {
+                continue;
+            }
+            BlockState disguise = facade.states.phasedStates[facade.activeState].stateInfo.state;
+            if (disguise.isAir() || disguise.getRenderShape() != RenderShape.MODEL) {
+                continue;
+            }
+            MovingBlockRenderState moving = new MovingBlockRenderState();
+            moving.randomSeedPos = pos;
+            moving.blockPos = pos;
+            moving.blockState = disguise;
+            if (level instanceof ClientLevel clientLevel) {
+                moving.biome = clientLevel.getBiome(pos);
+                moving.cardinalLighting = clientLevel.cardinalLighting();
+                moving.lightEngine = clientLevel.getLightEngine();
+            }
+            state.facades.add(new RenderedFacade(facade.getBoundingBox(), moving));
         }
     }
 
@@ -246,6 +305,15 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder,
     public void submit(
         PipeItemsRenderState state, PoseStack poseStack, SubmitNodeCollector submitNodeCollector, CameraRenderState camera
     ) {
+        for (RenderedFacade facade : state.facades) {
+            AABB box = facade.box();
+            poseStack.pushPose();
+            poseStack.translate(box.minX, box.minY, box.minZ);
+            poseStack.scale((float) (box.maxX - box.minX), (float) (box.maxY - box.minY), (float) (box.maxZ - box.minZ));
+            // 0 == MovingBlockRenderState's own "no outline" sentinel -- see EntityRenderState#outlineColor.
+            submitNodeCollector.submitMovingBlock(poseStack, facade.renderState(), 0);
+            poseStack.popPose();
+        }
         if (!state.fluidBoxes.isEmpty()) {
             // Non-culling, for RenderTileTank's reason: a hand-built box's winding is not checked on screen here.
             RenderType renderType = RenderTypes.entityTranslucent(state.fluidAtlas);
@@ -346,7 +414,14 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder,
         Identifier fluidAtlas;
         float u0, u1, v0, v1;
         int fluidTint;
+        /** One entry per non-hollow facade currently attached -- see {@link #extractFacadeState}. */
+        final List<RenderedFacade> facades = new ArrayList<>();
     }
 
     private record RenderedItem(ItemStackRenderState state, Vec3 pos, @Nullable Direction direction) {}
+
+    /** One facade's disguise: {@link PluggableFacade#getBoundingBox()} (the slab {@code submit} fits the
+     * disguise into) paired with the real {@link MovingBlockRenderState} that draws it -- see this class's own
+     * javadoc. */
+    private record RenderedFacade(AABB box, MovingBlockRenderState renderState) {}
 }

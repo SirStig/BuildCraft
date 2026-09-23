@@ -20,7 +20,8 @@ import buildcraft.builders.tile.TileFiller;
 /**
  * 1.12.2's {@code GuiFiller} dragged a pattern icon (and its parameter icons) onto the filler from a gate GUI --
  * see {@link TileFiller}'s own javadoc for why that whole statement/action system is not ported. This is a plain
- * substitute: six vanilla {@link Button}s (pattern, its two possible parameters, invert, excavate, enabled),
+ * substitute: seven vanilla {@link Button}s (pattern, its up to three possible parameters, invert, excavate,
+ * enabled),
  * each sending its {@code buttonId} through the same vanilla menu-button packet
  * {@code GuiEngineIron}/{@code ContainerEngineIron} already established for this port's first GUI button
  * ({@code Minecraft#gameMode#handleInventoryButtonClick}, ending in {@link ContainerFiller#clickMenuButton}),
@@ -30,11 +31,12 @@ import buildcraft.builders.tile.TileFiller;
  */
 public class GuiFiller extends AbstractContainerScreen<ContainerFiller> {
     private static final int SIZE_X = 176;
-    private static final int SIZE_Y = 210;
+    private static final int SIZE_Y = 230;
 
     private Button patternButton;
     private Button param0Button;
     private Button param1Button;
+    private Button param2Button;
     private Button invertButton;
     private Button excavateButton;
     private Button enabledButton;
@@ -57,15 +59,18 @@ public class GuiFiller extends AbstractContainerScreen<ContainerFiller> {
         param1Button = addRenderableWidget(
             Button.builder(Component.empty(), b -> click(ContainerFiller.BUTTON_PARAM_1))
                 .bounds(x + 120, y + 20, 52, 18).build());
+        param2Button = addRenderableWidget(
+            Button.builder(Component.empty(), b -> click(ContainerFiller.BUTTON_PARAM_2))
+                .bounds(x + 64, y + 40, 52, 18).build());
         invertButton = addRenderableWidget(
             Button.builder(Component.empty(), b -> click(ContainerFiller.BUTTON_INVERT))
-                .bounds(x + 8, y + 40, 52, 18).build());
+                .bounds(x + 8, y + 60, 52, 18).build());
         excavateButton = addRenderableWidget(
             Button.builder(Component.empty(), b -> click(ContainerFiller.BUTTON_EXCAVATE))
-                .bounds(x + 64, y + 40, 52, 18).build());
+                .bounds(x + 64, y + 60, 52, 18).build());
         enabledButton = addRenderableWidget(
             Button.builder(Component.empty(), b -> click(ContainerFiller.BUTTON_ENABLED))
-                .bounds(x + 120, y + 40, 52, 18).build());
+                .bounds(x + 120, y + 60, 52, 18).build());
         updateButtons();
     }
 
@@ -81,8 +86,10 @@ public class GuiFiller extends AbstractContainerScreen<ContainerFiller> {
         patternButton.setMessage(Component.translatable(pattern.translationKey()));
         param0Button.setMessage(paramLabel(pattern, 0));
         param1Button.setMessage(paramLabel(pattern, 1));
+        param2Button.setMessage(paramLabel(pattern, 2));
         param0Button.active = pattern.paramCount() > 0;
         param1Button.active = pattern.paramCount() > 1;
+        param2Button.active = pattern.paramCount() > 2;
         invertButton.setMessage(Component.translatable(
             tile.isInverted() ? "buildcraft.gui.filler.invert_on" : "buildcraft.gui.filler.invert_off"));
         excavateButton.setMessage(Component.translatable(

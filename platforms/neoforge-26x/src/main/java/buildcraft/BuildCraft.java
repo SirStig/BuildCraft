@@ -72,6 +72,7 @@ public final class BuildCraft {
             modBus.addListener(buildcraft.core.client.BCCoreClientRegistries::registerRenderers);
             modBus.addListener(BCRoboticsClientRegistries::registerScreens);
             modBus.addListener(BCSiliconClientRegistries::registerScreens);
+            modBus.addListener(BCSiliconClientRegistries::registerRenderers);
         }
     }
 }

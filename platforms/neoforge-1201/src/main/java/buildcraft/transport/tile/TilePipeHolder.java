@@ -71,6 +71,9 @@ import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodDiamond;
  * (identical reasoning and implementation on this target). {@link #pluggables} is real as of the
  * wires/gates/pluggables batch -- see the 26.x copy's own javadoc for the full account, identical here bar the
  * direct {@link CompoundTag} read/write shape this target's {@link #load}/{@link #saveAdditional} already use.
+ * Every attach point also registers/unregisters the pluggable with {@link #eventBus} (added for the
+ * gate-accessory-pluggables batch: {@code PluggableLens}/{@code Timer}/{@code LightSensor}/{@code Pulsar}, the
+ * first pluggables with their own {@code @PipeEventHandler} methods) -- identical to the 26.x copy.
  *
  * <p>The one real per-platform divergence: capabilities. 1.20.1 still has {@code ICapabilityProvider}, so this
  * tile exposes its own {@link #getCapability} override directly (matching {@code TileChute}'s own precedent on
@@ -124,7 +127,13 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
         ownerName = nbt.getString("ownerName");
 
         // A full-map replace, matching pipe's own "reload replaces wholesale" precedent above -- see this
-        // class's own javadoc.
+        // class's own javadoc. Every replaced pluggable's own @PipeEventHandler methods (real as of the
+        // accessory-pluggables batch: PluggableLens/Timer/LightSensor/Pulsar) must leave the bus the same way
+        // pipe's own reload does above, or a stale one keeps answering trigger/action queries and item-flow
+        // events after being replaced.
+        for (PipePluggable old : pluggables.values()) {
+            eventBus.unregisterHandler(old);
+        }
         pluggables.clear();
         if (nbt.contains("pluggables")) {
             CompoundTag pluggablesTag = nbt.getCompound("pluggables");
@@ -143,7 +152,9 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
                 if (definition == null) {
                     continue;
                 }
-                pluggables.put(side, definition.readFromNbt(this, side, sideTag.getCompound("data"), registries));
+                PipePluggable loaded = definition.readFromNbt(this, side, sideTag.getCompound("data"), registries);
+                pluggables.put(side, loaded);
+                eventBus.registerHandler(loaded);
             }
         }
     }
@@ -208,6 +219,7 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
     public void notifyPluggablesRemoved() {
         for (PipePluggable plug : pluggables.values()) {
             plug.onRemove();
+            eventBus.unregisterHandler(plug);
         }
     }
 
@@ -285,10 +297,15 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
     /** Attaches {@code pluggable} to {@code side}, replacing whatever was there -- see the 26.x copy of this
      * method's own javadoc. */
     public void setPluggable(Direction side, @Nullable PipePluggable pluggable) {
+        PipePluggable old = pluggables.get(side);
+        if (old != null) {
+            eventBus.unregisterHandler(old);
+        }
         if (pluggable == null) {
             pluggables.remove(side);
         } else {
             pluggables.put(side, pluggable);
+            eventBus.registerHandler(pluggable);
         }
         markDirtyAndSync();
     }

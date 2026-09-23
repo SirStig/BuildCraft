@@ -39,11 +39,11 @@ import buildcraft.silicon.tile.TileLaserTableBase;
  * for every laser-powered table -- kept as a single class rather than one per table to match the original's own
  * design, the same way {@link EnumLaserTableType} itself is shared.
  *
- * <p><b>{@code TileLaser}, the laser emitter block that actually feeds these tables power, is not ported this
- * round.</b> Every table here still fully implements {@link buildcraft.api.mj.ILaserTarget} (see
- * {@code TileLaserTableBase}) and this block still implements {@link ILaserTargetBlock}, so a future port of
- * {@code TileLaser} can find and power them with no changes needed here -- there just isn't yet an in-game way to
- * deliver that power (short of a debug command calling {@code receiveLaserPower} directly). Flagged in PORTING.md.
+ * <p><b>{@code buildcraft.silicon.tile.TileLaser}</b>, the laser emitter block that actually feeds these tables
+ * power, is now ported too (see that class's own javadoc). Every table here fully implements
+ * {@link buildcraft.api.mj.ILaserTarget} (see {@code TileLaserTableBase}) and this block implements
+ * {@link ILaserTargetBlock}, which is exactly why {@code TileLaser} could find and power them with no changes
+ * needed here at all -- confirmed live: see PORTING.md's laser entry.
  *
  * <p>1.12.2's {@code isOpaqueCube()/isFullCube() -> false} is {@code noOcclusion()} on the registered properties
  * (matching every other non-cube BuildCraft machine in this port); the {@code CUTOUT} render layer is the block

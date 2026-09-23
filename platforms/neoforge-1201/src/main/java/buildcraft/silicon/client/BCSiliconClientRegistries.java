@@ -9,8 +9,10 @@ package buildcraft.silicon.client;
 
 import net.minecraft.client.gui.screens.MenuScreens;
 
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
+import buildcraft.silicon.client.render.RenderLaser;
 import buildcraft.silicon.gui.GuiAdvancedCraftingTable;
 import buildcraft.silicon.gui.GuiAssemblyTable;
 import buildcraft.silicon.gui.GuiIntegrationTable;
@@ -19,7 +21,8 @@ import buildcraft.BCSiliconRegistries;
 
 /** Mirrors the 26.x class of the same name -- see that one's own javadoc and
  * {@code buildcraft.factory.client.BCFactoryClientRegistries}'s (1.20.1) own javadoc for why this listens for
- * {@link FMLClientSetupEvent} rather than a NeoForge-style registration event. */
+ * {@link FMLClientSetupEvent} rather than a NeoForge-style registration event, and why {@link #registerRenderers}
+ * still uses {@link EntityRenderersEvent.RegisterRenderers} regardless. */
 public final class BCSiliconClientRegistries {
 
     private BCSiliconClientRegistries() {}
@@ -30,5 +33,9 @@ public final class BCSiliconClientRegistries {
             MenuScreens.register(BCSiliconRegistries.ADVANCED_CRAFTING_TABLE_MENU.get(), GuiAdvancedCraftingTable::new);
             MenuScreens.register(BCSiliconRegistries.INTEGRATION_TABLE_MENU.get(), GuiIntegrationTable::new);
         });
+    }
+
+    public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(BCSiliconRegistries.LASER_TYPE.get(), RenderLaser::new);
     }
 }

@@ -7,6 +7,8 @@
  */
 package buildcraft.transport.tile;
 
+import java.util.Map;
+
 import org.jetbrains.annotations.Nullable;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -28,6 +30,9 @@ import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions;
@@ -35,11 +40,13 @@ import net.minecraftforge.fluids.FluidStack;
 
 import buildcraft.api.core.EnumPipePart;
 import buildcraft.api.transport.pipe.IPipe;
+import buildcraft.api.transport.pluggable.PipePluggable;
 
 import buildcraft.transport.pipe.Pipe;
 import buildcraft.transport.pipe.flow.PipeFlowFluids;
 import buildcraft.transport.pipe.flow.PipeFlowItems;
 import buildcraft.transport.pipe.flow.TravellingItem;
+import buildcraft.transport.plug.PluggableFacade;
 
 /**
  * Renders every real item currently travelling through a {@link TilePipeHolder}'s own {@link PipeFlowItems} --
@@ -64,6 +71,14 @@ import buildcraft.transport.pipe.flow.TravellingItem;
  * <p>Fluid pipes ({@link PipeFlowFluids}) draw each section as a box -- the 26.x copy's javadoc has the geometry
  * (1.12.2's {@code PipeFlowRendererFluids}) and what is not reproduced. The sprite and tint come from
  * {@link IClientFluidTypeExtensions}, as in this target's {@code RenderTileTank}.
+ *
+ * <p><b>Facades</b> ({@code buildcraft.transport.plug.PluggableFacade}, the facades batch): a real disguised
+ * block model via {@code BlockRenderDispatcher#renderSingleBlock(BlockState, PoseStack, MultiBufferSource, int,
+ * int)} (confirmed via {@code javap} against {@code forge-1.20.1-47.1.106-merged.jar}) -- the same classic API
+ * used to draw a block-item icon, real per-face textures and its own default tint included, no hand-built quads
+ * needed. Fitted into the facade's own {@link PluggableFacade#getBoundingBox()} slab the same way the 26.x copy
+ * does: translate to the box's minimum corner, then scale non-uniformly by the box's own size, so a full cube's
+ * {@code 0..1}-local-space quads land exactly on the box with the visible face's texture undistorted.
  */
 public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder> {
 
@@ -81,6 +96,8 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder>
         TilePipeHolder tile, float partialTick, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight,
         int packedOverlay
     ) {
+        renderFacades(tile, poseStack, bufferSource, packedLight, packedOverlay);
+
         IPipe pipe = tile.getPipe();
         Level level = tile.getLevel();
         if (pipe != null && pipe.getFlow() instanceof PipeFlowFluids fluidFlow) {
@@ -114,6 +131,29 @@ public class RenderTilePipeHolder implements BlockEntityRenderer<TilePipeHolder>
                 stack, ItemDisplayContext.FIXED, packedLight, packedOverlay, poseStack, bufferSource, level,
                 seed + (index++)
             );
+            poseStack.popPose();
+        }
+    }
+
+    /** Draws every non-hollow {@link PluggableFacade} currently attached to this pipe holder as a real disguised
+     * block model -- see this class's own javadoc. */
+    private static void renderFacades(
+        TilePipeHolder tile, PoseStack poseStack, MultiBufferSource bufferSource, int packedLight, int packedOverlay
+    ) {
+        for (Map.Entry<Direction, PipePluggable> entry : tile.getPluggables().entrySet()) {
+            if (!(entry.getValue() instanceof PluggableFacade facade) || facade.isHollow()) {
+                continue;
+            }
+            BlockState disguise = facade.states.phasedStates[facade.activeState].stateInfo.state;
+            if (disguise.isAir() || disguise.getRenderShape() != RenderShape.MODEL) {
+                continue;
+            }
+            AABB box = facade.getBoundingBox();
+            poseStack.pushPose();
+            poseStack.translate(box.minX, box.minY, box.minZ);
+            poseStack.scale((float) (box.maxX - box.minX), (float) (box.maxY - box.minY), (float) (box.maxZ - box.minZ));
+            Minecraft.getInstance().getBlockRenderer()
+                .renderSingleBlock(disguise, poseStack, bufferSource, packedLight, packedOverlay);
             poseStack.popPose();
         }
     }

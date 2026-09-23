@@ -26,9 +26,10 @@ public class ContainerFiller extends ContainerBCTile<TileFiller> {
     public static final int BUTTON_PATTERN = 0;
     public static final int BUTTON_PARAM_0 = 1;
     public static final int BUTTON_PARAM_1 = 2;
-    public static final int BUTTON_INVERT = 3;
-    public static final int BUTTON_EXCAVATE = 4;
-    public static final int BUTTON_ENABLED = 5;
+    public static final int BUTTON_PARAM_2 = 3;
+    public static final int BUTTON_INVERT = 4;
+    public static final int BUTTON_EXCAVATE = 5;
+    public static final int BUTTON_ENABLED = 6;
 
     public ContainerFiller(MenuType<?> type, int windowId, Inventory playerInv, TileFiller tile) {
         super(type, windowId, tile);
@@ -58,6 +59,7 @@ public class ContainerFiller extends ContainerBCTile<TileFiller> {
             case BUTTON_PATTERN -> tile.cyclePattern();
             case BUTTON_PARAM_0 -> tile.cycleParam(0);
             case BUTTON_PARAM_1 -> tile.cycleParam(1);
+            case BUTTON_PARAM_2 -> tile.cycleParam(2);
             case BUTTON_INVERT -> tile.toggleInverted();
             case BUTTON_EXCAVATE -> tile.toggleExcavate();
             case BUTTON_ENABLED -> tile.toggleEnabled();

@@ -13,7 +13,17 @@ import buildcraft.builders.filler.pattern.PatternFill;
 import buildcraft.builders.filler.pattern.PatternFrame;
 import buildcraft.builders.filler.pattern.PatternNone;
 import buildcraft.builders.filler.pattern.PatternPyramid;
+import buildcraft.builders.filler.pattern.PatternShape2dArc;
+import buildcraft.builders.filler.pattern.PatternShape2dCircle;
+import buildcraft.builders.filler.pattern.PatternShape2dHexagon;
+import buildcraft.builders.filler.pattern.PatternShape2dOctagon;
+import buildcraft.builders.filler.pattern.PatternShape2dPentagon;
+import buildcraft.builders.filler.pattern.PatternShape2dSemiCircle;
+import buildcraft.builders.filler.pattern.PatternShape2dSquare;
+import buildcraft.builders.filler.pattern.PatternShape2dTriangle;
 import buildcraft.builders.filler.pattern.PatternSphere;
+import buildcraft.builders.filler.pattern.PatternSpherePart;
+import buildcraft.builders.filler.pattern.PatternSpherePart.Part;
 import buildcraft.builders.filler.pattern.PatternStairs;
 
 /**
@@ -22,13 +32,6 @@ import buildcraft.builders.filler.pattern.PatternStairs;
  * added itself to, plus the widget that grouped and sorted them for the drag-and-drop gate GUI) -- neither the
  * registry indirection nor the grouping-by-shape-family is needed for a plain "click to cycle" GUI, so this is
  * just a fixed array.
- *
- * <p><b>Not ported this pass</b> (see {@link TileFiller}'s own javadoc): {@code PatternSpherePart} (eighth/
- * quarter/half sphere -- three more variants of {@link PatternSphere}'s own algorithm, restricted to one octant/
- * quadrant/hemisphere) and {@code PatternShape2d} and its nine concrete 2D-outline subclasses (arc, circle,
- * hexagon, octagon, pentagon, semicircle, square, triangle, plus the base rectangle) -- both pull in
- * {@code PositionUtil.PathIterator2d}/{@code forAllOnPath2d}, a Bresenham-style line/arc walker this port has no
- * equivalent of yet. A follow-up pass can port that walker once one of these shapes is actually needed.
  */
 public final class FillerPatterns {
     private FillerPatterns() {}
@@ -40,10 +43,25 @@ public final class FillerPatterns {
     public static final FillerPattern FRAME = new PatternFrame();
     public static final FillerPattern PYRAMID = new PatternPyramid();
     public static final FillerPattern SPHERE = new PatternSphere();
+    public static final FillerPattern SPHERE_EIGHTH = new PatternSpherePart(Part.EIGHTH);
+    public static final FillerPattern SPHERE_QUARTER = new PatternSpherePart(Part.QUARTER);
+    public static final FillerPattern SPHERE_HALF = new PatternSpherePart(Part.HALF);
     public static final FillerPattern STAIRS = new PatternStairs();
+    public static final FillerPattern SHAPE_2D_ARC = new PatternShape2dArc();
+    public static final FillerPattern SHAPE_2D_CIRCLE = new PatternShape2dCircle();
+    public static final FillerPattern SHAPE_2D_HEXAGON = new PatternShape2dHexagon();
+    public static final FillerPattern SHAPE_2D_OCTAGON = new PatternShape2dOctagon();
+    public static final FillerPattern SHAPE_2D_PENTAGON = new PatternShape2dPentagon();
+    public static final FillerPattern SHAPE_2D_SEMI_CIRCLE = new PatternShape2dSemiCircle();
+    public static final FillerPattern SHAPE_2D_SQUARE = new PatternShape2dSquare();
+    public static final FillerPattern SHAPE_2D_TRIANGLE = new PatternShape2dTriangle();
 
     /** Cycling order for the GUI's pattern button; {@link #NONE} is first, matching 1.12.2's own default. */
-    public static final FillerPattern[] VALUES = { NONE, BOX, CLEAR, FILL, FRAME, PYRAMID, SPHERE, STAIRS };
+    public static final FillerPattern[] VALUES = {
+        NONE, BOX, CLEAR, FILL, FRAME, PYRAMID, SPHERE, SPHERE_EIGHTH, SPHERE_QUARTER, SPHERE_HALF, STAIRS,
+        SHAPE_2D_ARC, SHAPE_2D_CIRCLE, SHAPE_2D_HEXAGON, SHAPE_2D_OCTAGON, SHAPE_2D_PENTAGON, SHAPE_2D_SEMI_CIRCLE,
+        SHAPE_2D_SQUARE, SHAPE_2D_TRIANGLE
+    };
 
     public static int indexOf(FillerPattern pattern) {
         for (int i = 0; i < VALUES.length; i++) {

@@ -74,7 +74,7 @@ import buildcraft.BCBuildersRegistries;
  * this instead ports {@code Pattern}'s own shape-generation math directly onto a plain local grid
  * ({@link FilledArea}, this port's stand-in for {@code IFilledTemplate}) and drives it with the same
  * accumulate-MJ-then-act loop {@link TileQuarry} already established for its own dig loop. The GUI cycles a
- * pattern (and its 0-2 parameters) with plain buttons instead of dragging a gate icon -- see
+ * pattern (and its 0-3 parameters) with plain buttons instead of dragging a gate icon -- see
  * {@link ContainerFiller}'s own javadoc.
  *
  * <p><b>Other deviations:</b>
@@ -115,7 +115,10 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
 
     public final Box box = new Box();
     private FillerPattern pattern = FillerPatterns.NONE;
-    private final int[] params = new int[2];
+    /** Sized for the largest {@code paramCount()} of any ported pattern -- {@code PatternShape2d} and the eighth/
+     * quarter {@code PatternSpherePart} variants need all three (axis/hollow-or-facing, hollow-or-facing, and
+     * rotation). */
+    private final int[] params = new int[3];
     private boolean inverted = false;
     private boolean canExcavate = true;
     private boolean enabled = true;
@@ -229,8 +232,9 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
     public void cyclePattern() {
         int next = (FillerPatterns.indexOf(pattern) + 1) % FillerPatterns.VALUES.length;
         pattern = FillerPatterns.VALUES[next];
-        params[0] = pattern.paramCount() > 0 ? pattern.defaultParam(0) : 0;
-        params[1] = pattern.paramCount() > 1 ? pattern.defaultParam(1) : 0;
+        for (int i = 0; i < params.length; i++) {
+            params[i] = pattern.paramCount() > i ? pattern.defaultParam(i) : 0;
+        }
         rebuildArea();
         markDirtyAndSync();
     }
@@ -441,6 +445,7 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
         output.putString("pattern", pattern.id);
         output.putInt("param0", params[0]);
         output.putInt("param1", params[1]);
+        output.putInt("param2", params[2]);
         output.putBoolean("inverted", inverted);
         output.putBoolean("canExcavate", canExcavate);
         output.putBoolean("enabled", enabled);
@@ -455,6 +460,7 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
         pattern = FillerPatterns.byId(input.getStringOr("pattern", FillerPatterns.NONE.id));
         params[0] = input.getIntOr("param0", 0);
         params[1] = input.getIntOr("param1", 0);
+        params[2] = input.getIntOr("param2", 0);
         inverted = input.getBooleanOr("inverted", false);
         canExcavate = input.getBooleanOr("canExcavate", true);
         enabled = input.getBooleanOr("enabled", true);

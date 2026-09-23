@@ -81,6 +81,14 @@ import buildcraft.transport.pipe.behaviour.PipeBehaviourWoodDiamond;
  * before: this port's sync goes through the coarser, already-existing whole-tile
  * {@link buildcraft.lib.tile.TileBC#markDirtyAndSync()} instead. Persistence goes through
  * {@link #loadAdditional}/{@link #saveAdditional} only.
+ *
+ * <p><b>Pluggable event handlers</b> (added this pass, for the accessory-pluggables batch: {@code PluggableLens}/
+ * {@code Timer}/{@code LightSensor}/{@code Pulsar}) -- every attach point ({@link #loadAdditional}'s pluggable
+ * loop, {@link #setPluggable}, {@link #preRemoveSideEffects}) now also registers/unregisters the pluggable itself
+ * with {@link #eventBus}, mirroring {@link #pipe}'s own behaviour/flow registration immediately above. Before
+ * this pass no pluggable had any {@code @PipeEventHandler} method, so the gap was invisible; a lens's item-flow
+ * filtering and a timer/light-sensor/pulsar's trigger/action offers are the first pluggables that actually need
+ * to be on the bus to do anything at all.
  */
 public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider {
 
@@ -126,7 +134,13 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
 
         // A full-map replace, matching pipe's own "reload replaces wholesale" precedent above -- see this
         // class's own javadoc. Any pluggable not mentioned in this sync is genuinely gone (removed, or never
-        // existed on a fresh tile), so the map is cleared first rather than merged.
+        // existed on a fresh tile), so the map is cleared first rather than merged. Every replaced pluggable's
+        // own @PipeEventHandler methods (real as of the accessory-pluggables batch: PluggableLens/Timer/
+        // LightSensor/Pulsar) must leave the bus the same way pipe's own reload does above, or a stale one keeps
+        // answering trigger/action queries and item-flow events after being replaced.
+        for (PipePluggable old : pluggables.values()) {
+            eventBus.unregisterHandler(old);
+        }
         pluggables.clear();
         input.read("pluggables", CompoundTag.CODEC).ifPresent(tag -> {
             for (Direction side : Direction.values()) {
@@ -143,7 +157,9 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
                     continue;
                 }
                 CompoundTag data = sideTag.getCompoundOrEmpty("data");
-                pluggables.put(side, definition.readFromNbt(this, side, data, input.lookup()));
+                PipePluggable loaded = definition.readFromNbt(this, side, data, input.lookup());
+                pluggables.put(side, loaded);
+                eventBus.registerHandler(loaded);
             }
         });
     }
@@ -302,10 +318,15 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
      * {@code BlockPipeHolder}'s item-use dispatch (placing a new pluggable) -- see that class's own javadoc.
      * Not part of {@link IPipeHolder}: placement is a block-interaction concern, not a pipe-internal one. */
     public void setPluggable(Direction side, @Nullable PipePluggable pluggable) {
+        PipePluggable old = pluggables.get(side);
+        if (old != null) {
+            eventBus.unregisterHandler(old);
+        }
         if (pluggable == null) {
             pluggables.remove(side);
         } else {
             pluggables.put(side, pluggable);
+            eventBus.registerHandler(pluggable);
         }
         markDirtyAndSync();
     }
@@ -554,6 +575,7 @@ public class TilePipeHolder extends TileBC implements IPipeHolder, MenuProvider 
         super.preRemoveSideEffects(pos, state);
         for (PipePluggable plug : pluggables.values()) {
             plug.onRemove();
+            eventBus.unregisterHandler(plug);
         }
     }
 }

@@ -88,7 +88,10 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
 
     public final Box box = new Box();
     private FillerPattern pattern = FillerPatterns.NONE;
-    private final int[] params = new int[2];
+    /** Sized for the largest {@code paramCount()} of any ported pattern -- {@code PatternShape2d} and the eighth/
+     * quarter {@code PatternSpherePart} variants need all three (axis/hollow-or-facing, hollow-or-facing, and
+     * rotation). */
+    private final int[] params = new int[3];
     private boolean inverted = false;
     private boolean canExcavate = true;
     private boolean enabled = true;
@@ -198,8 +201,9 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
     public void cyclePattern() {
         int next = (FillerPatterns.indexOf(pattern) + 1) % FillerPatterns.VALUES.length;
         pattern = FillerPatterns.VALUES[next];
-        params[0] = pattern.paramCount() > 0 ? pattern.defaultParam(0) : 0;
-        params[1] = pattern.paramCount() > 1 ? pattern.defaultParam(1) : 0;
+        for (int i = 0; i < params.length; i++) {
+            params[i] = pattern.paramCount() > i ? pattern.defaultParam(i) : 0;
+        }
         rebuildArea();
         markDirtyAndSync();
     }
@@ -421,6 +425,7 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
         nbt.putString("pattern", pattern.id);
         nbt.putInt("param0", params[0]);
         nbt.putInt("param1", params[1]);
+        nbt.putInt("param2", params[2]);
         nbt.putBoolean("inverted", inverted);
         nbt.putBoolean("canExcavate", canExcavate);
         nbt.putBoolean("enabled", enabled);
@@ -435,6 +440,7 @@ public class TileFiller extends TileBC implements IDebuggable, MenuProvider {
         pattern = FillerPatterns.byId(nbt.contains("pattern") ? nbt.getString("pattern") : FillerPatterns.NONE.id);
         params[0] = nbt.getInt("param0");
         params[1] = nbt.getInt("param1");
+        params[2] = nbt.getInt("param2");
         inverted = nbt.getBoolean("inverted");
         canExcavate = !nbt.contains("canExcavate") || nbt.getBoolean("canExcavate");
         enabled = !nbt.contains("enabled") || nbt.getBoolean("enabled");

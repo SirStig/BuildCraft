@@ -611,7 +611,8 @@ public final class BCTransportRegistries {
 
     // #########
     //
-    // Pluggables (wires/gates/pluggables batch) -- see the 26.x copy of this file for the full account.
+    // Pluggables (wires/gates/pluggables batch, extended by the gate-accessory-pluggables batch) -- see the
+    // 26.x copy of this file for the full account.
     //
     // #########
 
@@ -640,10 +641,58 @@ public final class BCTransportRegistries {
             }
         );
 
+    /** New this pass (gate-accessory-pluggables batch): {@code buildcraft.silicon.plug.PluggableLens}, ported
+     * onto {@code buildcraft.transport.plug} like every other pluggable in this port -- see that class's own
+     * javadoc. */
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_LENS =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            new net.minecraft.resources.ResourceLocation(BuildCraft.MOD_ID, "lens"),
+            (definition, holder, side, nbt, registries) ->
+                new buildcraft.transport.plug.PluggableLens(definition, holder, side, nbt),
+            (definition, holder, side, buffer) ->
+                new buildcraft.transport.plug.PluggableLens(definition, holder, side, null, false)
+        );
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_TIMER =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            new net.minecraft.resources.ResourceLocation(BuildCraft.MOD_ID, "timer"),
+            (definition, holder, side) -> new buildcraft.transport.plug.PluggableTimer(definition, holder, side)
+        );
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_LIGHT_SENSOR =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            new net.minecraft.resources.ResourceLocation(BuildCraft.MOD_ID, "light_sensor"),
+            (definition, holder, side) -> new buildcraft.transport.plug.PluggableLightSensor(definition, holder, side)
+        );
+
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_PULSAR =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            new net.minecraft.resources.ResourceLocation(BuildCraft.MOD_ID, "pulsar"),
+            (definition, holder, side, nbt, registries) ->
+                new buildcraft.transport.plug.PluggablePulsar(definition, holder, side, nbt),
+            (definition, holder, side, buffer) -> new buildcraft.transport.plug.PluggablePulsar(definition, holder, side)
+        );
+
+    /** Facades (facades batch) -- see the 26.x copy of this file for the full account. */
+    public static final buildcraft.api.transport.pluggable.PluggableDefinition PLUGGABLE_DEF_FACADE =
+        new buildcraft.api.transport.pluggable.PluggableDefinition(
+            new net.minecraft.resources.ResourceLocation(BuildCraft.MOD_ID, "facade"),
+            (definition, holder, side, nbt, registries) ->
+                new buildcraft.transport.plug.PluggableFacade(definition, holder, side, nbt, registries),
+            (definition, holder, side, buffer) -> {
+                throw new UnsupportedOperationException("PluggableFacade has no network-only constructor in this batch");
+            }
+        );
+
     static {
         PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_BLOCKER);
         PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_POWER_ADAPTOR);
         PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_GATE);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_LENS);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_TIMER);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_LIGHT_SENSOR);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_PULSAR);
+        PipeApi.pluggableRegistry.register(PLUGGABLE_DEF_FACADE);
     }
 
     public static final RegistryObject<buildcraft.transport.item.ItemPluggableSimple> PLUG_BLOCKER = REGISTRY.addItem(
@@ -666,12 +715,46 @@ public final class BCTransportRegistries {
         "gate", () -> new buildcraft.transport.item.ItemPluggableGate(new Item.Properties())
     );
 
+    /** The one physical lens/filter item -- every colour/lens-or-filter combination is one NBT-tagged stack of
+     * this same item, matching {@link #ITEM_PLUGGABLE_GATE}'s own precedent. See {@code ItemPluggableLens}'s own
+     * javadoc for the dropped creative-tab cartesian product. */
+    public static final RegistryObject<buildcraft.transport.item.ItemPluggableLens> ITEM_PLUGGABLE_LENS = REGISTRY.addItem(
+        "plug_lens", () -> new buildcraft.transport.item.ItemPluggableLens(new Item.Properties())
+    );
+
+    public static final RegistryObject<buildcraft.transport.item.ItemPluggableSimple> PLUG_TIMER = REGISTRY.addItem(
+        "plug_timer",
+        () -> new buildcraft.transport.item.ItemPluggableSimple(
+            new Item.Properties(),
+            (holder, side) -> new buildcraft.transport.plug.PluggableTimer(PLUGGABLE_DEF_TIMER, holder, side)
+        )
+    );
+
+    public static final RegistryObject<buildcraft.transport.item.ItemPluggableSimple> PLUG_LIGHT_SENSOR = REGISTRY.addItem(
+        "plug_light_sensor",
+        () -> new buildcraft.transport.item.ItemPluggableSimple(
+            new Item.Properties(),
+            (holder, side) -> new buildcraft.transport.plug.PluggableLightSensor(PLUGGABLE_DEF_LIGHT_SENSOR, holder, side)
+        )
+    );
+
+    /** Unlike every other pluggable item above, this cannot be a plain {@code ItemPluggableSimple} factory --
+     * placement is gated on the pipe's own behaviour, see {@code ItemPluggablePulsar}'s own javadoc. */
+    public static final RegistryObject<buildcraft.transport.item.ItemPluggablePulsar> PLUG_PULSAR = REGISTRY.addItem(
+        "plug_pulsar", () -> new buildcraft.transport.item.ItemPluggablePulsar(new Item.Properties())
+    );
+
     public static final RegistryObject<MenuType<buildcraft.transport.container.ContainerGate>> GATE_MENU =
         REGISTRY.addMenu("gate", buildcraft.transport.container.ContainerGate::new);
+
+    /** The one physical facade item -- see the 26.x copy of this file for the full account. */
+    public static final RegistryObject<buildcraft.transport.item.ItemPluggableFacade> ITEM_PLUGGABLE_FACADE =
+        REGISTRY.addItem("plug_facade", () -> new buildcraft.transport.item.ItemPluggableFacade(new Item.Properties()));
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
         modBus.addListener(BCTransportRegistries::registerCapabilities);
+        modBus.addListener(BCTransportRegistries::commonSetup);
 
         // Wires BuildCraftAPI.fakePlayerProvider -- confirmed unassigned anywhere else in this whole port before
         // this batch (see PipeBehaviourStripes's own javadoc); PipeBehaviourStripes#onDrop is the first real
@@ -706,6 +789,20 @@ public final class BCTransportRegistries {
             : buildcraft.transport.statements.ActionPipeSignal.all()) {
             buildcraft.api.statements.StatementManager.registerStatement(action);
         }
+
+        // Gate-accessory-pluggables batch: PluggableTimer/LightSensor/Pulsar's own trigger/action offers -- see
+        // the 26.x copy of this method for the full account.
+        for (buildcraft.transport.statements.TriggerTimer trigger : buildcraft.transport.statements.TriggerTimer.all()) {
+            buildcraft.api.statements.StatementManager.registerStatement(trigger);
+        }
+        for (buildcraft.transport.statements.TriggerLightSensor trigger
+            : buildcraft.transport.statements.TriggerLightSensor.all()) {
+            buildcraft.api.statements.StatementManager.registerStatement(trigger);
+        }
+        for (buildcraft.transport.statements.ActionPowerPulsar action
+            : buildcraft.transport.statements.ActionPowerPulsar.all()) {
+            buildcraft.api.statements.StatementManager.registerStatement(action);
+        }
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {
@@ -713,6 +810,18 @@ public final class BCTransportRegistries {
         event.register(IPipe.class);
         event.register(PipePluggable.class);
         event.register(IInjectable.class);
+    }
+
+    /** Facades (facades batch): scans every registered block for valid disguises once every mod's blocks are
+     * registered. Unlike the 26.x copy of this method, plain {@link net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent}
+     * is correct here -- 1.20.1 has no data components at all, so there is no "components not bound yet" trap to
+     * dodge (see the 26.x copy's own javadoc for why it has to use {@code DefaultDataComponentsBoundEvent}
+     * instead). Also wires the two {@code FacadeAPI} statics -- see that copy's javadoc for what they are for. */
+    private static void commonSetup(net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent event) {
+        buildcraft.api.facades.FacadeAPI.facadeItem = ITEM_PLUGGABLE_FACADE.get();
+        buildcraft.api.facades.FacadeAPI.registry = buildcraft.transport.plug.FacadeStateManager.INSTANCE;
+        buildcraft.transport.plug.FacadeStateManager.init();
+        buildcraft.lib.recipe.AssemblyRecipeRegistry.register(buildcraft.transport.recipe.FacadeAssemblyRecipes.INSTANCE);
     }
 
     /** Looks up the placeable {@link ItemPipeHolder} for whatever {@link PipeDefinition} is actually stamped

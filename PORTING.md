@@ -5316,6 +5316,336 @@ Deliberately not ported, with reasons:
     as its bounding envelope and rotates it the same four ways `blockstates/heat_exchange.json` does (confirmed
     by reading that file), keyed on the block's own real `part`/`facing` state.
 
+- **`TileLaser`/`BlockLaser` (the laser-beam emitter), both platforms -- the four already-ported laser tables can
+  now actually receive power.** Read fully before porting. `TileLaser` finds up to `TARGETING_RANGE` (6) blocks of
+  `ILaserTarget`s in a `VolumeUtil.iterateCone` in front of whichever way it faces, draws MJ from its own 1024 MJ
+  input battery (`MjBattery`+`MjBatteryReceiver`, the same shape `TileMiner`/`TileChute` already use), and feeds a
+  randomly-chosen needs-power target up to 4 MJ/tick, scaled down while its own battery is low -- the exact
+  1.12.2 arithmetic, unchanged. Every laser table already implemented `ILaserTarget`/`ILaserTargetBlock` in
+  anticipation (see that module's own earlier Progress entry) -- confirmed live below: wiring up a real
+  `TileLaser` needed zero changes to `TileLaserTableBase`/`BlockLaserTable`.
+  - **Two 1.12.2 subsystems deliberately not stood up, both documented in `TileLaser`'s own javadoc:**
+    - `buildcraft.lib.block.LocalBlockUpdateNotifier` (a world-wide "every block change, notify every registered
+      listener" singleton) has no consumer anywhere else in this port yet (`ILocalBlockUpdateSubscriber` exists
+      only as an interface stub, unimplemented). Standing up that whole system for this one caller wasn't judged
+      worth it this round; instead a `SafeTimeTracker(10,20)` drives a full cone rescan + reselect together, on
+      the same cadence 1.12.2 used for reselection alone (plus immediately whenever the current target stops
+      needing power) -- a little more CPU, no new infrastructure, never a hot path.
+    - The 1.12.2 id-tagged `NET_RENDER_DATA` payload (battery, target pos, one average-power long, pushed
+      unconditionally every tick) has no equivalent on this target's `TileBC`, which only knows how to sync a
+      tile's *entire* saved NBT. Rather than reproduce that payload system, the tile's saved state is kept
+      deliberately tiny (battery, target pos, one precomputed average long) and `markDirtyAndSync()` is called
+      every tick -- matching `TileLaserTableBase`'s own precedent of never persisting its `avgPower` sliding
+      window either.
+  - **`AdvDebuggerLaser` (a client debug-overlay cone visualiser) is not ported.** It depends on
+    `buildcraft.lib.client.render.DetachedRenderer`/`IDetachedRenderer`, a whole detached-renderer registration
+    system that does not exist on this port at all (no other consumer either) -- standing that up for one debug
+    overlay was judged out of scope; a documented cut, not a defect.
+  - **The beam itself reuses the existing marker-laser pipeline, not a new one**, exactly as anticipated by
+    `BuildCraftLaserManager`'s own javadoc ("stripes/power types are still declared with their sprites stitched,
+    for the ... silicon-laser renderers still to come"): `BuildCraftLaserManager.POWERS` (four already-stitched
+    red/yellow/green/blue `LaserType`s, copied byte-for-byte from 1.12.2's real `lasers/power_{low,med,high,
+    full}.png`) is indexed by the beam's smoothed average throughput, precisely 1.12.2's own `RenderLaser` logic
+    -- no new sprite, `LaserType`, or atlas-source entry needed. `RenderLaser` is a `BlockEntityRenderer<TileLaser
+    [, S]>` on the same extract/submit (26.x) or classic immediate-mode `render` (1.20.1) contract
+    `RenderMarkerVolume` already established as this port's laser-BER precedent; the beam's jittering endpoint
+    (1.12.2's client-tick-computed `laserPos`) is recomputed inside the renderer on its own `SafeTimeTracker`
+    instead, since nothing ticks a block entity client-side on this target any more. Dropped: the
+    `BCSiliconConfig.renderLaserBeams`/goggles gate -- no config system is ported yet, and the config's own
+    unconfigured default was already `true`, so always drawing while the beam actually carries power reproduces
+    that real default exactly.
+  - **A real, non-cube shape from the start**, per this round's own shape-audit precedent (`ChuteShapes`/
+    `EngineShapes`/`BlockLaserTable`'s own thin-box fix): read `buildcraft_resources/.../models/block/laser.json`
+    -- a 16x4x16 base plate plus a 6x9x6 emitter tower rising to 13/16 (not the full 16) -- and derived a new
+    `LaserShapes` (both platforms, identical geometry) by rotating that "facing up" geometry the same six ways
+    `blockstates/laser.json` rotates the model (`up` unrotated, `down` at `x=180`, `north`/`east`/`south`/`west`
+    at `x=90` plus the matching `y`), confirmed by reading that file rather than assumed -- the same per-axis
+    transforms `ChuteShapes` already established for this exact rotation set.
+  - **Live-verified end to end, real dedicated 1.20.1 server, private ports 25631/25632 -- not just a clean
+    boot.** Booted clean, zero exceptions throughout. `setblock` placed a real `assembly_table` and `laser
+    [facing=down]`; `/data get block` confirmed the laser's own NBT (`battery`/`average_power`, no `target_pos`
+    while nothing needs power) matches its NBT shape exactly. **Power in:** an `engine_creative[facing=down]`
+    directly above (its real output direction is the tile's own `currentDirection` field, not the cosmetic
+    blockstate -- set via `/data merge block ... {currentDirection:"down"}`, matching this session's own earlier
+    engine-facing-bug writeup) plus a `redstone_block` on top filled the laser's battery from `0L` to exactly
+    `1024000000L` (its declared 1024 MJ capacity) and stopped, proving the real `MjCapabilities.RECEIVER`/
+    `READABLE` capability wiring. **Power out, the actual deliverable:** every one of the four tables turned out
+    to have its own pre-existing reason it can't reach a non-zero target through raw NBT alone (assembly/
+    integration's recipe registries are empty -- no recipes registered anywhere in this port yet, an existing
+    gap, not this entry's to fix; charging's `getTarget()` is a permanent 0 stub) *except* the advanced crafting
+    table, whose target is a real live vanilla-recipe check. Placing it with a real `iron_block` recipe already
+    in its blueprint+materials NBT at spawn time (`setblock ... buildcraft:advanced_crafting_table{inv_manager:
+    {blueprint:{...},materials:{...}}}` -- NBT applied before the first tick ever runs, so `WorkbenchCrafting`'s
+    own dirty-flag cache sees it fresh) then aiming a second laser+engine rig at it produced the complete real
+    loop: the laser's `target_pos` locked onto the table, `average_power` read a real non-zero flow
+    (`675073L` -> `969344L`), the table's own `power` field climbed tick over tick (`0` -> `97070632L` ->
+    `373553923L`) toward its real 500 MJ target, and it **actually crafted** -- materials consumed to air,
+    `power` reset to `0L`, a genuine `minecraft:iron_block` appeared in the result slot. This is the concrete,
+    complete proof: the whole silicon module goes from "exists but can never function" to "actually usable," not
+    just "the emitter compiles." Zero exceptions in the server log across the entire session. (26.x was not
+    live-tested this round: a different agent's concurrent, unrelated `buildcraft.transport.facade`/`plug` work
+    was mid-edit and non-compiling in the shared tree at hand-off time -- confirmed unrelated by content and by
+    file mtimes newer than this entry's own files; see the hand-back report for the exact errors. This entry's
+    own new files never appeared in any of that work's error output across six separate compile attempts.)
+  - **Files, both platforms.** New: `silicon/tile/TileLaser`, `silicon/block/BlockLaser`,
+    `silicon/block/LaserShapes`, `silicon/client/render/RenderLaser`; `blockstates/laser.json`, `models/block/
+    laser.json`, item model JSON (26.x: `items/laser.json`; 1201: `models/item/laser.json`), three
+    `textures/block/laser/{top,side,bottom}.png` (real 1.12.2 art, byte-for-byte), `loot_table(s)/blocks/
+    laser.json`. Modified: `BCSiliconRegistries` (`LASER`/`LASER_TYPE`, plus MJ receiver capability wiring),
+    `BCSiliconClientRegistries`/`BuildCraft.java` (renderer registration), `BlockLaserTable` (javadoc only -- the
+    "TileLaser not ported" note updated to match), `lang/en_us.json` (`block.buildcraft.laser`). No recipe added
+    for the laser block itself, matching the four tables' own existing "creative/command-obtainable only"
+    precedent.
+
+- **Filler: the rest of the patterns (10 of the remaining 11 ported), both platforms.** Read the already-ported
+  `buildcraft.builders.filler.{FilledArea,FillerPattern,FillerPatterns,pattern.Pattern*}` first (established last
+  batch, not this one) before porting the rest onto the same abstraction.
+  - **The walker the previous batch flagged as missing turned out to already exist.** `PositionUtil.forAllOnPath2d`/
+    `PathIterator2d` (this port's stand-in for the original's identically-named method) had already been ported
+    verbatim, byte-identical on both platforms, by unrelated earlier work -- confirmed by reading
+    `buildcraft.lib.misc.PositionUtil` fully before assuming otherwise. This pass's `PatternShape2d` base class
+    (new) reuses it directly rather than re-porting it, so every one of the nine `2d_*` shapes below only needed
+    `IFilledTemplate`-to-`FilledArea` and `IStatementParameter`-to-plain-`int` adaptation, not new walker code.
+  - **`PatternSpherePart`** (new): one class covering all three original variants (eighth/quarter/half sphere),
+    selected by a `Part` enum, exactly like the original's own single-class-plus-enum shape. Reuses
+    `buildcraft.lib.misc.VecUtil` (`offset`/`scale`/`getFacing`/`replaceValue`/`getValue`, all already ported) for
+    the "push the sphere's centre away from each cut face and double its radius along that axis" trick, then the
+    same ellipsoid-in-a-box scan `PatternSphere` (last batch) already established. Registered as three
+    `FillerPattern`s: `sphere_eighth`, `sphere_quarter`, `sphere_half`.
+  - **`PatternShape2d`** (new, base class) plus eight of its nine concrete subclasses: `PatternShape2dArc`,
+    `Circle`, `Hexagon`, `Pentagon`, `SemiCircle`, `Square`, `Triangle`, and `Octagon` -- every one of the
+    original's shapes except none skipped; see the `Octagon` note below. Ports the original's `LineList`/`ArcType`
+    turtle-graphics helper and its flood-fill "fill the interior once an outline is drawn" logic onto `FilledArea`
+    nearly verbatim; axis/hollow/rotation parameter encoding reuses the original enums' own ordinals directly
+    (0/1/2 = X/Y/Z, 0/1/2 = filled-inner/filled-outer/hollow, 0/1/2/3 = none/quarter/half/three-quarters), so no
+    remapping table was needed anywhere.
+  - **`PatternShape2dOctagon` is ported, but its `genShape` body is intentionally empty**, exactly matching
+    8.0.1's own real source -- confirmed by reading it: the original shipped this pattern unfinished (selecting it
+    draws and fills nothing there either). Kept faithful to what 8.0.1 actually did rather than inventing a real
+    octagon this port has no spec for.
+  - **A real port-side gap found and fixed while wiring these in: the Filler's own GUI/tile only supported 2
+    cyclable parameters.** `PatternShape2d` (axis/hollow/rotation) and the eighth/quarter `PatternSpherePart`
+    variants (hollow/facing/rotation) both need 3. `TileFiller`'s `params` array grew from `int[2]` to `int[3]`
+    (plus a third `paramN`/`param2` NBT field, both platforms), and `ContainerFiller`/`GuiFiller` gained a third
+    `BUTTON_PARAM_2`/`param2Button` (renumbering `INVERT`/`EXCAVATE`/`ENABLED` up by one; harmless, these ids are
+    never persisted) on both platforms -- a small, contained extension of the existing GUI, not a redesign.
+  - **Live-verified, real dedicated 26.x server, RCON.** A real `2d_circle` pattern was proven against real
+    RCON-placed blocks, not just compiled: an 11x1x11 box fully pre-filled with `minecraft:cobblestone`, a real
+    `buildcraft:filler` given that box directly via NBT (`box.min`/`max`) plus `pattern:"2d_circle"`,
+    `param0:1` (Y axis), and a large pre-charged `battery` (bypassing needing a real engine, since
+    `computeBlockBreakPower` for cobblestone alone is ~96 MJ/block) -- confirmed `canExcavate`'s real dig loop
+    (already-ported machinery, unchanged) cleared every cell the circle math says is outside the disk and left
+    every cell it says is inside alone. Corners `(12,12)`/`(22,22)` (world) and the near-corners `(13,13)`/
+    `(21,21)` -- all outside a circle of radius ~5 centred on `(17,17)` -- confirmed cleared to air via
+    `/execute if block ... minecraft:air`; the centre `(17,17)` and near-centre `(14,14)`/`(20,20)` confirmed
+    still `minecraft:cobblestone`. Zero exceptions in the server log across the whole session. Not live-tested:
+    the other 9 new patterns, and 1.20.1 (compiles clean; not separately booted this round given the time this
+    pass's other half, the gate-accessory pluggables below, also needed).
+  - **Files, both platforms (identical content -- these patterns touch no Minecraft/platform-specific API except
+    `PatternSpherePart`'s `Direction`/`Vec3`, which are identical between targets).** New:
+    `builders/filler/pattern/{PatternShape2d,PatternShape2dArc,Circle,Hexagon,Octagon,Pentagon,SemiCircle,Square,
+    Triangle,PatternSpherePart}.java`. Modified: `builders/filler/FillerPatterns` (registers all 10 new
+    patterns), `builders/tile/TileFiller`/`builders/container/ContainerFiller`/`builders/gui/GuiFiller` (3rd
+    parameter slot, platform-specific NBT/GUI idiom kept as each already had it), `lang/en_us.json` (10
+    `fillerpattern.*` names, `buildcraft.gui.filler.param.axis.*`/`rotation.*`).
+
+- **Gate accessory pluggables: Lens, Timer, Light Sensor, Pulsar, both platforms.** Read
+  `buildcraft.transport.plug.{PluggableBlocker,PluggablePowerAdaptor,PluggableGate}` and
+  `buildcraft.transport.tile.TilePipeHolder`'s `pluggables` field, and the existing statement pair
+  `buildcraft.transport.statements.{TriggerPipeSignal,ActionPipeSignal,TriggerProviderPipes,ActionProviderPipes}`
+  first (both from last batch's wires/gates/pluggables landing), before porting the four new pluggables and three
+  new statements onto those same real patterns.
+  - **A real gap in the existing pluggable/event-bus wiring found and fixed, required for these four to do
+    anything at all.** `TilePipeHolder#eventBus` already dispatches `@PipeEventHandler`-annotated methods (used
+    by every `PipeBehaviour`/`PipeFlow`), but nothing ever registered a *pluggable* with it -- `PluggableBlocker`/
+    `PowerAdaptor`/`Gate` (last batch) simply had no such methods, so the gap was invisible. `PluggableLens`'s
+    item-flow filtering (`PipeEventItem.TryInsert`/`SideCheck`/`OnInsert`/`ReachEnd`, already fired for real by
+    `PipeFlowItems`) and `Timer`/`LightSensor`/`Pulsar`'s trigger/action offers
+    (`PipeEventStatement.AddTriggerInternal(Sided)`/`AddActionInternalSided`, already fired for real by
+    `TriggerProviderPipes`/`ActionProviderPipes`) are the first pluggables that need to be on the bus to work.
+    Fixed in `TilePipeHolder`, both platforms: every pluggable attach/detach point (the NBT-load pluggable loop,
+    `setPluggable`, the tile-removal notifier) now also calls `eventBus.registerHandler`/`unregisterHandler`,
+    mirroring `pipe.behaviour`/`pipe.flow`'s own existing registration immediately above it in the same methods.
+  - **`PluggableLens`** (new): non-blocking, colours or colour-filters items through one face -- ported onto the
+    real `PipeEventItem` hierarchy line-for-line (no event shape needed changing at all, only `EnumFacing`/
+    `EnumDyeColor`/`NBTTagCompound` renames). `sideCheckAnyPos` is ported too, unreachable exactly like the
+    original (confirmed: no caller anywhere in the 8.0.1 source either).
+  - **`PluggableTimer`/`PluggableLightSensor`** (new): blocking, no state, offer `TriggerTimer`'s three durations
+    (unsided) / `TriggerLightSensor`'s low/high (sided) to a gate on the same pipe. Use the port's existing
+    `PluggableDefinition.IPluggableCreator` one-lambda shortcut (a pluggable with nothing to save), matching this
+    batch's own reused `ItemPluggableSimple` for their placement items.
+  - **`PluggablePulsar`** (new, largest of the four): blocking, pushes one MJ pulse into the underlying pipe
+    behaviour's `IMjRedstoneReceiver` every 20 ticks while "on" -- manually (right-click toggle,
+    `SoundUtil.playLeverSwitch`, already ported), continuously (a gate's `ActionPowerPulsar.CONSTANT`), or once
+    (`.SINGLE`, `IActionSingle` -- this port's existing `ActionWrapper` already fires `singleActionTick()`-marked
+    actions only once, so no extra wiring needed for "single" to only actually fire once). Scope cut: the
+    per-item-or-per-millibucket single-pulse MJ cost (`BCTransportConfig.mjPerItem`/`mjPerMillibucket`, gated on
+    `BCModules.TRANSPORT.isLoaded()`) has no equivalent config system on this port at all -- a flat 1 MJ pulse is
+    used instead, same as a constant pulse. Dropped everywhere in this batch, matching every other pluggable:
+    `getModelRenderKey`/client-model-variable machinery (rendering rewrite) and the bespoke
+    `writeCreationPayload`/`writePayload`/`readPayload` trio (this port's whole-tile NBT sync already covers it).
+  - **`ItemPluggableLens`** (new): one physical item, NBT-carried colour/filter pair, same shape
+    `ItemPluggableGate` already established for `GateVariant` -- `getStack`/`getColour`/`isFilter`, no per-variant
+    `Item` subclass. Creative-tab cartesian product (34 damage values in 1.12.2) not pre-populated, matching
+    `ItemPluggableGate`'s own precedent; every variant still fully real via `getStack`.
+  - **`ItemPluggableTimer`/`ItemPluggableLightSensor`**: not new files -- both reuse the existing
+    `buildcraft.transport.item.ItemPluggableSimple`, confirmed to fit (no NBT state needed).
+  - **`ItemPluggablePulsar`** (new): cannot be an `ItemPluggableSimple` factory lambda like the two above --
+    placement is gated on the pipe's own behaviour actually being an `IMjRedstoneReceiver`, ported as the
+    original checked. The original was itself `@Deprecated` with no reason given in its own comment; ported as-is
+    regardless, since nothing in this batch replaces it as the real placement path.
+  - **`TriggerTimer`/`TriggerLightSensor`/`ActionPowerPulsar`** (new, `buildcraft.transport.statements`): the
+    same self-contained static-array-of-instances shape `TriggerPipeSignal`/`ActionPipeSignal` already
+    established (no `BCSiliconStatements` holder class exists to port). `TriggerLightSensor.isTriggerActive` reads
+    `LevelReader#getMaxLocalRawBrightness` -- confirmed via `javap` on both platforms' merged jars to exist
+    identically -- as the modern replacement for 1.12.2's `World#getLightFromNeighbors` (same "combined block+sky
+    brightness, adjusted for time of day" meaning). All three registered into the same `StatementManager` calls
+    `TriggerPipeSignal`/`ActionPipeSignal` already use in `BCTransportRegistries#register`.
+  - **Live-verified, real dedicated 26.x server, RCON.** A real `buildcraft:wood` pipe with a real
+    `buildcraft:gate` on one face and a real `buildcraft:timer` on another: merging the gate's own
+    `trigger[0].s.kind` NBT to `"buildcraft:timer.short"` and reading the tile straight back out showed the same
+    key still resolved (`{s: {side: 6b, kind: "buildcraft:timer.short"}}`) -- proof `TriggerType.readFromNbt`'s
+    real `StatementManager.statements.get(kind)` lookup (the exact mechanism a real gate GUI trigger-pick uses)
+    finds `TriggerTimer.SHORT`, not a silent `null`/log-warning drop (confirmed by reading `TriggerType` first: a
+    failed lookup logs `"Couldn't find a trigger called"` and never round-trips the key at all). Repeated for
+    `buildcraft:light_sensor`'s `"buildcraft:light.low"` trigger and `buildcraft:pulsar`'s
+    `"buildcraft:pulsar.constant"` action on the same gate -- both round-tripped identically. Zero exceptions
+    across the whole session (one pre-existing, harmless, unrelated `WARN` from last batch's own
+    `GateLogic`/`NBTUtilBC.readEnumSet` reading a first-time-merged tile with no `wireBroadcasts` key yet).
+    Not live-tested: `PluggableLens`'s actual item-filtering behaviour (placement/NBT round-trip confirmed, a
+    real item travelling through one not attempted this round), and the whole batch on 1.20.1 (compiles clean;
+    not separately booted, same time-budget reasoning as the Filler entry above).
+  - **Shared-tree note:** this batch ran concurrently with another agent's own facade work
+    (`buildcraft.transport.{plug,item,recipe}.*Facade*`) in the same `BCTransportRegistries`/`TilePipeHolder`
+    files -- confirmed by content and file mtimes that every mid-session compile failure on 1.20.1 belonged to
+    that work (`PLUGGABLE_DEF_FACADE`/`ITEM_PLUGGABLE_FACADE` not yet wired, one real `HolderGetter<Block>` type
+    error, a `commonSetup` method reference mid-add), never to this entry's own files; both platforms compiled
+    clean once that work settled, confirmed by a final combined `compileJava` run.
+  - **Files.** New, both platforms, identical content: `transport/plug/{PluggableLens,PluggableTimer,
+    PluggableLightSensor,PluggablePulsar}.java`, `transport/item/{ItemPluggableLens,ItemPluggablePulsar}.java`,
+    `transport/statements/{TriggerTimer,TriggerLightSensor,ActionPowerPulsar}.java` (the NBT-accessor style in
+    `PluggableLens`/`PluggablePulsar`/`ItemPluggableLens` is the one deliberate per-platform difference: 26.x's
+    `CompoundTag#getBoolean`/`getInt` return `Optional`, so those three use the `*Or` overloads there; 1.20.1's
+    return the primitive directly, and `NBTUtilBC.setItemData` does not exist on 1.20.1 at all -- its
+    `getItemData` returns the stack's own live, mutable tag instead, so `ItemPluggableLens.getStack` there
+    mutates that directly). Modified: `BCTransportRegistries` (4 new `PluggableDefinition`s, 4 new items, 3 new
+    statement registrations, both platforms), `transport/tile/TilePipeHolder` (pluggable event-bus wiring, both
+    platforms), `lang/en_us.json` (`buildcraft.gate.trigger.timer`/`light.low`/`light.high`,
+    `buildcraft.gate.action.pulsar.constant`/`single`, 4 `item.buildcraft.plug_*` names).
+
+- **Facades (`PluggableFacade` and its support classes), both platforms -- landed under `buildcraft.transport`,
+  next to every other pipe-face accessory this port ported, not `buildcraft.silicon`, for the same real
+  dependency reason the wires/gates/pluggables batch's own PORTING.md entry already gives.** Read
+  `common/buildcraft/silicon/plug/{PluggableFacade,FacadeInstance,FacadeStateManager,FacadeBlockStateInfo,
+  FacadePhasedState}.java`, `ItemPluggableFacade.java`, `recipe/{FacadeAssemblyRecipes,FacadeSwapRecipe}.java`,
+  `PluggableBlocker`/`PluggableGate`/`TilePipeHolder#pluggables` (the existing real pattern this plugs into), and
+  `RenderTilePipeHolder` (the pipe's own real renderer) fully before touching this family again.
+  - **Data model, real and complete on both platforms.** `FacadeBlockStateInfo` (a scanned `BlockState` plus its
+    required item and real per-side solidity, via `SingleBlockAccess`/`BlockState#isFaceSturdy`), `FacadePhasedState`
+    (one disguise, an optional wire colour), `FacadeInstance` (1-17 phased states, `isHollow`) and `FacadeStateManager`
+    (the `IFacadeRegistry`, a `LinkedHashMap<BlockState, FacadeBlockStateInfo>` built once at `init()`) are all real,
+    faithful ports -- not stubs. `FacadeStateManager.init()` walks every registered block
+    (`BuiltInRegistries.BLOCK`), keeping any state with no block entity, a real model render shape, and (unless it
+    is glass -- `StainedGlassBlock`/`TransparentBlock` on 26.x, the shared `AbstractGlassBlock` base on 1.20.1, a
+    genuine per-platform class-hierarchy divergence found by `javap`, not assumed) a genuine full cube
+    (`BlockState#isCollisionShapeFullBlock`).
+  - **A real crash, found live and fixed before hand-back, not left for the coordinator's pass.** Wiring
+    `FacadeStateManager.init()` to `FMLCommonSetupEvent` (26.x) compiled clean but would have crashed every
+    dedicated-server boot: `BCEnergyRegistries`'s own `onDefaultComponentsBound` javadoc already documents, from a
+    real reproduced crash, that building an `ItemStack` (which `FacadeStateManager`'s own `getRequiredStack` does
+    for nearly every registered block) before `DefaultDataComponentsBoundEvent` fires throws
+    `NullPointerException: Components not bound yet`. Moved to `NeoForge.EVENT_BUS.addListener(
+    BCTransportRegistries::onDefaultComponentsBound)`, the identical fix and guard shape `BCEnergyRegistries`
+    already established, confirmed by a real RCON boot (below) with zero exceptions. 1.20.1 has no data
+    components and correctly keeps `FMLCommonSetupEvent`, per that precedent's own note.
+  - **NBT persistence is real, not just plausible -- proof below, not just "the code compiles".** `writeToNbt`/
+    `readFromNbt` thread a real `BlockState` through `NbtUtils.writeBlockState`/`readBlockState`, which on this
+    target needs no registry lookup to *write* (confirmed via `javap`) but does to *read* -- satisfied with
+    `BuiltInRegistries.BLOCK` directly on 26.x (a real `HolderGetter<Block>`: `Registry<T>` already extends
+    `HolderLookup.RegistryLookup<T>` there, confirmed via `javap`) versus `BuiltInRegistries.BLOCK.asLookup()` on
+    1.20.1 (a real, `javap`-confirmed per-platform divergence: `DefaultedRegistry<Block>` does not itself satisfy
+    `HolderGetter<Block>` on that target's older registry hierarchy). This sidesteps threading a
+    `HolderLookup.Provider` through the whole family and lets `ItemPluggableFacade.getFacade(ItemStack)` satisfy
+    `IFacadeItem`'s registry-free signature. **Found live, via RCON, not assumed:** 26.x's `NbtUtils.writeBlockState`
+    serialises the block's registry name under the key `id`; 1.20.1's uses the classic `Name` -- a real per-version
+    NBT-shape divergence, confirmed by round-tripping a hand-built `{state:{id:"minecraft:stone"}}` /
+    `{state:{Name:"minecraft:stone"}}` pluggable tag on each platform respectively and reading it back correctly
+    resolved (the wrong key on either platform silently degrades to `FacadeStateManager.defaultState`, an air
+    disguise, with no error -- worth knowing before hand-crafting facade NBT for any future RCON check).
+  - **Real per-platform rendering, found by real API research, not assumed or scoped down to a fake box.**
+    `PipePluggable` has no `getModelRenderKey`/`getBlockColor` any more (see that class's own javadoc), so
+    `RenderTilePipeHolder` special-cases `PluggableFacade` directly, the same way it already special-cases
+    `PipeFlowFluids`/`PipeFlowItems`. On 26.x: `SubmitNodeCollector#submitMovingBlock(PoseStack,
+    MovingBlockRenderState, int)` -- confirmed via `javap` to exist on the exact `SubmitNodeCollector` this class's
+    own `submit` already receives (it extends `OrderedSubmitNodeCollector`, which declares the method), and
+    confirmed via the real decompiled source of vanilla's own `FallingBlockRenderer` (which uses this exact call to
+    draw a falling block's real appearance) as the correct, real usage pattern to copy -- not a guess from the
+    method signature alone. A `MovingBlockRenderState` is filled the same way `FallingBlockRenderer#extractRenderState`
+    fills its own (`blockState`/`blockPos`/`biome`/`cardinalLighting`/`lightEngine`, straight off the tile's
+    `ClientLevel`), giving the disguise real per-face textures, ambient occlusion and biome tint -- not a single
+    sprite pasted on every face. On 1.20.1: the simpler classic-API equivalent,
+    `BlockRenderDispatcher#renderSingleBlock(BlockState, PoseStack, MultiBufferSource, int, int)` (confirmed via
+    `javap` against the real merged jar), the same call a block-item icon uses. Both platforms fit the disguise into
+    `PluggableFacade#getBoundingBox()`'s 2px slab identically: translate to the box's minimum corner, then scale
+    non-uniformly by the box's own size, so a full cube's `0..1`-local-space quads land exactly on the box with the
+    visible face's own texture undistorted. **Scope cut, found by research, not invented:** 1.12.2's own
+    `PlugBakerFacade` re-projected each of the disguised block's six real baked-model faces independently (over 300
+    lines of per-vertex UV remapping) so a facade could show, say, a grass block's correct top-vs-side textures on
+    the correspondingly-oriented faces of the slab; this port's non-uniform-scale approach instead shows the
+    disguise's one real block model squashed into the slab, which is correct and undistorted on the *visible* face
+    but does not differentiate the slab's other five (mostly hidden, 2px-thin) faces -- a real gap against 1.12.2,
+    not against "no rendering at all" (which is what this whole pluggable family had before this batch: confirmed,
+    before writing any of this, that `PluggableBlocker`/`PluggablePowerAdaptor`/`PluggableGate` still have zero
+    static-geometry rendering of their own anywhere in this port). Hollow facades render nothing extra this round
+    (1.12.2's own picture-frame overlay, `transparent_facade.png`, is copied into neither platform's textures,
+    since nothing draws it yet) -- an explicit, separate cut from the disguise-fidelity one above.
+  - **`ItemPluggableFacade`**: one physical item, NBT-tagged `FacadeInstance`, the same shape `ItemPluggableGate`
+    already established for `GateVariant`. **Scope cuts, matching that class's own precedent:** creative-tab
+    population (`addSubItems`, one stack per scanned block) and tooltip customisation (`addInformation`, listing a
+    phased facade's per-colour states) are not ported -- only the untagged default (an air disguise) is in the
+    creative tab, and only `getName(ItemStack)` (appending the disguised block's own name, e.g. "Facade: Stone") is
+    kept. The item's own inventory icon reuses the existing `plug_blocker.png` (a real, generic plug texture, not a
+    live per-disguise render) -- 1.12.2's own facade item had no static icon at all, building its inventory
+    appearance dynamically from the disguise at render time (`ModelFacadeItem`), a whole second dynamic-item-model
+    subsystem judged out of scope this round; the generic icon is an honest, explicit stand-in, not a missing-model
+    placeholder.
+  - **`FacadeAssemblyRecipes`** (new package `buildcraft.transport.recipe`, both platforms): ported and registered
+    into the existing `AssemblyRecipeRegistry`, crafting any scanned block's facade from three "pipe structure"
+    items -- 1.12.2's own `BCItems.Transport.PIPE_STRUCTURE`, never ported to this target (no structure-pipe
+    accessory exists here), so this always falls back to 1.12.2's own null-check fallback stack, cobblestone wall,
+    unconditionally. **Not blocked on power any more, unlike this task's own starting assumption:** `TileLaser`
+    (the Assembly Table's real MJ source) landed from a concurrent batch this same round -- see that entry above --
+    so this recipe is now structurally reachable, not just registered-and-inert; the full craft-a-facade-at-a-
+    powered-Assembly-Table flow was not itself live-tested this round (a multi-system integration test -- laser
+    line-of-sight, MJ transfer, the assembly table's own recipe-matching tick -- squarely the kind of scenario-
+    matrix work this round's pace change deprioritises). `FacadeSwapRecipe` (a 1x1 crafting-table recipe toggling
+    a facade's hollow flag) is **not ported**: it would need a new vanilla `CraftingRecipe`/`RecipeSerializer`
+    registration subsystem this port has no precedent for anywhere yet, for a cosmetic toggle orthogonal to the
+    core "disguise a pipe as a block" feature -- a deliberate, explicit scope cut, not an oversight.
+    `FilterEventHandler` (`PluggableLens`-only wire-priority logic, unrelated to facades beyond sharing 1.12.2's
+    `silicon.plug` package) is not ported here; it belongs with `PluggableLens`, already real (a concurrent
+    batch), and does not touch facades at all.
+  - **Live-verified, real dedicated servers, RCON, both platforms.** A real `buildcraft:pipe_holder` with a real
+    `buildcraft:cobblestone` pipe attached (`/data merge block ... {pipe:{def:"buildcraft:cobblestone"}}`), then a
+    real `buildcraft:facade` pluggable disguised as `minecraft:stone` merged directly onto its `pluggables.down`
+    NBT (`FacadeStateManager` confirmed to have scanned and registered `minecraft:stone` as a valid facade state,
+    since the merge round-tripped back as stone rather than degrading to the default air disguise) -- confirmed on
+    both a private 26.3 and a private 1.20.1 dedicated server, `save-all flush` + `stop` + relaunch, reading the
+    same tile's NBT back identical to before the restart on both. Zero exceptions across both platforms' full boot
+    -> merge -> save -> restart -> read-back sessions (this is the check that caught the `DefaultDataComponentsBoundEvent`
+    bug above -- the first 26.x boot attempt, before that fix, would have crashed on this exact path). Not
+    live-tested: actually placing a facade by right-clicking a real held item (NBT-merge exercises the same
+    read/write path `onPlace`/`setPluggable` do, just without a real player interaction driving it), and the
+    Assembly Table crafting path noted above.
+  - **Files.** New, both platforms, identical content except the noted `HolderGetter`/NBT-key/NBT-accessor
+    divergences: `transport/plug/{FacadeBlockStateInfo,FacadePhasedState,FacadeInstance,FacadeStateManager,
+    PluggableFacade}.java`, `transport/item/ItemPluggableFacade.java`, `transport/recipe/FacadeAssemblyRecipes.java`
+    (new package), `models/item/plug_facade.json` (26.x also gets `items/plug_facade.json`, the same 26.x-only
+    item-definition indirection every other item in this port already needs). Modified: `BCTransportRegistries`
+    (`PLUGGABLE_DEF_FACADE`, `ITEM_PLUGGABLE_FACADE`, the `DefaultDataComponentsBoundEvent`/`FMLCommonSetupEvent`
+    listener), `transport/tile/RenderTilePipeHolder` (facade disguise rendering, both platforms),
+    `lang/en_us.json` (`item.buildcraft.plug_facade`, `buildcraft.item.plug_facade.named`).
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any
@@ -5331,9 +5661,9 @@ Remaining, in the order they should be tackled — each module needs the one abo
 | `BuildCraftAPI/api` | **done** | 217/251; the remainder is blocked on the modules or on rendering, listed above. |
 | `buildcraft.lib` | 541 | The foundation: tiles, GUI, networking, models, MJ power. |
 | `buildcraft.core` | 84 | Gears (done), wrench, markers, engines, paintbrush (done), map location. |
-| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Power flow (`PipeFlowPower`) and all nine power-pipe materials now done: cobblestone/wooden/stone/sandstone/quartz/gold from an earlier batch (engine -> pipe -> machine transfer and T-junction splitting verified live on both platforms), plus iron/diamond/diamond_wood this batch via the new `PipeBehaviourLimiter` (a wrench-cycling, seven-step redstone-style power throttle, `MAX_SHIFT = 6`) for iron and diamond, and plain `PipeBehaviourWoodPower` (the same class `pipe_power_wood` already uses, **not** the limiter -- verified against 1.12.2's real `BCTransportPipes#preInit`, which switches `diaWoodPower` to `PipeBehaviourWoodPower`, never to `PipeBehaviourLimiter`, diverging from this round's own task description) for diamond_wood. Dedicated kinesis pipe art is still not ported for any of the nine power materials -- every one still reuses its item-pipe's own arm/core models and textures, an explicit, unchanged scope cut from the earlier batch. The diamond (sorting/filtering) item and fluid pipes are done this batch too (`PipeBehaviourDiamond`/`Item`/`Fluid`, 54 phantom filter slots across 6 faces, priority/split-on-match item and fluid routing), plus the wood/diamond combo (`PipeBehaviourWoodDiamond`, a filtered active wooden pipe with white-list/black-list/round-robin modes) as both an item and a fluid pipe -- the first pipes on this port with a real GUI (`ContainerDiamondPipe`/`ContainerDiamondWoodPipe`, a new `TilePipeHolder`-as-`MenuProvider` dispatch and `BlockPipeHolder` activation hook, both platforms); the wood/diamond filter-mode buttons use plain vanilla `Button` widgets rather than 1.12.2's own pixel icon buttons (no button-widget framework exists in `buildcraft.lib.gui` yet) -- compiles and opens against real filter slots, not live-clicked. Five exotic item-pipe materials done this batch: obsidian (an MJ-powered magnet, not explosive -- confirmed by reading its real 1.12.2 source), lapis (paints items with a wrench-cycled colour for downstream sorting), daizuli (a directional colour filter, BuildCraft-8-specific), emzuli (a four-preset extraction wooden pipe, BuildCraft-8-specific, currently inert with no GUI/statement system to populate its presets), and stripes (the extraction pipe -- mines the block ahead of its open face and offers items about to leave that face to a new `buildcraft.transport.stripes` handler dispatch: `StripesRegistry` plus `Plant`/`Hoe`/`PlaceBlock`/`Use`/`EntityInteract`/`MinecartDestroy`/`Pipes` handlers; `Shears` (its `IShearable` target moved to entities-only on this target) and `Dispenser` (`BlockSource` became a record tied to a real `DispenserBlockEntity`, no longer freely implementable) are scope cuts, `PipeWires` was already dead/commented-out in 1.12.2 itself). `PipeExtensionManager` (the stripes pipe laying/retracting a pipe run ahead of itself) is a documented stub that always declines -- the real block-entity-relocation dance is substantial, unstarted engineering, not attempted this round; a pipe item offered to a stripes pipe simply ejects normally instead. **Wires/gates/pluggables done this batch, partial landing** (both platforms, compiles, not live-verified -- see this module's own dated Progress entry): real cross-pipe wire signal propagation (`WireNetwork`, an on-demand BFS replacing 1.12.2's persisted `WorldSavedDataWireSystems` graph), `TilePipeHolder#pluggables` (a real per-side `PipePluggable` map with NBT/drops/tick/capability plumbing), three real pluggables (`PluggableBlocker`, `PluggablePowerAdaptor`, `PluggableGate`), one end-to-end trigger/action pair (`TriggerPipeSignal`/`ActionPipeSignal`, reading/writing the real wire network), and a working (if plain-`Button`) gate configuration GUI (`ContainerGate`/`GuiGate`, no bespoke network payload -- vanilla `DataSlot`/`clickMenuButton`). Gates/pluggables live under `buildcraft.transport.{gate,plug}` in this port, not `buildcraft.silicon` -- see the `buildcraft.silicon` row below. Colours and facades still to come. |
-| `buildcraft.builders` | 118 | Quarry (done: frame construction, MJ-metered digging, item output, save/restart, plus a laser-based `RenderQuarry` -- static frame outline + a simplified current-action rail/drop indicator, no client-interpolated drill-carriage animation; still no chunkloading; `AdvDebuggerQuarry` not ported, depends on the unported `ChunkLoaderManager`). Filler ported (compiles both platforms, GUI opens; box-and-pattern-only, not addon/`VolumeBox`-planner mode; 8 of the original's ~20 patterns -- box/clear/fill/frame/pyramid/sphere/stairs/none -- ported onto a plain local grid rather than the unported `Template`/`IFilledTemplate` system; `PatternSpherePart` and the nine `PatternShape2d` subclasses still to come; GUI is plain vanilla buttons cycling pattern/params/invert/excavate, not the original's drag-and-drop gate palette; not live-verified this round). Builder + Architect Table ported as a deliberately simplified blueprint slice (compiles both platforms, not live-verified this round -- see this module's own dated Progress entry above for the full "what's real vs. cut" list: `BlockState`-only palette, no rotation/entities/tile-NBT/rule-system/`FakeWorld`/path system/GUI). `TileElectronicLibrary`/`TileReplacer` and the `Template` snapshot type still to come. |
-| `buildcraft.silicon` | 79 | Standalone machines done (compiles both platforms, not live-verified this round): assembly table (recipe scan/save/GUI), advanced crafting table (laser-powered 3x3 grid), integration table (does not need gates), charging table (ported as the same inert stub 1.12.2 shipped). `TileLaser` (the beam emitter that actually feeds these tables power) and `TileProgrammingTable_Neptune` (confirmed dead 1.12.2 code) are not ported -- see this module's own dated Progress entry above. **1.12.2's `buildcraft.silicon.{gate,plug,item}` package (gates, the gate-dependent pluggables, `ItemGateCopier`) landed this round under `buildcraft.transport.{gate,plug,item}` instead** -- see the `buildcraft.transport` row above and this module's own dated Progress entry: gates never depended on anything else actually in `buildcraft.silicon` (the crafting/assembly tables above), only on the pipe/wire system `buildcraft.transport` already owns, so this port keeps them there rather than preserving 1.12.2's package split. Facades, lenses/pulsars/timers/light-sensors, and `ItemGateCopier` still to come, wherever they land. |
+| `buildcraft.transport` | 124 | Pipes. The largest single feature. Nine item-pipe materials done: cobblestone (passive), wooden (MJ-powered active extraction), stone/sandstone/quartz (speed-modifier), gold (speed boost), void (destroys items), clay (prefers inventories), iron (one-way, wrench-selected output); wrench cycling of wood/iron active faces with a "filled" active-face texture; per-material drops, connection-shape rendering, travelling-item rendering. Fluid flow (`PipeFlowFluids`) and nine fluid pipes done: the same nine materials, each with its own textures, fluid-capability connections, and fluid rendering. Power flow (`PipeFlowPower`) and all nine power-pipe materials now done: cobblestone/wooden/stone/sandstone/quartz/gold from an earlier batch (engine -> pipe -> machine transfer and T-junction splitting verified live on both platforms), plus iron/diamond/diamond_wood this batch via the new `PipeBehaviourLimiter` (a wrench-cycling, seven-step redstone-style power throttle, `MAX_SHIFT = 6`) for iron and diamond, and plain `PipeBehaviourWoodPower` (the same class `pipe_power_wood` already uses, **not** the limiter -- verified against 1.12.2's real `BCTransportPipes#preInit`, which switches `diaWoodPower` to `PipeBehaviourWoodPower`, never to `PipeBehaviourLimiter`, diverging from this round's own task description) for diamond_wood. Dedicated kinesis pipe art is still not ported for any of the nine power materials -- every one still reuses its item-pipe's own arm/core models and textures, an explicit, unchanged scope cut from the earlier batch. The diamond (sorting/filtering) item and fluid pipes are done this batch too (`PipeBehaviourDiamond`/`Item`/`Fluid`, 54 phantom filter slots across 6 faces, priority/split-on-match item and fluid routing), plus the wood/diamond combo (`PipeBehaviourWoodDiamond`, a filtered active wooden pipe with white-list/black-list/round-robin modes) as both an item and a fluid pipe -- the first pipes on this port with a real GUI (`ContainerDiamondPipe`/`ContainerDiamondWoodPipe`, a new `TilePipeHolder`-as-`MenuProvider` dispatch and `BlockPipeHolder` activation hook, both platforms); the wood/diamond filter-mode buttons use plain vanilla `Button` widgets rather than 1.12.2's own pixel icon buttons (no button-widget framework exists in `buildcraft.lib.gui` yet) -- compiles and opens against real filter slots, not live-clicked. Five exotic item-pipe materials done this batch: obsidian (an MJ-powered magnet, not explosive -- confirmed by reading its real 1.12.2 source), lapis (paints items with a wrench-cycled colour for downstream sorting), daizuli (a directional colour filter, BuildCraft-8-specific), emzuli (a four-preset extraction wooden pipe, BuildCraft-8-specific, currently inert with no GUI/statement system to populate its presets), and stripes (the extraction pipe -- mines the block ahead of its open face and offers items about to leave that face to a new `buildcraft.transport.stripes` handler dispatch: `StripesRegistry` plus `Plant`/`Hoe`/`PlaceBlock`/`Use`/`EntityInteract`/`MinecartDestroy`/`Pipes` handlers; `Shears` (its `IShearable` target moved to entities-only on this target) and `Dispenser` (`BlockSource` became a record tied to a real `DispenserBlockEntity`, no longer freely implementable) are scope cuts, `PipeWires` was already dead/commented-out in 1.12.2 itself). `PipeExtensionManager` (the stripes pipe laying/retracting a pipe run ahead of itself) is a documented stub that always declines -- the real block-entity-relocation dance is substantial, unstarted engineering, not attempted this round; a pipe item offered to a stripes pipe simply ejects normally instead. **Wires/gates/pluggables done this batch, partial landing** (both platforms, compiles, not live-verified -- see this module's own dated Progress entry): real cross-pipe wire signal propagation (`WireNetwork`, an on-demand BFS replacing 1.12.2's persisted `WorldSavedDataWireSystems` graph), `TilePipeHolder#pluggables` (a real per-side `PipePluggable` map with NBT/drops/tick/capability plumbing), three real pluggables (`PluggableBlocker`, `PluggablePowerAdaptor`, `PluggableGate`), one end-to-end trigger/action pair (`TriggerPipeSignal`/`ActionPipeSignal`, reading/writing the real wire network), and a working (if plain-`Button`) gate configuration GUI (`ContainerGate`/`GuiGate`, no bespoke network payload -- vanilla `DataSlot`/`clickMenuButton`). Gates/pluggables live under `buildcraft.transport.{gate,plug}` in this port, not `buildcraft.silicon` -- see the `buildcraft.silicon` row below. **Gate accessory pluggables done this batch, both platforms**: `PluggableLens` (colour/filter, real item-flow event handlers), `PluggableTimer`/`PluggableLightSensor` (offer `TriggerTimer`'s three durations / `TriggerLightSensor`'s low/high to a gate), `PluggablePulsar` (MJ pulse generator, manual/constant/single), plus their three new statements (`TriggerTimer`, `TriggerLightSensor`, `ActionPowerPulsar`) and placement items (`ItemPluggableLens`, `ItemPluggablePulsar`; `Timer`/`LightSensor` reuse `ItemPluggableSimple`) -- live-verified via RCON on 26.x (real `StatementManager` lookup round-trip through a real gate's trigger/action NBT slots, see this module's own dated Progress entry); a real gap in pluggable/event-bus registration (no pluggable had ever needed it before) was found and fixed in `TilePipeHolder` as part of this. **Facades done this batch, both platforms, live-verified via RCON** (real disguise NBT round-trip surviving a save/restart on both a private 26.x and a private 1.20.1 dedicated server -- see this module's own dated Progress entry): `PluggableFacade`/`FacadeInstance`/`FacadeStateManager`/`FacadeBlockStateInfo`/`FacadePhasedState` (a full, real block-state scan and disguise data model, not a stub), `ItemPluggableFacade` (NBT-tagged placeable item), `FacadeAssemblyRecipes` (registered into the real `AssemblyRecipeRegistry`), and real per-platform rendering (`RenderTilePipeHolder` special-cases the disguise the same way it already special-cases travelling items/fluid -- `SubmitNodeCollector#submitMovingBlock` on 26.x, `BlockRenderDispatcher#renderSingleBlock` on 1.20.1, both real per-face-textured block models, not a hand-built sprite box). Scope cuts: `FacadeSwapRecipe` (hollow-toggle crafting recipe, needs a new vanilla-recipe-registration subsystem this port has no precedent for), the disguise's other five (mostly-hidden) faces don't get their own distinct texture the way 1.12.2's own per-face quad reprojection did, and phased (wire-colour-switching) facades round-trip their data but never actually switch on a placed pipe -- matching 1.12.2's own source, which never wired that either. Colours still to come. |
+| `buildcraft.builders` | 118 | Quarry (done: frame construction, MJ-metered digging, item output, save/restart, plus a laser-based `RenderQuarry` -- static frame outline + a simplified current-action rail/drop indicator, no client-interpolated drill-carriage animation; still no chunkloading; `AdvDebuggerQuarry` not ported, depends on the unported `ChunkLoaderManager`). Filler ported (compiles both platforms, GUI opens; box-and-pattern-only, not addon/`VolumeBox`-planner mode; 18 of the original's ~20 patterns now ported onto a plain local grid rather than the unported `Template`/`IFilledTemplate` system -- box/clear/fill/frame/pyramid/sphere/stairs/none from the previous batch, plus this batch's `PatternSpherePart`'s all 3 variants and 8 of 9 `PatternShape2d` shapes with real content (`PatternShape2dOctagon` ported but genuinely empty, matching 8.0.1's own unfinished original); GUI is plain vanilla buttons cycling pattern/up-to-3 params/invert/excavate, not the original's drag-and-drop gate palette; the `2d_circle` pattern live-verified via RCON on 26.x against real placed blocks this batch, see this module's own dated Progress entry -- the other 9 and 1.20.1 not separately live-tested this round). Builder + Architect Table ported as a deliberately simplified blueprint slice (compiles both platforms, not live-verified this round -- see this module's own dated Progress entry above for the full "what's real vs. cut" list: `BlockState`-only palette, no rotation/entities/tile-NBT/rule-system/`FakeWorld`/path system/GUI). `TileElectronicLibrary`/`TileReplacer` and the `Template` snapshot type still to come. |
+| `buildcraft.silicon` | 79 | Standalone machines done: assembly table (recipe scan/save/GUI), advanced crafting table (laser-powered 3x3 grid), integration table (does not need gates), charging table (ported as the same inert stub 1.12.2 shipped). `TileLaser`/`BlockLaser` (the beam emitter that actually feeds these tables power) is now ported too and live-verified on 1.20.1 (real MJ in from an engine, real MJ out into an advanced crafting table, a real vanilla recipe actually crafted end to end via RCON -- see this module's own dated Progress entry above); 26.x compiles but wasn't live-tested this round (blocked at hand-off by a different agent's concurrent, unrelated `buildcraft.transport.facade` work, not by anything in this module). Confirmed live: the assembly table's recipe registry now has one real entry (`FacadeAssemblyRecipes`, landed by the concurrent facade batch below -- not live-tested together with a real powered laser this round, see that entry), the integration table's registry is still empty (no recipes registered there yet), and the charging table's target is a permanent 0 stub, so the integration/charging tables still can't reach a non-zero laser target in practice despite now having a working emitter -- an existing, pre-`TileLaser` gap for those two, not a regression. `TileProgrammingTable_Neptune` (confirmed dead 1.12.2 code) is not ported -- see this module's own dated Progress entry above. **1.12.2's `buildcraft.silicon.{gate,plug,item}` package (gates, the gate-dependent pluggables, `ItemGateCopier`) landed this round under `buildcraft.transport.{gate,plug,item}` instead** -- see the `buildcraft.transport` row above and this module's own dated Progress entry: gates never depended on anything else actually in `buildcraft.silicon` (the crafting/assembly tables above), only on the pipe/wire system `buildcraft.transport` already owns, so this port keeps them there rather than preserving 1.12.2's package split. **Lenses/pulsars/timers/light-sensors landed this round too, also under `buildcraft.transport.{plug,item,statements}`** -- see the `buildcraft.transport` row above and this module's own dated Progress entry. **Facades landed this round too, also under `buildcraft.transport.{plug,item,recipe}`, not `buildcraft.silicon`** -- same reasoning as gates: the facade family depends on the pipe/wire system, not on anything else actually in this module, and `FacadeAssemblyRecipes` is the assembly table's first real recipe (see the `buildcraft.transport` row above and this module's own dated Progress entry). `ItemGateCopier` still to come, wherever it lands. |
 | `buildcraft.factory` | 46 | **done.** Chute, mining well + tube (now with its status-LED/tube-laser renderer), pump (likewise), tank, flood gate, auto workbench (items and fluids halves), distiller, heat exchanger (with the refinery recipe table). |
 | `buildcraft.energy` | 41 | **done, this pass's scope.** Stirling and Combustion (Iron) engines (done). Oil/fuel fluids -- 10 fluids x 3 heats, blocks, buckets, client models -- and the fuel/coolant registry (done). RF engine done (compiles both platforms, registers a real RF-to-MJ conversion capability, not live-verified this round). Oil spring (`TileSpringOil`/`BlockSpringOil`) and a simplified oil world-gen feature done -- see this module's own dated Progress entry for the real cuts (no per-player pump-progress NBT, no custom oil biomes/spout-lake generator). |
 | `buildcraft.robotics` | 24 | **done, this pass's scope.** Confirmed (by reading the real 1.12.2 directory, not assumed) to be the Zone Planner only -- there is no robot system in this module at all. Zone Planner ported: block/tile/container/GUI all real and compiling, with the sixteen `ZonePlan` chunk-grid claim layers fully persisted and synced; the map-location-item exchange and the 1.12.2 GUI's raw-GL 3D minimap are documented scope cuts -- see this module's own dated Progress entry. |
