@@ -4147,6 +4147,40 @@ Deliberately not ported, with reasons:
     full test suite (25/25). An incremental compile of both platforms in the shared tree, with everyone's current
     changes, is also green.
 
+- **The Combustion Engine (1.12.2's "Iron Engine"): a liquid-fuel engine with fuel, coolant and residue tanks,
+  on both platforms.** Ported line for line from `TileEngineIron_BC8`: while redstone-powered, it burns one mB of
+  fuel (anything the fuel/coolant batch's `BuildcraftFuelRegistry.fuel` recognises) every
+  `totalBurningTime / 1000` ticks, adds that fuel's `powerPerCycle` MJ per tick, heats up by
+  `powerPerCycle * HEAT_PER_MJ` degrees per tick, and above the ideal heat drains up to 40 mB of coolant per tick
+  (water at 0.0023 degrees per mB) -- with no coolant the heat keeps climbing until the engine overheats and
+  stalls, exactly as before. A "dirty" fuel like crude oil also fills a residue tank.
+  - **One real limitation forced a design change, not a bug.** 1.12.2 burned fuel with a direct
+    `fuel.amount--` on the tank's own stack, so for the last mB the tank held a zero-amount stack of the fuel
+    while it kept burning. This target's fluid tank (`FluidStacksResourceHandler`, same as every other tank in
+    this port) can't represent a zero-amount stack of a specific fluid at all -- `FluidResource.toStack(0)` is
+    simply empty -- so the tile now keeps the fuel identity in a separate field for that final stretch, giving
+    the same real behaviour (the last mB still burns its full time) without depending on a representation this
+    target doesn't have.
+  - **A real, port-wide bug found while testing this engine, fixed for all 30 fluid buckets on both
+    platforms:** neither platform gave a `BCFluidBucketItem` a fluid-handler capability by default. On 26.x,
+    NeoForge's own capability hooks only wire up its ready-made bucket handler for items whose class is exactly
+    `BucketItem`; on 1.20.1, Forge's `BucketItem#initCapabilities` has the identical `getClass() == BucketItem.class`
+    check. Either way, a full oil or fuel bucket could not be emptied into this engine, a tank, or anything else
+    by hand. Fixed per platform: 26.x registers `Capabilities.Fluid.ITEM` for every fluid's bucket item, backed
+    by NeoForge's own `BucketResourceHandler` (which works for any `BucketItem` subclass); 1.20.1 overrides
+    `BCFluidBucketItem#initCapabilities` to return Forge's own `FluidBucketWrapper` directly.
+  - Fluid capability: a `CombinedResourceHandler`/three-tank `IFluidHandler` (fuel and coolant insert-only,
+    residue extract-only), exposed on every face, matching 1.12.2's own `InternalFluidHandler`.
+  - Rendering and GUI follow the Stirling Engine's own precedent: `BlockStateProperties.FACING`, the piston-rod
+    `RenderTileEngine`, and a container/GUI with real fluid bars for all three tanks, reusing the same
+    fluid-sprite/tint lookup the Tank renderer and Auto Workbench (Fluids) GUI already established on each
+    platform (including the nullable `tintSource()` for lava on 26.x).
+  - Verified with a forced clean rebuild of both platforms, the 25-test suite, and live RCON on dedicated
+    servers for both: a pump over an oil pool fed the engine and it burned, heated and delivered real MJ to a
+    `power_tester` (confirmed by that tile's own climbing `total`); a forced overheat with the coolant tank
+    drained let heat climb past 200 with no coolant, confirming the stall path; refilling coolant let heat fall
+    again; and both platforms kept an identical tank/heat/burn-time state across a save and restart.
+
 **Both targets are verified by booting a server**, not just by compiling. That matters: every
 bug in the "Build and packaging gotchas" section below compiled cleanly and only showed up at
 runtime. Re-run `./gradlew :neoforge-26x:runServer` (and the 1.20.1 equivalent) after any

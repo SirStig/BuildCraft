@@ -9,10 +9,16 @@ package buildcraft.lib.fluid;
 
 import java.util.function.Supplier;
 
+import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
+
+import net.minecraftforge.common.capabilities.ICapabilityProvider;
+import net.minecraftforge.fluids.capability.wrappers.FluidBucketWrapper;
 
 /**
  * A bucket of one BuildCraft fluid. 1.12.2 never registered bucket items of its own: {@code BCEnergy}'s static
@@ -30,6 +36,15 @@ public class BCFluidBucketItem extends BucketItem {
     /** Forge's {@code Supplier} constructor, so the bucket never needs the fluid resolved at construction. */
     public BCFluidBucketItem(Supplier<? extends Fluid> fluid, Properties properties) {
         super(fluid, properties);
+    }
+
+    /** Forge's {@code BucketItem#initCapabilities} only hands out a {@link FluidBucketWrapper} when
+     * {@code getClass() == BucketItem.class}, so without this override none of BuildCraft's buckets had a fluid
+     * handler: a full oil or fuel bucket could not be emptied into a tank or engine (found while testing the
+     * Combustion Engine). {@link FluidBucketWrapper} reads any {@link BucketItem}'s fluid, so it serves ours as-is. */
+    @Override
+    public ICapabilityProvider initCapabilities(ItemStack stack, @Nullable CompoundTag nbt) {
+        return new FluidBucketWrapper(stack);
     }
 
     @Override

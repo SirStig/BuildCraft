@@ -13,6 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
+import buildcraft.energy.gui.GuiEngineIron;
 import buildcraft.energy.gui.GuiEngineStone;
 
 import buildcraft.BCCoreRegistries;
@@ -30,14 +31,17 @@ public final class BCEnergyClientRegistries {
     private BCEnergyClientRegistries() {}
 
     public static void registerScreens(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> MenuScreens.register(BCEnergyRegistries.ENGINE_STONE_MENU.get(), GuiEngineStone::new));
+        event.enqueueWork(() -> {
+            MenuScreens.register(BCEnergyRegistries.ENGINE_STONE_MENU.get(), GuiEngineStone::new);
+            MenuScreens.register(BCEnergyRegistries.ENGINE_IRON_MENU.get(), GuiEngineIron::new);
+        });
     }
 
     /**
-     * Registers {@link RenderTileEngine} for all three ported engines -- {@code ENGINE_WOOD}/{@code
+     * Registers {@link RenderTileEngine} for all four ported engines -- {@code ENGINE_WOOD}/{@code
      * ENGINE_CREATIVE} live in {@link BCCoreRegistries}, not here, since {@code buildcraft.core} owns those two
-     * block/tile pairs (see {@code TileEngineWood}'s own javadoc); only {@code ENGINE_STONE} is actually this
-     * module's own. Each registration supplies a different existing block texture -- see {@link RenderTileEngine}'s
+     * block/tile pairs (see {@code TileEngineWood}'s own javadoc); only {@code ENGINE_STONE} and {@code ENGINE_IRON}
+     * are actually this module's own. Each registration supplies a different existing block texture -- see {@link RenderTileEngine}'s
      * own javadoc for why no new texture asset was authored for this pass.
      */
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
@@ -52,6 +56,10 @@ public final class BCEnergyClientRegistries {
         event.registerBlockEntityRenderer(
             BCEnergyRegistries.ENGINE_STONE_TYPE.get(),
             context -> new RenderTileEngine(context, new ResourceLocation("buildcraft", "block/engine_stone_side"))
+        );
+        event.registerBlockEntityRenderer(
+            BCEnergyRegistries.ENGINE_IRON_TYPE.get(),
+            context -> new RenderTileEngine(context, new ResourceLocation("buildcraft", "block/engine_iron_side"))
         );
     }
 }

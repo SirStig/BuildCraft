@@ -26,8 +26,11 @@ import buildcraft.lib.registry.BCRegistry;
 import buildcraft.energy.BCEnergyFluids;
 import buildcraft.energy.BCEnergyRecipes;
 
+import buildcraft.energy.block.BlockEngineIron;
 import buildcraft.energy.block.BlockEngineStone;
+import buildcraft.energy.container.ContainerEngineIron;
 import buildcraft.energy.container.ContainerEngineStone;
+import buildcraft.energy.tile.TileEngineIron;
 import buildcraft.energy.tile.TileEngineStone;
 
 /**
@@ -63,8 +66,26 @@ public final class BCEnergyRegistries {
     public static final RegistryObject<MenuType<ContainerEngineStone>> ENGINE_STONE_MENU =
         REGISTRY.addMenu("engine_stone", ContainerEngineStone::new);
 
+    /** The Combustion Engine -- 1.12.2's {@code IRON} engine type, registered right after the Stirling engine as
+     * 1.12.2's {@code BCEnergyBlocks} did. Same block properties as {@link #ENGINE_STONE}. Its fluid capability is
+     * exposed by the tile itself ({@code TileEngineIron#getCapability}), like every other capability on this
+     * target. */
+    public static final RegistryObject<BlockEngineIron> ENGINE_IRON = REGISTRY.addBlockAndItem(
+        "engine_iron", () -> new BlockEngineIron(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileEngineIron>> ENGINE_IRON_TYPE =
+        REGISTRY.addBlockEntity("engine_iron", TileEngineIron::new, ENGINE_IRON);
+
+    public static final RegistryObject<MenuType<ContainerEngineIron>> ENGINE_IRON_MENU =
+        REGISTRY.addMenu("engine_iron", ContainerEngineIron::new);
+
     /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
-     * thirty, all defined in BCEnergyFluids. Called here, after the Stirling engine, so the buckets follow it in the
+     * thirty, all defined in BCEnergyFluids. Called here, after the engines, so the buckets follow them in the
      * creative tab. */
     static {
         BCEnergyFluids.preInit(REGISTRY);

@@ -1,0 +1,27 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "buildcraft:block/engine_iron"
+    },
+    "facing=east": {
+      "model": "buildcraft:block/engine_iron",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "buildcraft:block/engine_iron",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "buildcraft:block/engine_iron",
+      "y": 270
+    },
+    "facing=down": {
+      "model": "buildcraft:block/engine_iron",
+      "x": 90
+    },
+    "facing=up": {
+      "model": "buildcraft:block/engine_iron",
+      "x": 270
+    }
+  }
+}

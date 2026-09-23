@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "group": "buildcraft_engine_iron",
+  "pattern": [
+    "www",
+    " g ",
+    "GpG"
+  ],
+  "key": {
+    "w": {
+      "item": "minecraft:iron_ingot"
+    },
+    "g": {
+      "item": "minecraft:glass"
+    },
+    "G": {
+      "item": "buildcraft:gear_iron"
+    },
+    "p": {
+      "item": "minecraft:piston"
+    }
+  },
+  "result": {
+    "item": "buildcraft:engine_iron",
+    "count": 1
+  }
+}

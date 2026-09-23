@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "buildcraft:power_tester"
+    "buildcraft:power_tester",
+    "buildcraft:engine_iron"
   ]
 }

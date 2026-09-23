@@ -19,6 +19,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.DefaultDataComponentsBoundEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.transfer.fluid.BucketResourceHandler;
 
 import buildcraft.api.fuels.BuildcraftFuelRegistry;
 import buildcraft.api.mj.MjCapabilities;
@@ -30,8 +31,11 @@ import buildcraft.lib.registry.BCRegistry;
 import buildcraft.energy.BCEnergyFluids;
 import buildcraft.energy.BCEnergyRecipes;
 
+import buildcraft.energy.block.BlockEngineIron;
 import buildcraft.energy.block.BlockEngineStone;
+import buildcraft.energy.container.ContainerEngineIron;
 import buildcraft.energy.container.ContainerEngineStone;
+import buildcraft.energy.tile.TileEngineIron;
 import buildcraft.energy.tile.TileEngineStone;
 
 /**
@@ -65,8 +69,24 @@ public final class BCEnergyRegistries {
     public static final DeferredHolder<MenuType<?>, MenuType<ContainerEngineStone>> ENGINE_STONE_MENU =
         REGISTRY.addMenu("engine_stone", ContainerEngineStone::new);
 
+    /** The Combustion Engine -- 1.12.2's {@code IRON} engine type, registered right after the Stirling engine as
+     * 1.12.2's {@code BCEnergyBlocks} did. Same block properties as {@link #ENGINE_STONE}. */
+    public static final DeferredBlock<BlockEngineIron> ENGINE_IRON = REGISTRY.addBlockAndItem(
+        "engine_iron", BlockEngineIron::new,
+        properties -> properties
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops());
+
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<TileEngineIron>> ENGINE_IRON_TYPE =
+        REGISTRY.addBlockEntity("engine_iron", TileEngineIron::new, ENGINE_IRON);
+
+    public static final DeferredHolder<MenuType<?>, MenuType<ContainerEngineIron>> ENGINE_IRON_MENU =
+        REGISTRY.addMenu("engine_iron", ContainerEngineIron::new);
+
     /* The oil/fuel fluid family: a fluid type, source + flowing fluid, placeable block and bucket for each of the
-     * thirty, all defined in BCEnergyFluids. Called here, after the Stirling engine, so the buckets follow it in the
+     * thirty, all defined in BCEnergyFluids. Called here, after the engines, so the buckets follow them in the
      * creative tab. */
     static {
         BCEnergyFluids.preInit(REGISTRY);
@@ -117,5 +137,21 @@ public final class BCEnergyRegistries {
             (tile, side) -> tile.itemManager.getHandlerForFace(side));
         event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_STONE_TYPE.get(),
             (tile, side) -> side == tile.getCurrentFacing() ? tile.mjConnector : null);
+
+        // The Combustion Engine's fluid handler (fill fuel/coolant, drain residue) was 1.12.2's
+        // addCapabilityInstance(CAP_FLUIDS, fluidHandler, EnumPipePart.VALUES): every face and the null side alike.
+        event.registerBlockEntity(Capabilities.Fluid.BLOCK, ENGINE_IRON_TYPE.get(), (tile, side) -> tile.fluidHandler);
+        event.registerBlockEntity(MjCapabilities.CONNECTOR, ENGINE_IRON_TYPE.get(),
+            (tile, side) -> side == tile.getCurrentFacing() ? tile.mjConnector : null);
+
+        // Found live while testing the Combustion Engine: NeoForge's CapabilityHooks gives Capabilities.Fluid.ITEM
+        // (a BucketResourceHandler) only to items whose class is exactly BucketItem, so none of the thirty
+        // BCFluidBucketItem subclasses had a fluid capability at all -- a full oil or fuel bucket could not be
+        // emptied into the engine or any other tank. BucketResourceHandler itself works for any BucketItem (it reads
+        // BucketItem#content, and turns an emptied bucket back into Items.BUCKET), so it is registered here for ours.
+        for (BCEnergyFluids.BCFluid fluid : BCEnergyFluids.allFluids) {
+            event.registerItem(Capabilities.Fluid.ITEM, (stack, access) -> new BucketResourceHandler(access),
+                fluid.getBucket().get());
+        }
     }
 }
