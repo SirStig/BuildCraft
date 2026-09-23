@@ -87,16 +87,46 @@ public class PluggableGate extends PipePluggable implements IWireEmitter, MenuPr
 
     @Override
     public boolean onPluggableActivate(Player player, BlockHitResult trace) {
-        if (!player.level().isClientSide() && player instanceof ServerPlayer serverPlayer) {
-            // The 4-arg extra-data overload: pos alone is not enough to find this specific PluggableGate again
-            // (a pipe has up to six), so side has to ride along too -- see ContainerGate's own client factory.
-            NetworkHooks.openScreen(
-                serverPlayer, this,
-                buffer -> {
-                    buffer.writeBlockPos(holder.getPipePos());
-                    buffer.writeByte(side.get3DDataValue());
-                }
-            );
+        if (!player.level().isClientSide()) {
+            if (interactWithCopier(player, player.getMainHandItem()) || interactWithCopier(player, player.getOffhandItem())) {
+                return true;
+            }
+            if (player instanceof ServerPlayer serverPlayer) {
+                // The 4-arg extra-data overload: pos alone is not enough to find this specific PluggableGate
+                // again (a pipe has up to six), so side has to ride along too -- see ContainerGate's own client
+                // factory.
+                NetworkHooks.openScreen(
+                    serverPlayer, this,
+                    buffer -> {
+                        buffer.writeBlockPos(holder.getPipePos());
+                        buffer.writeByte(side.get3DDataValue());
+                    }
+                );
+            }
+        }
+        return true;
+    }
+
+    /** Port of 1.12.2's own {@code PluggableGate#interactWithCopier} -- see the 26.x copy of this class for the
+     * full account of what changed and why. */
+    private boolean interactWithCopier(Player player, ItemStack stack) {
+        if (!(stack.getItem() instanceof buildcraft.transport.item.ItemGateCopier)) {
+            return false;
+        }
+        net.minecraft.core.HolderLookup.Provider registries = player.level().registryAccess();
+        CompoundTag stored = buildcraft.transport.item.ItemGateCopier.getCopiedGateData(stack);
+        if (stored != null) {
+            logic.readConfigData(stored, registries);
+            player.sendSystemMessage(Component.translatable("chat.gateCopier.gatePasted"));
+        } else {
+            stored = logic.writeToNbt(registries);
+            stored.remove("wireBroadcasts");
+            if (stored.size() == 1) {
+                player.sendSystemMessage(Component.translatable("chat.gateCopier.noInformation"));
+                return false;
+            }
+            buildcraft.transport.item.ItemGateCopier.setCopiedGateData(stack, stored);
+            player.sendSystemMessage(Component.translatable("chat.gateCopier.gateCopied"));
         }
         return true;
     }

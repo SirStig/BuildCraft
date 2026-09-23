@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": {"model": "buildcraft:block/replacer"},
+    "facing=south": {"model": "buildcraft:block/replacer", "y": 180},
+    "facing=east": {"model": "buildcraft:block/replacer", "y": 90},
+    "facing=west": {"model": "buildcraft:block/replacer", "y": 270}
+  }
+}

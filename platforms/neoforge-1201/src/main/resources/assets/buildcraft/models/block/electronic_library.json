@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "buildcraft:block/electronic_library_back",
+    "down": "buildcraft:block/electronic_library_bottom",
+    "up": "buildcraft:block/electronic_library_top",
+    "north": "buildcraft:block/electronic_library_front",
+    "south": "buildcraft:block/electronic_library_back",
+    "east": "buildcraft:block/electronic_library_left",
+    "west": "buildcraft:block/electronic_library_right"
+  }
+}

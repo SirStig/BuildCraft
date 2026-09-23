@@ -13,6 +13,8 @@ import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -20,6 +22,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -34,9 +37,11 @@ import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 import net.minecraftforge.network.NetworkHooks;
 
+import buildcraft.api.blocks.ICustomPaintHandler;
 import buildcraft.api.blocks.ICustomRotationHandler;
 import buildcraft.api.core.EnumPipePart;
 import buildcraft.api.transport.IItemPluggable;
@@ -64,8 +69,12 @@ import buildcraft.transport.tile.TilePipeHolder;
  * itself. {@link #ACTIVE} (the directional pipes' "filled" face) follows the same pattern.
  *
  * <p><b>Wrench rotation</b> ({@link ICustomRotationHandler}): see {@link #attemptRotation}.
+ *
+ * <p><b>Dye colouring</b> ({@link ICustomPaintHandler}): identical to the 26.x copy of this class -- see its own
+ * javadoc entry for the full account, including the "no rendered tint, no item-side persistence through a
+ * break/re-place cycle" scope cuts.
  */
-public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler {
+public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler, ICustomPaintHandler {
 
     /** See the 26.x copy of this class's own javadoc for {@link #MATERIAL}. */
     public static final EnumProperty<EnumPipeMaterial> MATERIAL = EnumProperty.create("material", EnumPipeMaterial.class);
@@ -282,6 +291,28 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
         if (player instanceof ServerPlayer serverPlayer) {
             NetworkHooks.openScreen(serverPlayer, holder, pos);
         }
+        return InteractionResult.SUCCESS;
+    }
+
+    // ICustomPaintHandler
+
+    /** Identical to the 26.x copy of this method -- see its own javadoc for the full account. */
+    @Override
+    public InteractionResult attemptPaint(
+        Level level, BlockPos pos, BlockState state, Vec3 hitPos, @Nullable Direction hitSide,
+        @Nullable DyeColor paintColour
+    ) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        IPipe pipe = holder.getPipe();
+        if (pipe == null) {
+            return InteractionResult.PASS;
+        }
+        if (pipe.getColour() == paintColour || !pipe.getDefinition().canBeColoured) {
+            return InteractionResult.FAIL;
+        }
+        pipe.setColour(paintColour);
         return InteractionResult.SUCCESS;
     }
 }

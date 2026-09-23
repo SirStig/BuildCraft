@@ -22,6 +22,7 @@ import net.neoforged.neoforge.event.DefaultDataComponentsBoundEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 import buildcraft.api.core.BuildCraftAPI;
 import buildcraft.api.core.EnumHandlerPriority;
@@ -91,16 +92,19 @@ import buildcraft.transport.tile.TilePipeHolder;
  * {@code PipeApi.flowItems} immediately -- both would NPE if this ran in the other order. Static fields and
  * blocks run top-to-bottom in one class, so the ordering below is load-bearing, not decorative.
  *
- * <p><b>{@code canBeColoured} is {@code false} on {@link #PIPE_COBBLESTONE}, a deliberate scope choice, not a
- * faithful copy of the original's own value.</b> Verified, not guessed: 1.12.2's real
+ * <p><b>Every material below is colourable ({@code .enableColouring()}), matching real 1.12.2, not the "disabled
+ * everywhere" scope cut earlier batches of this file left in place.</b> Verified, not guessed: 1.12.2's real
  * {@code common/buildcraft/transport/BCTransportPipes.java} calls {@code builder.builder.enableColouring()}
  * once, right after defining the structure pipe, and that flag then stays set on the shared builder for every
  * pipe defined afterwards -- wood, stone, cobblestone, quartz, gold, and so on -- so the real 1.12.2 cobblestone
- * pipe <em>is</em> colourable. This batch disables it anyway: colouring a pipe means applying a dye, which needs
- * {@code CustomPaintHelper}-style GUI/interaction plumbing this batch does not add for pipes specifically (dye
- * colours on a pipe are explicitly out of scope -- see this module's own scope notes), so leaving
- * {@code canBeColoured} true would advertise a feature ({@code IPipe#setColour}) nothing in this batch can ever
- * legitimately trigger.
+ * pipe (and every material after it) <em>is</em> colourable. Earlier batches left {@code canBeColoured} false
+ * everywhere because colouring a pipe means applying a dye, which needs {@code CustomPaintHelper}-style
+ * GUI/interaction plumbing nothing wired into pipes yet -- that plumbing now exists: {@link BlockPipeHolder}
+ * implements {@code ICustomPaintHandler}, so the already-ported dye-loaded {@code ItemPaintbrush} can recolour a
+ * placed pipe exactly the way 1.12.2's own paintbrush recoloured one (see that class's own
+ * {@code attemptPaint}). Several of the per-definition comments below still say {@code canBeColoured} is
+ * {@code false} "for the same reason as every other material" -- those sentences are now stale prose describing
+ * an earlier batch's scope cut, not this file's current behaviour; left as-is rather than rewritten one by one.
  *
  * <p>The id/texture-prefix naming also deliberately diverges from 1.12.2's own {@code "cobblestone_item"} (which
  * needed the {@code _item} suffix to stay unique alongside sibling {@code cobblestone_fluid}/
@@ -113,6 +117,18 @@ public final class BCTransportRegistries {
     private BCTransportRegistries() {}
 
     private static final BCRegistry REGISTRY = new BCRegistry(BuildCraft.MOD_ID);
+
+    /** The facade hollow/solid swap recipe -- this module's first custom vanilla {@code RecipeSerializer}; see
+     * {@code FacadeSwapRecipe}'s own javadoc. Not part of {@link BCRegistry}, which only wraps the block/item/
+     * block-entity/menu registries every other module here needs -- one extra {@link DeferredRegister} for a
+     * registry nothing else in this port has used yet is simpler than growing that shared helper for one caller. */
+    private static final DeferredRegister<net.minecraft.world.item.crafting.RecipeSerializer<?>> RECIPE_SERIALIZERS =
+        DeferredRegister.create(net.minecraft.core.registries.Registries.RECIPE_SERIALIZER, BuildCraft.MOD_ID);
+
+    public static final DeferredHolder<net.minecraft.world.item.crafting.RecipeSerializer<?>, net.minecraft.world.item.crafting.RecipeSerializer<buildcraft.transport.recipe.FacadeSwapRecipe>>
+        RECIPE_FACADE_SWAP = RECIPE_SERIALIZERS.register(
+            "facade_swap", () -> buildcraft.transport.recipe.FacadeSwapRecipe.SERIALIZER
+        );
 
     static {
         PipeApi.pipeRegistry = PipeRegistry.INSTANCE;
@@ -135,7 +151,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("cobblestone")
         .logic(PipeBehaviourCobble::new, PipeBehaviourCobble::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The wooden pipe's own {@link PipeDefinition} -- this batch's proof of this class's own "a future pipe
@@ -145,7 +161,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("wood")
         .logic(PipeBehaviourWood::new, PipeBehaviourWood::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The stone pipe's own {@link PipeDefinition} -- a fast, constant-crawl speed modifier
@@ -157,7 +173,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("stone")
         .logic(PipeBehaviourStone::new, PipeBehaviourStone::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The sandstone pipe's own {@link PipeDefinition} -- the pipe-to-pipe-only, never-to-an-inventory
@@ -168,7 +184,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("sandstone")
         .logic(PipeBehaviourSandstone::new, PipeBehaviourSandstone::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The quartz pipe's own {@link PipeDefinition} -- the gentlest speed modifier of this batch
@@ -178,7 +194,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("quartz")
         .logic(PipeBehaviourQuartz::new, PipeBehaviourQuartz::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The golden pipe's own {@link PipeDefinition} -- the speed-boost material (see {@link PipeBehaviourGold}).
@@ -191,7 +207,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("gold")
         .logic(PipeBehaviourGold::new, PipeBehaviourGold::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The iron pipe's own {@link PipeDefinition} -- the one-way, wrench-selected output valve (see
@@ -206,7 +222,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("iron")
         .logic(PipeBehaviourIron::new, PipeBehaviourIron::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The clay pipe's own {@link PipeDefinition} -- prefers inventories over pipes (see
@@ -216,7 +232,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("clay")
         .logic(PipeBehaviourClay::new, PipeBehaviourClay::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The void pipe's own {@link PipeDefinition} -- destroys items (see {@link PipeBehaviourVoid}). 1.12.2:
@@ -227,7 +243,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("void")
         .logic(PipeBehaviourVoid::new, PipeBehaviourVoid::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The obsidian pipe's own {@link PipeDefinition} -- an MJ-powered magnet, not explosive at all (see
@@ -239,7 +255,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("obsidian")
         .logic(PipeBehaviourObsidian::new, PipeBehaviourObsidian::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The lapis pipe's own {@link PipeDefinition} -- paints items with a colour for a diamond pipe further down
@@ -249,7 +265,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("lapis")
         .logic(PipeBehaviourLapis::new, PipeBehaviourLapis::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The daizuli pipe's own {@link PipeDefinition} -- a directional colour filter, BuildCraft 8-specific (see
@@ -258,7 +274,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("daizuli")
         .logic(PipeBehaviourDaizuli::new, PipeBehaviourDaizuli::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The emzuli pipe's own {@link PipeDefinition} -- a four-preset extraction wooden pipe, BuildCraft
@@ -268,7 +284,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("emzuli")
         .logic(PipeBehaviourEmzuli::new, PipeBehaviourEmzuli::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The stripes pipe's own {@link PipeDefinition} -- a real, distinct pipe material (not merely an
@@ -279,7 +295,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("stripes")
         .logic(PipeBehaviourStripes::new, PipeBehaviourStripes::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The diamond pipe's own {@link PipeDefinition} -- the item-sorting/filtering material (see
@@ -292,7 +308,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("diamond")
         .logic(PipeBehaviourDiamondItem::new, PipeBehaviourDiamondItem::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     /** The wood/diamond combo pipe's own {@link PipeDefinition} -- a filtered wooden pipe (see
@@ -304,7 +320,7 @@ public final class BCTransportRegistries {
         .idTexPrefix("diamond_wood")
         .logic(PipeBehaviourWoodDiamond::new, PipeBehaviourWoodDiamond::new)
         .flowItem()
-        .disableColouring()
+        .enableColouring()
         .define();
 
     // The fluid pipes: 1.12.2's BCTransportPipes#preInit defines each one right after its item sibling, with the
@@ -365,7 +381,7 @@ public final class BCTransportRegistries {
             .idTexPrefix(id)
             .logic(creator, loader)
             .flowFluid()
-            .disableColouring()
+            .enableColouring()
             .define();
     }
 
@@ -453,7 +469,7 @@ public final class BCTransportRegistries {
             .idTex(id)
             .logic(creator, loader)
             .flowPower()
-            .disableColouring()
+            .enableColouring()
             .define();
     }
 
@@ -847,8 +863,13 @@ public final class BCTransportRegistries {
     public static final DeferredItem<buildcraft.transport.item.ItemPluggableFacade> ITEM_PLUGGABLE_FACADE =
         REGISTRY.addItem("plug_facade", buildcraft.transport.item.ItemPluggableFacade::new);
 
+    /** Port of 1.12.2's {@code ItemGateCopier} -- see that class's own javadoc for what's kept/dropped. */
+    public static final DeferredItem<buildcraft.transport.item.ItemGateCopier> ITEM_GATE_COPIER =
+        REGISTRY.addItem("gate_copier", buildcraft.transport.item.ItemGateCopier::new);
+
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);
+        RECIPE_SERIALIZERS.register(modBus);
         modBus.addListener(BCTransportRegistries::registerCapabilities);
         NeoForge.EVENT_BUS.addListener(BCTransportRegistries::onDefaultComponentsBound);
 
@@ -951,6 +972,7 @@ public final class BCTransportRegistries {
         buildcraft.api.facades.FacadeAPI.registry = buildcraft.transport.plug.FacadeStateManager.INSTANCE;
         buildcraft.transport.plug.FacadeStateManager.init();
         buildcraft.lib.recipe.AssemblyRecipeRegistry.register(buildcraft.transport.recipe.FacadeAssemblyRecipes.INSTANCE);
+        buildcraft.transport.recipe.PluggableAssemblyRecipes.register();
     }
 
     private static void registerCapabilities(RegisterCapabilitiesEvent event) {

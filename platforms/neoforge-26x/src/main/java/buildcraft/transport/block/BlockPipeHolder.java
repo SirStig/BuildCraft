@@ -15,10 +15,13 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import org.jetbrains.annotations.Nullable;
+
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -34,7 +37,9 @@ import net.minecraft.world.level.redstone.Orientation;
 import net.minecraft.world.level.storage.loot.LootParams;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
+import buildcraft.api.blocks.ICustomPaintHandler;
 import buildcraft.api.blocks.ICustomRotationHandler;
 import buildcraft.api.core.EnumPipePart;
 import buildcraft.api.transport.IItemPluggable;
@@ -73,8 +78,27 @@ import buildcraft.transport.tile.TilePipeHolder;
  * the same pattern -- see its own javadoc.
  *
  * <p><b>Wrench rotation</b> ({@link ICustomRotationHandler}): see {@link #attemptRotation}.
+ *
+ * <p><b>Dye colouring</b> ({@link ICustomPaintHandler}): see {@link #attemptPaint}. Real 1.12.2's own
+ * {@code BlockPipeHolder#attemptPaint} is the direct model -- {@code IPipe#setColour} already existed on this
+ * port (a real field, real NBT persistence, already read by {@code Pipe#canColoursConnect}/
+ * {@code WireNetwork#canWireConnect}'s "same-colour-or-unset" pipe-network rule) with nothing to actually trigger
+ * it; this is that trigger, using the already-ported {@code CustomPaintHelper}/dye-loaded
+ * {@code ItemPaintbrush} infrastructure {@code buildcraft.core.item.ItemPaintbrush} already provides for every
+ * other paintable block. Not reproduced: a rendered tint. This target's pipe body has no baked-model/tint-index
+ * system of its own to hook into at all -- unlike 1.12.2's dynamic quad renderer, the connection-shape batch's
+ * own plain vanilla multipart blockstate (see this class's own "Connection-shape rendering" javadoc entry above)
+ * picks a per-material model file directly, with no tint layer or {@code BlockColor} anywhere in that pipeline,
+ * and building one (a shared translucent overlay model plus a new blockstate property, at minimum) is
+ * disproportionate to this batch's scope; the pipe/wire colouring task's own notes are honest that
+ * {@code RenderTilePipeHolder} was the wrong place to look for this on this target regardless, since that class
+ * only ever renders travelling items/fluids/facades, never the pipe body itself. Colour is not preserved through
+ * a break/re-place cycle either -- {@link #getDrops} always drops a fresh, colourless item; the coloured pipe's
+ * own colour lives only in the placed tile's NBT (which does survive a save/reload) until a future batch adds
+ * item-side storage, which needs two genuinely different mechanisms on the two platforms ({@code DataComponentType}
+ * on 26.x; this target has none at all before 1.20.5, so 1.20.1's own copy would need a plain NBT tag instead).
  */
-public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler {
+public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandler, ICustomPaintHandler {
 
     /** New, port-only: see this class's own "Connection-shape rendering" javadoc entry above. Not a vanilla
      * property -- nothing in {@code BlockStateProperties} fits a five-value pipe-material enum, matching this
@@ -355,6 +379,36 @@ public class BlockPipeHolder extends BlockBCTile implements ICustomRotationHandl
             return InteractionResult.SUCCESS;
         }
         player.openMenu(holder);
+        return InteractionResult.SUCCESS;
+    }
+
+    // ICustomPaintHandler
+
+    /** A close port of real 1.12.2 {@code BlockPipeHolder#attemptPaint}: fails for an uncoloured/undyeable pipe
+     * hit with the same colour it already has (1.12.2's own {@code pipe.getColour() == paintColour ||
+     * !pipe.definition.canBeColoured} guard -- {@code ==} is correct there and here, not a bug, since
+     * {@link DyeColor} values are enum singletons), otherwise sets it and lets {@link
+     * buildcraft.transport.pipe.Pipe#setColour} do its own {@code markForUpdate()}/{@code
+     * scheduleNetworkUpdate}/{@code markDirtyAndSync} dance exactly the way every other pipe-state mutation on
+     * this tile already does -- see this class's own javadoc for why nothing here calls
+     * {@code markDirtyAndSync()} directly. {@code hitPos}/{@code hitSide} are unused, matching 1.12.2's own
+     * whole-pipe (not per-face) colouring -- a pipe has exactly one colour, not one per side. */
+    @Override
+    public InteractionResult attemptPaint(
+        Level level, BlockPos pos, BlockState state, Vec3 hitPos, @Nullable Direction hitSide,
+        @Nullable DyeColor paintColour
+    ) {
+        if (!(level.getBlockEntity(pos) instanceof TilePipeHolder holder)) {
+            return InteractionResult.PASS;
+        }
+        IPipe pipe = holder.getPipe();
+        if (pipe == null) {
+            return InteractionResult.PASS;
+        }
+        if (pipe.getColour() == paintColour || !pipe.getDefinition().canBeColoured) {
+            return InteractionResult.FAIL;
+        }
+        pipe.setColour(paintColour);
         return InteractionResult.SUCCESS;
     }
 }

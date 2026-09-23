@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": {"model": "buildcraft:block/electronic_library"},
+    "facing=south": {"model": "buildcraft:block/electronic_library", "y": 180},
+    "facing=east": {"model": "buildcraft:block/electronic_library", "y": 90},
+    "facing=west": {"model": "buildcraft:block/electronic_library", "y": 270}
+  }
+}

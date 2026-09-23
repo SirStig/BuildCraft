@@ -17,19 +17,28 @@ import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.RegistryObject;
 
+import buildcraft.api.template.TemplateApi;
+
 import buildcraft.lib.registry.BCRegistry;
 
 import buildcraft.builders.block.BlockArchitectTable;
 import buildcraft.builders.block.BlockBuilder;
+import buildcraft.builders.block.BlockElectronicLibrary;
 import buildcraft.builders.block.BlockFiller;
 import buildcraft.builders.block.BlockFrame;
 import buildcraft.builders.block.BlockQuarry;
+import buildcraft.builders.block.BlockReplacer;
 import buildcraft.builders.container.ContainerFiller;
 import buildcraft.builders.item.ItemBlueprint;
+import buildcraft.builders.item.ItemTemplate;
+import buildcraft.builders.snapshot.TemplateHandlerDefault;
+import buildcraft.builders.snapshot.TemplateRegistry;
 import buildcraft.builders.tile.TileArchitectTable;
 import buildcraft.builders.tile.TileBuilder;
+import buildcraft.builders.tile.TileElectronicLibrary;
 import buildcraft.builders.tile.TileFiller;
 import buildcraft.builders.tile.TileQuarry;
+import buildcraft.builders.tile.TileReplacer;
 
 /**
  * Registrations belonging to the old {@code buildcraftbuilders} module. Mirrors the 26.x class of the same name --
@@ -42,6 +51,12 @@ public final class BCBuildersRegistries {
     private BCBuildersRegistries() {}
 
     private static final BCRegistry REGISTRY = new BCRegistry(BuildCraft.MOD_ID);
+
+    /** Wires the template registry -- see the 26.x class's own javadoc for this identical static-block pattern. */
+    static {
+        TemplateApi.templateRegistry = TemplateRegistry.INSTANCE;
+        TemplateApi.templateRegistry.addHandler(TemplateHandlerDefault.INSTANCE);
+    }
 
     public static final RegistryObject<BlockFrame> FRAME = REGISTRY.addBlock("frame", () -> new BlockFrame(
         BlockBehaviour.Properties.of()
@@ -79,6 +94,11 @@ public final class BCBuildersRegistries {
     public static final RegistryObject<ItemBlueprint> BLUEPRINT =
         REGISTRY.addItem("blueprint", () -> new ItemBlueprint(new Item.Properties().stacksTo(1)));
 
+    /** The {@link buildcraft.builders.snapshot.Template} equivalent of {@link #BLUEPRINT} -- see the 26.x class's
+     * own javadoc for {@link ItemTemplate}. */
+    public static final RegistryObject<ItemTemplate> TEMPLATE =
+        REGISTRY.addItem("template", () -> new ItemTemplate(new Item.Properties().stacksTo(1)));
+
     /** No GUI exists yet for this tile -- see {@link buildcraft.builders.tile.TileArchitectTable}'s own javadoc. */
     public static final RegistryObject<BlockArchitectTable> ARCHITECT_TABLE =
         REGISTRY.addBlockAndItem("architect_table", () -> new BlockArchitectTable(
@@ -102,6 +122,31 @@ public final class BCBuildersRegistries {
 
     public static final RegistryObject<BlockEntityType<TileBuilder>> BUILDER_TYPE =
         REGISTRY.addBlockEntity("builder", TileBuilder::new, BUILDER);
+
+    /** {@link TileReplacer} exposes its own item capabilities through {@code getCapability}, same as
+     * {@link TileQuarry}/{@link TileBuilder}. See that class's own javadoc for this round's scope cut. */
+    public static final RegistryObject<BlockReplacer> REPLACER = REGISTRY.addBlockAndItem("replacer", () -> new BlockReplacer(
+        BlockBehaviour.Properties.of()
+            .mapColor(MapColor.METAL)
+            .strength(5.0F, 10.0F)
+            .sound(SoundType.METAL)
+            .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileReplacer>> REPLACER_TYPE =
+        REGISTRY.addBlockEntity("replacer", TileReplacer::new, REPLACER);
+
+    /** {@link TileElectronicLibrary} exposes its own item capabilities through {@code getCapability}, same as
+     * {@link TileQuarry}/{@link TileBuilder}. See that class's own javadoc for this round's scope cut. */
+    public static final RegistryObject<BlockElectronicLibrary> ELECTRONIC_LIBRARY =
+        REGISTRY.addBlockAndItem("electronic_library", () -> new BlockElectronicLibrary(
+            BlockBehaviour.Properties.of()
+                .mapColor(MapColor.METAL)
+                .strength(5.0F, 10.0F)
+                .sound(SoundType.METAL)
+                .requiresCorrectToolForDrops()));
+
+    public static final RegistryObject<BlockEntityType<TileElectronicLibrary>> ELECTRONIC_LIBRARY_TYPE =
+        REGISTRY.addBlockEntity("electronic_library", TileElectronicLibrary::new, ELECTRONIC_LIBRARY);
 
     public static void register(IEventBus modBus) {
         REGISTRY.register(modBus);

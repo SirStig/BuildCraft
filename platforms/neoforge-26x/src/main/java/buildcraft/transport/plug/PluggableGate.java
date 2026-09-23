@@ -98,7 +98,45 @@ public class PluggableGate extends PipePluggable implements IWireEmitter, MenuPr
     @Override
     public boolean onPluggableActivate(Player player, BlockHitResult trace) {
         if (!player.level().isClientSide()) {
+            if (interactWithCopier(player, player.getMainHandItem()) || interactWithCopier(player, player.getOffhandItem())) {
+                return true;
+            }
             player.openMenu(this);
+        }
+        return true;
+    }
+
+    /**
+     * Port of 1.12.2's own {@code PluggableGate#interactWithCopier}, moved here from
+     * {@code ItemGateCopier}/{@code PluggableGate} in 1.12.2 to match this port's own
+     * {@code PipePluggable#onPluggableActivate} dispatch. Right-clicking a gate with an empty
+     * {@link buildcraft.transport.item.ItemGateCopier} copies this gate's trigger/action/connection state onto
+     * the item (stripping {@code wireBroadcasts} -- transient per-tick state, not configuration); right-clicking
+     * with a loaded one pastes that state back through {@link buildcraft.transport.gate.GateLogic#readConfigData}
+     * -- the same NBT shape {@link buildcraft.transport.gate.GateLogic#writeToNbt} already uses for save/load, no
+     * new format invented. Per-target compatibility warnings (slot count, logic type, parameter count) that
+     * 1.12.2 surfaced via chat are not reproduced -- {@code readConfigData} already tolerates a mismatched
+     * variant by construction (extra/missing NBT indices are simply ignored/left unset), so nothing breaks,
+     * only the warning text is missing.
+     */
+    private boolean interactWithCopier(Player player, ItemStack stack) {
+        if (!(stack.getItem() instanceof buildcraft.transport.item.ItemGateCopier)) {
+            return false;
+        }
+        var registries = player.level().registryAccess();
+        CompoundTag stored = buildcraft.transport.item.ItemGateCopier.getCopiedGateData(stack);
+        if (stored != null) {
+            logic.readConfigData(stored, registries);
+            player.sendOverlayMessage(Component.translatable("chat.gateCopier.gatePasted"));
+        } else {
+            stored = logic.writeToNbt(registries);
+            stored.remove("wireBroadcasts");
+            if (stored.size() == 1) {
+                player.sendOverlayMessage(Component.translatable("chat.gateCopier.noInformation"));
+                return false;
+            }
+            buildcraft.transport.item.ItemGateCopier.setCopiedGateData(stack, stored);
+            player.sendOverlayMessage(Component.translatable("chat.gateCopier.gateCopied"));
         }
         return true;
     }
